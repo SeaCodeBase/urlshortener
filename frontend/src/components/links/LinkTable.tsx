@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import NextLink from 'next/link';
 import { api } from '@/lib/api';
 import type { Link } from '@/types';
 import {
@@ -130,13 +131,20 @@ export function LinkTable() {
               </span>
             </TableCell>
             <TableCell>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => handleDelete(link.id)}
-              >
-                Delete
-              </Button>
+              <div className="flex gap-2">
+                <NextLink href={`/dashboard/links/${link.id}/stats`}>
+                  <Button variant="outline" size="sm">
+                    Stats
+                  </Button>
+                </NextLink>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => handleDelete(link.id)}
+                >
+                  Delete
+                </Button>
+              </div>
             </TableCell>
           </TableRow>
         ))}

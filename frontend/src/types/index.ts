@@ -29,3 +29,32 @@ export interface LinksListResponse {
   page: number;
   total_pages: number;
 }
+
+export interface DailyStats {
+  date: string;
+  clicks: number;
+}
+
+export interface ReferrerStats {
+  referrer: string;
+  count: number;
+}
+
+export interface DeviceStats {
+  device_type: string;
+  count: number;
+}
+
+export interface BrowserStats {
+  browser: string;
+  count: number;
+}
+
+export interface LinkStats {
+  total_clicks: number;
+  unique_visitors: number;
+  daily_stats: DailyStats[];
+  top_referrers: ReferrerStats[];
+  device_stats: DeviceStats[];
+  browser_stats: BrowserStats[];
+}

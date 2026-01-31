@@ -1,4 +1,4 @@
-import type { AuthResponse, User, Link, LinksListResponse } from '@/types';
+import type { AuthResponse, User, Link, LinksListResponse, LinkStats } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
@@ -102,6 +102,10 @@ class ApiClient {
     return this.request<void>(`/api/links/${id}`, {
       method: 'DELETE',
     });
+  }
+
+  async getLinkStats(id: number) {
+    return this.request<LinkStats>(`/api/links/${id}/stats`);
   }
 }
 
