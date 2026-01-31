@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 export function LinkTable() {
   const [links, setLinks] = useState<Link[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadLinks();
@@ -23,10 +24,12 @@ export function LinkTable() {
 
   const loadLinks = async () => {
     try {
+      setError(null);
       const data = await api.getLinks();
       setLinks(data.links || []);
     } catch (err) {
       console.error('Failed to load links:', err);
+      setError('Failed to load links. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -39,16 +42,33 @@ export function LinkTable() {
       await api.deleteLink(id);
       setLinks(links.filter((l) => l.id !== id));
     } catch (err) {
+      alert('Failed to delete link. Please try again.');
       console.error('Failed to delete link:', err);
     }
   };
 
-  const copyToClipboard = (url: string) => {
-    navigator.clipboard.writeText(url);
+  const copyToClipboard = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      // Simple feedback - could use toast in future
+    } catch {
+      alert('Failed to copy to clipboard');
+    }
   };
 
   if (loading) {
     return <div>Loading links...</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-8 text-red-500">
+        {error}
+        <Button variant="ghost" onClick={() => { setError(null); loadLinks(); }}>
+          Retry
+        </Button>
+      </div>
+    );
   }
 
   if (links.length === 0) {

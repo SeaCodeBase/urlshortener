@@ -11,6 +11,7 @@ export default function DashboardPage() {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const handleQuickCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,7 +22,7 @@ export default function DashboardPage() {
       await api.createLink({ original_url: url });
       setUrl('');
       // Trigger table refresh
-      window.location.reload();
+      setRefreshKey(k => k + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create link');
     } finally {
@@ -60,7 +61,7 @@ export default function DashboardPage() {
           <CardTitle>Your Links</CardTitle>
         </CardHeader>
         <CardContent>
-          <LinkTable />
+          <LinkTable key={refreshKey} />
         </CardContent>
       </Card>
     </div>
