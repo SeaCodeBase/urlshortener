@@ -21,6 +21,11 @@ func NewStatsService(clickRepo repository.ClickRepository, linkRepo repository.L
 	}
 }
 
+type LocationStats struct {
+	Countries []repository.CountryStats `json:"countries"`
+	Cities    []repository.CityStats    `json:"cities"`
+}
+
 type LinkStatsResponse struct {
 	TotalClicks    int64                        `json:"total_clicks"`
 	UniqueVisitors int64                        `json:"unique_visitors"`
@@ -28,6 +33,7 @@ type LinkStatsResponse struct {
 	TopReferrers   []repository.ReferrerStats   `json:"top_referrers"`
 	DeviceStats    []repository.DeviceStats     `json:"device_stats"`
 	BrowserStats   []repository.BrowserStats    `json:"browser_stats"`
+	Locations      LocationStats                `json:"locations"`
 }
 
 func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint64) (*LinkStatsResponse, error) {
@@ -82,6 +88,35 @@ func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint
 		browsers = []repository.BrowserStats{}
 	}
 
+	countries, err := s.clickRepo.GetCountryStats(ctx, linkID, 10)
+	if err != nil {
+		return nil, err
+	}
+	if countries == nil {
+		countries = []repository.CountryStats{}
+	}
+	// Calculate percentages and set country names
+	for i := range countries {
+		if stats.TotalClicks > 0 {
+			countries[i].Percentage = float64(countries[i].Count) / float64(stats.TotalClicks) * 100
+		}
+		countries[i].CountryName = getCountryName(countries[i].Country)
+	}
+
+	cities, err := s.clickRepo.GetCityStats(ctx, linkID, 10)
+	if err != nil {
+		return nil, err
+	}
+	if cities == nil {
+		cities = []repository.CityStats{}
+	}
+	// Calculate percentages
+	for i := range cities {
+		if stats.TotalClicks > 0 {
+			cities[i].Percentage = float64(cities[i].Count) / float64(stats.TotalClicks) * 100
+		}
+	}
+
 	return &LinkStatsResponse{
 		TotalClicks:    stats.TotalClicks,
 		UniqueVisitors: stats.UniqueVisitors,
@@ -89,5 +124,23 @@ func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint
 		TopReferrers:   referrers,
 		DeviceStats:    devices,
 		BrowserStats:   browsers,
+		Locations: LocationStats{
+			Countries: countries,
+			Cities:    cities,
+		},
 	}, nil
+}
+
+func getCountryName(code string) string {
+	names := map[string]string{
+		"CN": "China", "US": "United States", "JP": "Japan", "GB": "United Kingdom",
+		"DE": "Germany", "FR": "France", "KR": "South Korea", "IN": "India",
+		"BR": "Brazil", "RU": "Russia", "CA": "Canada", "AU": "Australia",
+		"ES": "Spain", "IT": "Italy", "MX": "Mexico", "NL": "Netherlands",
+		"Unknown": "Unknown",
+	}
+	if name, ok := names[code]; ok {
+		return name
+	}
+	return code
 }
