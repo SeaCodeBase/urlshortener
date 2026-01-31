@@ -11,6 +11,7 @@ import (
 	"github.com/jose/urlshortener/internal/middleware"
 	"github.com/jose/urlshortener/internal/repository"
 	"github.com/jose/urlshortener/internal/service"
+	"github.com/jose/urlshortener/internal/worker"
 	"github.com/jose/urlshortener/pkg/logger"
 )
 
@@ -38,6 +39,12 @@ func main() {
 	// Setup repositories
 	userRepo := repository.NewUserRepository(db)
 	linkRepo := repository.NewLinkRepository(db)
+	clickRepo := repository.NewClickRepository(db)
+
+	// Start click flusher worker
+	clickFlusher := worker.NewClickFlusher(rdb, clickRepo)
+	clickFlusher.Start()
+	defer clickFlusher.Stop()
 
 	// Setup services
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret)
