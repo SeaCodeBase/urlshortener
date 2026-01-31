@@ -9,7 +9,7 @@ import (
 	"github.com/SeaCodeBase/urlshortener/internal/service"
 )
 
-func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
+func AuthMiddleware(authService service.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {

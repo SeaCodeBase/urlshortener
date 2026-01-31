@@ -14,11 +14,11 @@ import (
 )
 
 type LinkHandler struct {
-	linkService *service.LinkService
+	linkService service.LinkService
 	baseURL     string
 }
 
-func NewLinkHandler(linkService *service.LinkService, cfg *config.Config) *LinkHandler {
+func NewLinkHandler(linkService service.LinkService, cfg *config.Config) *LinkHandler {
 	return &LinkHandler{
 		linkService: linkService,
 		baseURL:     cfg.BaseURL,
