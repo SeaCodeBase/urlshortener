@@ -71,10 +71,11 @@ func main() {
 	}
 
 	// Setup handlers
-	authHandler := handler.NewAuthHandler(authService)
+	authHandler := handler.NewAuthHandler(authService, passkeyService)
 	linkHandler := handler.NewLinkHandler(linkService, cfg)
 	statsHandler := handler.NewStatsHandler(statsService)
 	passkeyHandler := handler.NewPasskeyHandler(passkeyService)
+	passkeyVerifyHandler := handler.NewPasskeyVerifyHandler(passkeyService, authService)
 
 	// Click service
 	clickService := service.NewClickService(rdb)
@@ -101,6 +102,10 @@ func main() {
 			auth.POST("/passkeys/register/finish", authMiddleware, passkeyHandler.FinishRegistration)
 			auth.PUT("/passkeys/:id", authMiddleware, passkeyHandler.Rename)
 			auth.DELETE("/passkeys/:id", authMiddleware, passkeyHandler.Delete)
+
+			// Passkey verification routes (public - used during login flow)
+			auth.POST("/passkeys/verify/begin", passkeyVerifyHandler.BeginVerify)
+			auth.POST("/passkeys/verify/finish", passkeyVerifyHandler.FinishVerify)
 		}
 
 		// Link routes (protected)

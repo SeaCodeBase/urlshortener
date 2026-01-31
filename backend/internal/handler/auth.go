@@ -11,11 +11,15 @@ import (
 )
 
 type AuthHandler struct {
-	authService service.AuthService
+	authService    service.AuthService
+	passkeyService service.PasskeyService
 }
 
-func NewAuthHandler(authService service.AuthService) *AuthHandler {
-	return &AuthHandler{authService: authService}
+func NewAuthHandler(authService service.AuthService, passkeyService service.PasskeyService) *AuthHandler {
+	return &AuthHandler{
+		authService:    authService,
+		passkeyService: passkeyService,
+	}
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {
@@ -38,6 +42,13 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, resp)
 }
 
+type LoginResponse struct {
+	Token           string      `json:"token,omitempty"`
+	User            interface{} `json:"user,omitempty"`
+	RequiresPasskey bool        `json:"requires_passkey,omitempty"`
+	UserID          uint64      `json:"user_id,omitempty"`
+}
+
 func (h *AuthHandler) Login(c *gin.Context) {
 	var input service.LoginInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -52,6 +63,21 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to login"})
+		return
+	}
+
+	// Check if user has passkeys
+	hasPasskeys, err := h.passkeyService.HasPasskeys(c.Request.Context(), resp.User.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check passkeys"})
+		return
+	}
+
+	if hasPasskeys {
+		c.JSON(http.StatusOK, LoginResponse{
+			RequiresPasskey: true,
+			UserID:          resp.User.ID,
+		})
 		return
 	}
 
