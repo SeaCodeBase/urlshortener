@@ -63,6 +63,13 @@ class ApiClient {
     return this.request<User>('/api/auth/me');
   }
 
+  async changePassword(oldPassword: string, newPassword: string) {
+    return this.request<{ message: string }>('/api/auth/password', {
+      method: 'PUT',
+      body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+    });
+  }
+
   // Links
   async getLinks(page = 1, limit = 20) {
     return this.request<LinksListResponse>(`/api/links?page=${page}&limit=${limit}`);

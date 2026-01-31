@@ -41,6 +41,14 @@ export default function DashboardLayout({
               <Link href="/dashboard" className="text-xl font-bold">
                 URL Shortener
               </Link>
+              <nav className="ml-8 flex gap-4">
+                <Link href="/dashboard" className="text-sm text-gray-600 hover:text-gray-900">
+                  Links
+                </Link>
+                <Link href="/dashboard/settings" className="text-sm text-gray-600 hover:text-gray-900">
+                  Settings
+                </Link>
+              </nav>
             </div>
             <div className="flex items-center gap-4">
               <span className="text-sm text-gray-600">{user.email}</span>
