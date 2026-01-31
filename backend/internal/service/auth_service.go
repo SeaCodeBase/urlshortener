@@ -17,13 +17,16 @@ var (
 	ErrWrongPassword      = errors.New("current password is incorrect")
 )
 
-type AuthService struct {
+// Compile-time check: AuthServiceImpl implements AuthService
+var _ AuthService = (*AuthServiceImpl)(nil)
+
+type AuthServiceImpl struct {
 	userRepo  repository.UserRepository
 	jwtSecret []byte
 }
 
-func NewAuthService(userRepo repository.UserRepository, jwtSecret string) *AuthService {
-	return &AuthService{
+func NewAuthService(userRepo repository.UserRepository, jwtSecret string) *AuthServiceImpl {
+	return &AuthServiceImpl{
 		userRepo:  userRepo,
 		jwtSecret: []byte(jwtSecret),
 	}
@@ -49,7 +52,7 @@ type AuthResponse struct {
 	User  *model.User `json:"user"`
 }
 
-func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*AuthResponse, error) {
+func (s *AuthServiceImpl) Register(ctx context.Context, input RegisterInput) (*AuthResponse, error) {
 	exists, err := s.userRepo.EmailExists(ctx, input.Email)
 	if err != nil {
 		return nil, err
@@ -80,7 +83,7 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*AuthR
 	return &AuthResponse{Token: token, User: user}, nil
 }
 
-func (s *AuthService) Login(ctx context.Context, input LoginInput) (*AuthResponse, error) {
+func (s *AuthServiceImpl) Login(ctx context.Context, input LoginInput) (*AuthResponse, error) {
 	user, err := s.userRepo.GetByEmail(ctx, input.Email)
 	if errors.Is(err, repository.ErrUserNotFound) {
 		return nil, ErrInvalidCredentials
@@ -101,11 +104,11 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*AuthRespons
 	return &AuthResponse{Token: token, User: user}, nil
 }
 
-func (s *AuthService) GetUserByID(ctx context.Context, userID uint64) (*model.User, error) {
+func (s *AuthServiceImpl) GetUserByID(ctx context.Context, userID uint64) (*model.User, error) {
 	return s.userRepo.GetByID(ctx, userID)
 }
 
-func (s *AuthService) ChangePassword(ctx context.Context, userID uint64, input ChangePasswordInput) error {
+func (s *AuthServiceImpl) ChangePassword(ctx context.Context, userID uint64, input ChangePasswordInput) error {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return err
@@ -123,7 +126,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uint64, input C
 	return s.userRepo.UpdatePassword(ctx, userID, string(newHash))
 }
 
-func (s *AuthService) generateToken(userID uint64) (string, error) {
+func (s *AuthServiceImpl) generateToken(userID uint64) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"exp":     time.Now().Add(24 * time.Hour).Unix(),
@@ -134,7 +137,7 @@ func (s *AuthService) generateToken(userID uint64) (string, error) {
 	return token.SignedString(s.jwtSecret)
 }
 
-func (s *AuthService) ValidateToken(tokenString string) (uint64, error) {
+func (s *AuthServiceImpl) ValidateToken(tokenString string) (uint64, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")

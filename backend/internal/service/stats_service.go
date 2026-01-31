@@ -6,13 +6,16 @@ import (
 	"github.com/SeaCodeBase/urlshortener/internal/repository"
 )
 
-type StatsService struct {
+// Compile-time check: StatsServiceImpl implements StatsService
+var _ StatsService = (*StatsServiceImpl)(nil)
+
+type StatsServiceImpl struct {
 	clickRepo repository.ClickRepository
-	linkRepo  LinkRepository
+	linkRepo  repository.LinkRepository
 }
 
-func NewStatsService(clickRepo repository.ClickRepository, linkRepo LinkRepository) *StatsService {
-	return &StatsService{
+func NewStatsService(clickRepo repository.ClickRepository, linkRepo repository.LinkRepository) *StatsServiceImpl {
+	return &StatsServiceImpl{
 		clickRepo: clickRepo,
 		linkRepo:  linkRepo,
 	}
@@ -27,7 +30,7 @@ type LinkStatsResponse struct {
 	BrowserStats   []repository.BrowserStats    `json:"browser_stats"`
 }
 
-func (s *StatsService) GetLinkStats(ctx context.Context, userID, linkID uint64) (*LinkStatsResponse, error) {
+func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint64) (*LinkStatsResponse, error) {
 	// Verify ownership
 	link, err := s.linkRepo.GetByID(ctx, linkID)
 	if err != nil {

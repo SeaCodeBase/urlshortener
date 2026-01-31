@@ -18,19 +18,22 @@ type ShortCodeRepository interface {
 	ShortCodeExists(ctx context.Context, code string) (bool, error)
 }
 
-type ShortCodeService struct {
+// Compile-time check: ShortCodeServiceImpl implements ShortCodeService
+var _ ShortCodeService = (*ShortCodeServiceImpl)(nil)
+
+type ShortCodeServiceImpl struct {
 	linkRepo ShortCodeRepository
 }
 
-func NewShortCodeService(linkRepo ShortCodeRepository) *ShortCodeService {
-	return &ShortCodeService{linkRepo: linkRepo}
+func NewShortCodeService(linkRepo ShortCodeRepository) *ShortCodeServiceImpl {
+	return &ShortCodeServiceImpl{linkRepo: linkRepo}
 }
 
-func (s *ShortCodeService) Generate(ctx context.Context) (string, error) {
+func (s *ShortCodeServiceImpl) Generate(ctx context.Context) (string, error) {
 	return s.generateWithLength(ctx, defaultLen)
 }
 
-func (s *ShortCodeService) generateWithLength(ctx context.Context, length int) (string, error) {
+func (s *ShortCodeServiceImpl) generateWithLength(ctx context.Context, length int) (string, error) {
 	for attempts := 0; attempts < maxGenerateAttempts; attempts++ {
 		code, err := generateRandomCode(length)
 		if err != nil {
@@ -50,7 +53,7 @@ func (s *ShortCodeService) generateWithLength(ctx context.Context, length int) (
 	return s.generateWithLength(ctx, length+1)
 }
 
-func (s *ShortCodeService) IsValid(code string) bool {
+func (s *ShortCodeServiceImpl) IsValid(code string) bool {
 	if len(code) < 4 || len(code) > 16 {
 		return false
 	}
@@ -62,7 +65,7 @@ func (s *ShortCodeService) IsValid(code string) bool {
 	return true
 }
 
-func (s *ShortCodeService) IsAvailable(ctx context.Context, code string) (bool, error) {
+func (s *ShortCodeServiceImpl) IsAvailable(ctx context.Context, code string) (bool, error) {
 	exists, err := s.linkRepo.ShortCodeExists(ctx, code)
 	return !exists, err
 }

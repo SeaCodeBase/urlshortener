@@ -19,23 +19,16 @@ var (
 
 const maxPageSize = 100
 
-// LinkRepository defines the interface for link persistence operations.
-type LinkRepository interface {
-	Create(ctx context.Context, link *model.Link) error
-	GetByID(ctx context.Context, id uint64) (*model.Link, error)
-	ListByUserID(ctx context.Context, userID uint64, limit, offset int) ([]model.Link, error)
-	CountByUserID(ctx context.Context, userID uint64) (int64, error)
-	Update(ctx context.Context, link *model.Link) error
-	Delete(ctx context.Context, id uint64) error
+// Compile-time check: LinkServiceImpl implements LinkService
+var _ LinkService = (*LinkServiceImpl)(nil)
+
+type LinkServiceImpl struct {
+	linkRepo  repository.LinkRepository
+	shortCode ShortCodeService
 }
 
-type LinkService struct {
-	linkRepo  LinkRepository
-	shortCode *ShortCodeService
-}
-
-func NewLinkService(linkRepo LinkRepository, shortCode *ShortCodeService) *LinkService {
-	return &LinkService{
+func NewLinkService(linkRepo repository.LinkRepository, shortCode ShortCodeService) *LinkServiceImpl {
+	return &LinkServiceImpl{
 		linkRepo:  linkRepo,
 		shortCode: shortCode,
 	}
@@ -67,7 +60,7 @@ type ListLinksResult struct {
 	TotalPages int          `json:"total_pages"`
 }
 
-func (s *LinkService) Create(ctx context.Context, userID uint64, input CreateLinkInput) (*model.Link, error) {
+func (s *LinkServiceImpl) Create(ctx context.Context, userID uint64, input CreateLinkInput) (*model.Link, error) {
 	var shortCode string
 	var err error
 
@@ -115,7 +108,7 @@ func (s *LinkService) Create(ctx context.Context, userID uint64, input CreateLin
 	return link, nil
 }
 
-func (s *LinkService) GetByID(ctx context.Context, userID, linkID uint64) (*model.Link, error) {
+func (s *LinkServiceImpl) GetByID(ctx context.Context, userID, linkID uint64) (*model.Link, error) {
 	link, err := s.linkRepo.GetByID(ctx, linkID)
 	if errors.Is(err, repository.ErrLinkNotFound) {
 		return nil, ErrLinkNotFound
@@ -131,7 +124,7 @@ func (s *LinkService) GetByID(ctx context.Context, userID, linkID uint64) (*mode
 	return link, nil
 }
 
-func (s *LinkService) List(ctx context.Context, userID uint64, params ListLinksParams) (*ListLinksResult, error) {
+func (s *LinkServiceImpl) List(ctx context.Context, userID uint64, params ListLinksParams) (*ListLinksResult, error) {
 	if params.Limit <= 0 {
 		params.Limit = 20
 	} else if params.Limit > maxPageSize {
@@ -166,7 +159,7 @@ func (s *LinkService) List(ctx context.Context, userID uint64, params ListLinksP
 	}, nil
 }
 
-func (s *LinkService) Update(ctx context.Context, userID, linkID uint64, input UpdateLinkInput) (*model.Link, error) {
+func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, input UpdateLinkInput) (*model.Link, error) {
 	link, err := s.GetByID(ctx, userID, linkID)
 	if err != nil {
 		return nil, err
@@ -192,7 +185,7 @@ func (s *LinkService) Update(ctx context.Context, userID, linkID uint64, input U
 	return link, nil
 }
 
-func (s *LinkService) Delete(ctx context.Context, userID, linkID uint64) error {
+func (s *LinkServiceImpl) Delete(ctx context.Context, userID, linkID uint64) error {
 	link, err := s.GetByID(ctx, userID, linkID)
 	if err != nil {
 		return err
