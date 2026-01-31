@@ -1,136 +1,125 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { LinkTable } from '@/components/links/LinkTable';
-import { api } from '@/lib/api';
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import { api } from '@/lib/api'
+import { Link as LinkType } from '@/types'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Link2, BarChart3, Plus, ArrowRight } from 'lucide-react'
 
 export default function DashboardPage() {
-  const [url, setUrl] = useState('');
-  const [customCode, setCustomCode] = useState('');
-  const [title, setTitle] = useState('');
-  const [expiresAt, setExpiresAt] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [links, setLinks] = useState<LinkType[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const handleQuickCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    try {
-      // Convert datetime-local to RFC3339 format
-      // datetime-local format: "2026-02-28T23:59"
-      // RFC3339 format needed: "2026-02-28T23:59:00Z"
-      const expiresAtRFC3339 = expiresAt ? expiresAt + ':00Z' : undefined;
-
-      await api.createLink({
-        original_url: url,
-        custom_code: customCode || undefined,
-        title: title || undefined,
-        expires_at: expiresAtRFC3339,
-      });
-      setUrl('');
-      setCustomCode('');
-      setTitle('');
-      setExpiresAt('');
-      setRefreshKey(k => k + 1);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create link');
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const data = await api.getLinks()
+        setLinks(data.links || [])
+      } catch (error) {
+        console.error('Failed to fetch data:', error)
+      } finally {
+        setLoading(false)
+      }
     }
-  };
+    fetchData()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-6">
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <Button asChild>
+          <Link href="/dashboard/links/create">
+            <Plus className="h-4 w-4 mr-2" />
+            Create new
+          </Link>
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-gray-500">Total Links</CardTitle>
+            <Link2 className="h-4 w-4 text-gray-400" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{links.length}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-gray-500">Active Links</CardTitle>
+            <Link2 className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{links.filter(l => l.is_active).length}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-gray-500">Total Clicks</CardTitle>
+            <BarChart3 className="h-4 w-4 text-gray-400" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">-</div>
+            <p className="text-xs text-gray-500">View analytics for details</p>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
-        <CardHeader>
-          <CardTitle>Create Short Link</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Recent Links</CardTitle>
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/dashboard/links">
+              View all
+              <ArrowRight className="h-4 w-4 ml-1" />
+            </Link>
+          </Button>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleQuickCreate} className="space-y-4">
-            <div className="flex gap-4">
-              <Input
-                type="url"
-                placeholder="Enter URL to shorten"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                className="flex-1"
-                required
-              />
-              <Button type="submit" disabled={loading}>
-                {loading ? 'Creating...' : 'Shorten'}
+          {links.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-gray-500 mb-4">No links yet. Create your first one!</p>
+              <Button asChild>
+                <Link href="/dashboard/links/create">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create your first link
+                </Link>
               </Button>
             </div>
-
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-            >
-              {showAdvanced ? 'Hide' : 'Show'} Advanced Options
-            </Button>
-
-            {showAdvanced && (
-              <div className="grid gap-4 pt-2 border-t">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="customCode">Custom Short Code (optional)</Label>
-                    <Input
-                      id="customCode"
-                      placeholder="my-custom-url"
-                      value={customCode}
-                      onChange={(e) => setCustomCode(e.target.value)}
-                      pattern="[a-zA-Z0-9]{3,16}"
-                      title="3-16 alphanumeric characters"
-                    />
-                    <p className="text-xs text-gray-500">3-16 alphanumeric characters</p>
+          ) : (
+            <div className="space-y-4">
+              {links.slice(0, 5).map((link) => (
+                <div key={link.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-900 truncate">{link.short_url}</p>
+                    <p className="text-sm text-gray-500 truncate">{link.original_url}</p>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="title">Title (optional)</Label>
-                    <Input
-                      id="title"
-                      placeholder="My Link Title"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                    />
-                  </div>
+                  <Link
+                    href={`/dashboard/links/${link.id}/stats`}
+                    className="text-sm text-primary hover:underline ml-4"
+                  >
+                    View stats
+                  </Link>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="expiresAt">Expires At (optional)</Label>
-                  <Input
-                    id="expiresAt"
-                    type="datetime-local"
-                    value={expiresAt}
-                    onChange={(e) => setExpiresAt(e.target.value)}
-                    min={new Date().toISOString().slice(0, 16)}
-                  />
-                </div>
-              </div>
-            )}
-
-            {error && (
-              <p className="text-sm text-red-500">{error}</p>
-            )}
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Your Links</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <LinkTable key={refreshKey} />
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
-  );
+  )
 }
