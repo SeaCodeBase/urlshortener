@@ -24,11 +24,16 @@ export default function DashboardPage() {
     setLoading(true);
 
     try {
+      // Convert datetime-local to RFC3339 format
+      // datetime-local format: "2026-02-28T23:59"
+      // RFC3339 format needed: "2026-02-28T23:59:00Z"
+      const expiresAtRFC3339 = expiresAt ? expiresAt + ':00Z' : undefined;
+
       await api.createLink({
         original_url: url,
         custom_code: customCode || undefined,
         title: title || undefined,
-        expires_at: expiresAt || undefined,
+        expires_at: expiresAtRFC3339,
       });
       setUrl('');
       setCustomCode('');
