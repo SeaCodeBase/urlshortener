@@ -63,10 +63,12 @@ func main() {
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret)
 	shortCodeSvc := service.NewShortCodeService(linkRepo)
 	linkService := service.NewLinkService(linkRepo, shortCodeSvc)
+	statsService := service.NewStatsService(clickRepo, linkRepo)
 
 	// Setup handlers
 	authHandler := handler.NewAuthHandler(authService)
 	linkHandler := handler.NewLinkHandler(linkService, cfg)
+	statsHandler := handler.NewStatsHandler(statsService)
 
 	// Click service
 	clickService := service.NewClickService(rdb)
@@ -96,6 +98,7 @@ func main() {
 			links.GET("/:id", linkHandler.Get)
 			links.PUT("/:id", linkHandler.Update)
 			links.DELETE("/:id", linkHandler.Delete)
+			links.GET("/:id/stats", statsHandler.GetLinkStats)
 		}
 	}
 
