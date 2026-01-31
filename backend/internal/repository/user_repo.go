@@ -13,15 +13,18 @@ import (
 var ErrUserNotFound = errors.New("user not found")
 var ErrEmailExists = errors.New("email already exists")
 
-type UserRepository struct {
+// Compile-time check: UserRepositoryImpl implements UserRepository
+var _ UserRepository = (*UserRepositoryImpl)(nil)
+
+type UserRepositoryImpl struct {
 	db *sqlx.DB
 }
 
-func NewUserRepository(db *sqlx.DB) *UserRepository {
-	return &UserRepository{db: db}
+func NewUserRepository(db *sqlx.DB) *UserRepositoryImpl {
+	return &UserRepositoryImpl{db: db}
 }
 
-func (r *UserRepository) Create(ctx context.Context, user *model.User) error {
+func (r *UserRepositoryImpl) Create(ctx context.Context, user *model.User) error {
 	query := `INSERT INTO users (email, password_hash) VALUES (?, ?)`
 	result, err := r.db.ExecContext(ctx, query, user.Email, user.PasswordHash)
 	if err != nil {
@@ -39,7 +42,7 @@ func (r *UserRepository) Create(ctx context.Context, user *model.User) error {
 	return nil
 }
 
-func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.User, error) {
+func (r *UserRepositoryImpl) GetByEmail(ctx context.Context, email string) (*model.User, error) {
 	var user model.User
 	query := `SELECT id, email, password_hash, created_at, updated_at FROM users WHERE email = ?`
 	err := r.db.GetContext(ctx, &user, query, email)
@@ -52,7 +55,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.U
 	return &user, nil
 }
 
-func (r *UserRepository) GetByID(ctx context.Context, id uint64) (*model.User, error) {
+func (r *UserRepositoryImpl) GetByID(ctx context.Context, id uint64) (*model.User, error) {
 	var user model.User
 	query := `SELECT id, email, password_hash, created_at, updated_at FROM users WHERE id = ?`
 	err := r.db.GetContext(ctx, &user, query, id)
@@ -65,7 +68,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id uint64) (*model.User, e
 	return &user, nil
 }
 
-func (r *UserRepository) EmailExists(ctx context.Context, email string) (bool, error) {
+func (r *UserRepositoryImpl) EmailExists(ctx context.Context, email string) (bool, error) {
 	var count int
 	query := `SELECT COUNT(*) FROM users WHERE email = ?`
 	err := r.db.GetContext(ctx, &count, query, email)
@@ -75,8 +78,8 @@ func (r *UserRepository) EmailExists(ctx context.Context, email string) (bool, e
 	return count > 0, nil
 }
 
-func (r *UserRepository) UpdatePassword(ctx context.Context, userID uint64, passwordHash string) error {
-	query := `UPDATE users SET password_hash = ? WHERE id = ?`
+func (r *UserRepositoryImpl) UpdatePassword(ctx context.Context, userID uint64, passwordHash string) error {
+	query := `UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?`
 	result, err := r.db.ExecContext(ctx, query, passwordHash, userID)
 	if err != nil {
 		return err

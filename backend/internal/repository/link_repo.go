@@ -13,15 +13,18 @@ import (
 var ErrLinkNotFound = errors.New("link not found")
 var ErrShortCodeExists = errors.New("short code already exists")
 
-type LinkRepository struct {
+// Compile-time check: LinkRepositoryImpl implements LinkRepository
+var _ LinkRepository = (*LinkRepositoryImpl)(nil)
+
+type LinkRepositoryImpl struct {
 	db *sqlx.DB
 }
 
-func NewLinkRepository(db *sqlx.DB) *LinkRepository {
-	return &LinkRepository{db: db}
+func NewLinkRepository(db *sqlx.DB) *LinkRepositoryImpl {
+	return &LinkRepositoryImpl{db: db}
 }
 
-func (r *LinkRepository) Create(ctx context.Context, link *model.Link) error {
+func (r *LinkRepositoryImpl) Create(ctx context.Context, link *model.Link) error {
 	query := `INSERT INTO links (user_id, short_code, original_url, title, expires_at, is_active)
 			  VALUES (?, ?, ?, ?, ?, ?)`
 	result, err := r.db.ExecContext(ctx, query,
@@ -40,7 +43,7 @@ func (r *LinkRepository) Create(ctx context.Context, link *model.Link) error {
 	return nil
 }
 
-func (r *LinkRepository) GetByID(ctx context.Context, id uint64) (*model.Link, error) {
+func (r *LinkRepositoryImpl) GetByID(ctx context.Context, id uint64) (*model.Link, error) {
 	var link model.Link
 	query := `SELECT id, user_id, short_code, original_url, title, expires_at, is_active, created_at, updated_at
 			  FROM links WHERE id = ?`
@@ -54,7 +57,7 @@ func (r *LinkRepository) GetByID(ctx context.Context, id uint64) (*model.Link, e
 	return &link, nil
 }
 
-func (r *LinkRepository) GetByShortCode(ctx context.Context, code string) (*model.Link, error) {
+func (r *LinkRepositoryImpl) GetByShortCode(ctx context.Context, code string) (*model.Link, error) {
 	var link model.Link
 	query := `SELECT id, user_id, short_code, original_url, title, expires_at, is_active, created_at, updated_at
 			  FROM links WHERE short_code = ?`
@@ -68,7 +71,7 @@ func (r *LinkRepository) GetByShortCode(ctx context.Context, code string) (*mode
 	return &link, nil
 }
 
-func (r *LinkRepository) ListByUserID(ctx context.Context, userID uint64, limit, offset int) ([]model.Link, error) {
+func (r *LinkRepositoryImpl) ListByUserID(ctx context.Context, userID uint64, limit, offset int) ([]model.Link, error) {
 	var links []model.Link
 	query := `SELECT id, user_id, short_code, original_url, title, expires_at, is_active, created_at, updated_at
 			  FROM links WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
@@ -76,7 +79,7 @@ func (r *LinkRepository) ListByUserID(ctx context.Context, userID uint64, limit,
 	return links, err
 }
 
-func (r *LinkRepository) Update(ctx context.Context, link *model.Link) error {
+func (r *LinkRepositoryImpl) Update(ctx context.Context, link *model.Link) error {
 	query := `UPDATE links SET original_url = ?, title = ?, expires_at = ?, is_active = ?, updated_at = NOW()
 			  WHERE id = ?`
 	result, err := r.db.ExecContext(ctx, query, link.OriginalURL, link.Title, link.ExpiresAt, link.IsActive, link.ID)
@@ -93,7 +96,7 @@ func (r *LinkRepository) Update(ctx context.Context, link *model.Link) error {
 	return nil
 }
 
-func (r *LinkRepository) Delete(ctx context.Context, id uint64) error {
+func (r *LinkRepositoryImpl) Delete(ctx context.Context, id uint64) error {
 	query := `DELETE FROM links WHERE id = ?`
 	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
@@ -109,14 +112,14 @@ func (r *LinkRepository) Delete(ctx context.Context, id uint64) error {
 	return nil
 }
 
-func (r *LinkRepository) ShortCodeExists(ctx context.Context, code string) (bool, error) {
+func (r *LinkRepositoryImpl) ShortCodeExists(ctx context.Context, code string) (bool, error) {
 	var count int
 	query := `SELECT COUNT(*) FROM links WHERE short_code = ?`
 	err := r.db.GetContext(ctx, &count, query, code)
 	return count > 0, err
 }
 
-func (r *LinkRepository) CountByUserID(ctx context.Context, userID uint64) (int64, error) {
+func (r *LinkRepositoryImpl) CountByUserID(ctx context.Context, userID uint64) (int64, error) {
 	var count int64
 	query := `SELECT COUNT(*) FROM links WHERE user_id = ?`
 	err := r.db.GetContext(ctx, &count, query, userID)
