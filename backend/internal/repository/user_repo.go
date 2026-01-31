@@ -44,7 +44,7 @@ func (r *UserRepositoryImpl) Create(ctx context.Context, user *model.User) error
 
 func (r *UserRepositoryImpl) GetByEmail(ctx context.Context, email string) (*model.User, error) {
 	var user model.User
-	query := `SELECT id, email, password_hash, created_at, updated_at FROM users WHERE email = ?`
+	query := `SELECT id, email, display_name, password_hash, created_at, updated_at FROM users WHERE email = ?`
 	err := r.db.GetContext(ctx, &user, query, email)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
@@ -57,7 +57,7 @@ func (r *UserRepositoryImpl) GetByEmail(ctx context.Context, email string) (*mod
 
 func (r *UserRepositoryImpl) GetByID(ctx context.Context, id uint64) (*model.User, error) {
 	var user model.User
-	query := `SELECT id, email, password_hash, created_at, updated_at FROM users WHERE id = ?`
+	query := `SELECT id, email, display_name, password_hash, created_at, updated_at FROM users WHERE id = ?`
 	err := r.db.GetContext(ctx, &user, query, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
@@ -92,4 +92,10 @@ func (r *UserRepositoryImpl) UpdatePassword(ctx context.Context, userID uint64, 
 		return ErrUserNotFound
 	}
 	return nil
+}
+
+func (r *UserRepositoryImpl) UpdateDisplayName(ctx context.Context, userID uint64, displayName string) error {
+	query := `UPDATE users SET display_name = ?, updated_at = NOW() WHERE id = ?`
+	_, err := r.db.ExecContext(ctx, query, displayName, userID)
+	return err
 }

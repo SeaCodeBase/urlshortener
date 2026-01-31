@@ -13,6 +13,7 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id uint64) (*model.User, error)
 	EmailExists(ctx context.Context, email string) (bool, error)
 	UpdatePassword(ctx context.Context, userID uint64, passwordHash string) error
+	UpdateDisplayName(ctx context.Context, userID uint64, displayName string) error
 }
 
 //go:generate mockgen -destination=mocks/mock_link_repo.go -package=mocks . LinkRepository
