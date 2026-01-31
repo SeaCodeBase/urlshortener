@@ -5,6 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/jose/urlshortener/internal/config"
+	"github.com/jose/urlshortener/internal/database"
 	"github.com/jose/urlshortener/pkg/logger"
 )
 
@@ -14,6 +15,12 @@ func main() {
 	cfg := config.Load()
 	logger.Init(true)
 	defer logger.Sync()
+
+	db, err := database.Connect(cfg)
+	if err != nil {
+		logger.Log.Fatalf("Database connection failed: %v", err)
+	}
+	defer db.Close()
 
 	r := gin.Default()
 
