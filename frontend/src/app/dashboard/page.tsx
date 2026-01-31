@@ -88,10 +88,10 @@ export default function DashboardPage() {
                       placeholder="my-custom-url"
                       value={customCode}
                       onChange={(e) => setCustomCode(e.target.value)}
-                      pattern="[a-zA-Z0-9]{4,16}"
-                      title="4-16 alphanumeric characters"
+                      pattern="[a-zA-Z0-9]{3,16}"
+                      title="3-16 alphanumeric characters"
                     />
-                    <p className="text-xs text-gray-500">4-16 alphanumeric characters</p>
+                    <p className="text-xs text-gray-500">3-16 alphanumeric characters</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="title">Title (optional)</Label>

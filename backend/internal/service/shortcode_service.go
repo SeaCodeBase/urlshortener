@@ -54,7 +54,7 @@ func (s *ShortCodeServiceImpl) generateWithLength(ctx context.Context, length in
 }
 
 func (s *ShortCodeServiceImpl) IsValid(code string) bool {
-	if len(code) < 4 || len(code) > 16 {
+	if len(code) < 3 || len(code) > 16 {
 		return false
 	}
 	for _, c := range code {
