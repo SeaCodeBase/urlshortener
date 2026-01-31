@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
+	"github.com/go-webauthn/webauthn/protocol"
 )
 
 //go:generate mockgen -destination=mocks/mock_auth_service.go -package=mocks . AuthService
@@ -34,4 +35,16 @@ type ShortCodeService interface {
 	Generate(ctx context.Context) (string, error)
 	IsValid(code string) bool
 	IsAvailable(ctx context.Context, code string) (bool, error)
+}
+
+//go:generate mockgen -destination=mocks/mock_passkey_service.go -package=mocks . PasskeyService
+type PasskeyService interface {
+	BeginRegistration(ctx context.Context, userID uint64) (*protocol.CredentialCreation, string, error)
+	FinishRegistration(ctx context.Context, userID uint64, sessionData string, credentialJSON []byte, name string) (*model.Passkey, error)
+	BeginLogin(ctx context.Context, userID uint64) (*protocol.CredentialAssertion, string, error)
+	FinishLogin(ctx context.Context, userID uint64, sessionData string, credentialJSON []byte) error
+	List(ctx context.Context, userID uint64) ([]model.Passkey, error)
+	Rename(ctx context.Context, userID, passkeyID uint64, name string) error
+	Delete(ctx context.Context, userID, passkeyID uint64) error
+	HasPasskeys(ctx context.Context, userID uint64) (bool, error)
 }
