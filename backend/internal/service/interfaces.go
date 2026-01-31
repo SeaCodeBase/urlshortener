@@ -14,6 +14,8 @@ type AuthService interface {
 	GetUserByID(ctx context.Context, userID uint64) (*model.User, error)
 	ValidateToken(tokenString string) (uint64, error)
 	ChangePassword(ctx context.Context, userID uint64, input ChangePasswordInput) error
+	UpdateDisplayName(ctx context.Context, userID uint64, displayName string) error
+	GenerateToken(userID uint64) (string, error)
 }
 
 //go:generate mockgen -destination=mocks/mock_link_service.go -package=mocks . LinkService

@@ -53,6 +53,7 @@ func main() {
 	userRepo := repository.NewUserRepository(db)
 	linkRepo := repository.NewLinkRepository(db)
 	clickRepo := repository.NewClickRepository(db)
+	passkeyRepo := repository.NewPasskeyRepository(db)
 
 	// Start click flusher worker
 	clickFlusher := worker.NewClickFlusher(rdb, clickRepo)
@@ -64,11 +65,16 @@ func main() {
 	shortCodeSvc := service.NewShortCodeService(linkRepo)
 	linkService := service.NewLinkService(linkRepo, shortCodeSvc)
 	statsService := service.NewStatsService(clickRepo, linkRepo)
+	passkeyService, err := service.NewPasskeyService(passkeyRepo, userRepo, cfg.RPID, cfg.RPOrigin, "URL Shortener")
+	if err != nil {
+		logger.Log.Fatalf("Failed to create passkey service: %v", err)
+	}
 
 	// Setup handlers
 	authHandler := handler.NewAuthHandler(authService)
 	linkHandler := handler.NewLinkHandler(linkService, cfg)
 	statsHandler := handler.NewStatsHandler(statsService)
+	passkeyHandler := handler.NewPasskeyHandler(passkeyService)
 
 	// Click service
 	clickService := service.NewClickService(rdb)
@@ -86,7 +92,15 @@ func main() {
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/login", authHandler.Login)
 			auth.GET("/me", authMiddleware, authHandler.Me)
+			auth.PUT("/me", authMiddleware, authHandler.UpdateMe)
 			auth.PUT("/password", authMiddleware, authHandler.ChangePassword)
+
+			// Passkey routes (protected)
+			auth.GET("/passkeys", authMiddleware, passkeyHandler.List)
+			auth.POST("/passkeys/register/begin", authMiddleware, passkeyHandler.BeginRegistration)
+			auth.POST("/passkeys/register/finish", authMiddleware, passkeyHandler.FinishRegistration)
+			auth.PUT("/passkeys/:id", authMiddleware, passkeyHandler.Rename)
+			auth.DELETE("/passkeys/:id", authMiddleware, passkeyHandler.Delete)
 		}
 
 		// Link routes (protected)

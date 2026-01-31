@@ -19,6 +19,8 @@ type Config struct {
 	RedisPassword string
 	JWTSecret     string
 	BaseURL       string
+	RPID          string
+	RPOrigin      string
 }
 
 func Load() (*Config, error) {
@@ -34,6 +36,8 @@ func Load() (*Config, error) {
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 		JWTSecret:     getEnv("JWT_SECRET", ""),
 		BaseURL:       getEnv("BASE_URL", "http://localhost:8080"),
+		RPID:          getEnv("RP_ID", "localhost"),
+		RPOrigin:      getEnv("RP_ORIGIN", "http://localhost:3000"),
 	}
 
 	if cfg.JWTSecret == "" {

@@ -126,6 +126,14 @@ func (s *AuthServiceImpl) ChangePassword(ctx context.Context, userID uint64, inp
 	return s.userRepo.UpdatePassword(ctx, userID, string(newHash))
 }
 
+func (s *AuthServiceImpl) UpdateDisplayName(ctx context.Context, userID uint64, displayName string) error {
+	return s.userRepo.UpdateDisplayName(ctx, userID, displayName)
+}
+
+func (s *AuthServiceImpl) GenerateToken(userID uint64) (string, error) {
+	return s.generateToken(userID)
+}
+
 func (s *AuthServiceImpl) generateToken(userID uint64) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,

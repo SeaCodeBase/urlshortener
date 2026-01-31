@@ -90,3 +90,26 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "password changed successfully"})
 }
+
+type UpdateMeRequest struct {
+	DisplayName string `json:"display_name"`
+}
+
+func (h *AuthHandler) UpdateMe(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	var req UpdateMeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	if err := h.authService.UpdateDisplayName(c.Request.Context(), userID, req.DisplayName); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update profile"})
+		return
+	}
+	user, err := h.authService.GetUserByID(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get user"})
+		return
+	}
+	c.JSON(http.StatusOK, user)
+}
