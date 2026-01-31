@@ -23,11 +23,11 @@ const (
 )
 
 type RedirectService struct {
-	linkRepo *repository.LinkRepository
+	linkRepo repository.LinkRepository
 	rdb      *redis.Client
 }
 
-func NewRedirectService(linkRepo *repository.LinkRepository, rdb *redis.Client) *RedirectService {
+func NewRedirectService(linkRepo repository.LinkRepository, rdb *redis.Client) *RedirectService {
 	return &RedirectService{
 		linkRepo: linkRepo,
 		rdb:      rdb,

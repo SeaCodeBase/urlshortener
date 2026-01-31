@@ -7,11 +7,11 @@ import (
 )
 
 type StatsService struct {
-	clickRepo *repository.ClickRepository
+	clickRepo repository.ClickRepository
 	linkRepo  LinkRepository
 }
 
-func NewStatsService(clickRepo *repository.ClickRepository, linkRepo LinkRepository) *StatsService {
+func NewStatsService(clickRepo repository.ClickRepository, linkRepo LinkRepository) *StatsService {
 	return &StatsService{
 		clickRepo: clickRepo,
 		linkRepo:  linkRepo,

@@ -15,14 +15,14 @@ import (
 
 type ClickFlusher struct {
 	rdb       *redis.Client
-	clickRepo *repository.ClickRepository
+	clickRepo repository.ClickRepository
 	interval  time.Duration
 	batchSize int
 	stopCh    chan struct{}
 	doneCh    chan struct{}
 }
 
-func NewClickFlusher(rdb *redis.Client, clickRepo *repository.ClickRepository) *ClickFlusher {
+func NewClickFlusher(rdb *redis.Client, clickRepo repository.ClickRepository) *ClickFlusher {
 	return &ClickFlusher{
 		rdb:       rdb,
 		clickRepo: clickRepo,
