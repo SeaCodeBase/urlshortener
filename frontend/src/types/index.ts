@@ -51,6 +51,25 @@ export interface BrowserStats {
   count: number;
 }
 
+export interface CountryStats {
+  code: string;
+  name: string;
+  clicks: number;
+  percentage: number;
+}
+
+export interface CityStats {
+  name: string;
+  country: string;
+  clicks: number;
+  percentage: number;
+}
+
+export interface LocationStats {
+  countries: CountryStats[];
+  cities: CityStats[];
+}
+
 export interface LinkStats {
   total_clicks: number;
   unique_visitors: number;
@@ -58,6 +77,7 @@ export interface LinkStats {
   top_referrers: ReferrerStats[];
   device_stats: DeviceStats[];
   browser_stats: BrowserStats[];
+  locations: LocationStats;
 }
 
 export interface Passkey {
