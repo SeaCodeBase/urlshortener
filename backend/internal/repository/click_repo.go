@@ -71,3 +71,20 @@ func (r *ClickRepositoryImpl) GetBrowserStats(ctx context.Context, linkID uint64
 	err := r.db.SelectContext(ctx, &stats, query, linkID)
 	return stats, err
 }
+
+func (r *ClickRepositoryImpl) GetCountryStats(ctx context.Context, linkID uint64, limit int) ([]CountryStats, error) {
+	var stats []CountryStats
+	query := `SELECT COALESCE(NULLIF(country, ''), 'Unknown') as country, COUNT(*) as count
+			  FROM clicks WHERE link_id = ? GROUP BY country ORDER BY count DESC LIMIT ?`
+	err := r.db.SelectContext(ctx, &stats, query, linkID, limit)
+	return stats, err
+}
+
+func (r *ClickRepositoryImpl) GetCityStats(ctx context.Context, linkID uint64, limit int) ([]CityStats, error) {
+	var stats []CityStats
+	query := `SELECT COALESCE(NULLIF(city, ''), 'Unknown') as city,
+			  COALESCE(NULLIF(country, ''), 'Unknown') as country, COUNT(*) as count
+			  FROM clicks WHERE link_id = ? GROUP BY city, country ORDER BY count DESC LIMIT ?`
+	err := r.db.SelectContext(ctx, &stats, query, linkID, limit)
+	return stats, err
+}

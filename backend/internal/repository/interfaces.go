@@ -49,6 +49,8 @@ type ClickRepository interface {
 	GetTopReferrers(ctx context.Context, linkID uint64, limit int) ([]ReferrerStats, error)
 	GetDeviceStats(ctx context.Context, linkID uint64) ([]DeviceStats, error)
 	GetBrowserStats(ctx context.Context, linkID uint64) ([]BrowserStats, error)
+	GetCountryStats(ctx context.Context, linkID uint64, limit int) ([]CountryStats, error)
+	GetCityStats(ctx context.Context, linkID uint64, limit int) ([]CityStats, error)
 }
 
 // Stats types used by ClickRepository
@@ -75,4 +77,18 @@ type DeviceStats struct {
 type BrowserStats struct {
 	Browser string `db:"browser" json:"browser"`
 	Count   int64  `db:"count" json:"count"`
+}
+
+type CountryStats struct {
+	Country     string  `db:"country" json:"code"`
+	CountryName string  `json:"name"`
+	Count       int64   `db:"count" json:"clicks"`
+	Percentage  float64 `json:"percentage"`
+}
+
+type CityStats struct {
+	City       string  `db:"city" json:"name"`
+	Country    string  `db:"country" json:"country"`
+	Count      int64   `db:"count" json:"clicks"`
+	Percentage float64 `json:"percentage"`
 }
