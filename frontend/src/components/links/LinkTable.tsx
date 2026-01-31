@@ -87,6 +87,7 @@ export function LinkTable() {
           <TableHead>Short URL</TableHead>
           <TableHead>Original URL</TableHead>
           <TableHead>Created</TableHead>
+          <TableHead>Expires</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Actions</TableHead>
         </TableRow>
@@ -118,6 +119,15 @@ export function LinkTable() {
             </TableCell>
             <TableCell>
               {new Date(link.created_at).toLocaleDateString()}
+            </TableCell>
+            <TableCell>
+              {link.expires_at ? (
+                <span className={new Date(link.expires_at) < new Date() ? 'text-red-500' : ''}>
+                  {new Date(link.expires_at).toLocaleDateString()}
+                </span>
+              ) : (
+                <span className="text-gray-400">Never</span>
+              )}
             </TableCell>
             <TableCell>
               <span
