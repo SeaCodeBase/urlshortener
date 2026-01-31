@@ -64,6 +64,7 @@ func (h *RedirectHandler) Redirect(c *gin.Context) {
 			LinkID:      linkID,
 			ClickedAt:   time.Now().UTC(),
 			IPHash:      h.hashIP(c.ClientIP()),
+			IPAddress:   c.ClientIP(),
 			UserAgent:   c.GetHeader("User-Agent"),
 			Referrer:    c.GetHeader("Referer"),
 			UTMSource:   c.Query("utm_source"),

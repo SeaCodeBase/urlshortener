@@ -15,6 +15,7 @@ type ClickEvent struct {
 	LinkID      uint64    `json:"link_id"`
 	ClickedAt   time.Time `json:"clicked_at"`
 	IPHash      string    `json:"ip_hash"`
+	IPAddress   string    `json:"ip_address"`
 	UserAgent   string    `json:"user_agent"`
 	Referrer    string    `json:"referrer"`
 	UTMSource   string    `json:"utm_source,omitempty"`
