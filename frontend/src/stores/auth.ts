@@ -11,6 +11,7 @@ interface AuthState {
   register: (email: string, password: string) => Promise<void>;
   logout: () => void;
   checkAuth: () => Promise<void>;
+  setAuth: (token: string, user: User) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -51,6 +52,11 @@ export const useAuthStore = create<AuthState>()(
         } catch {
           set({ user: null, token: null, isLoading: false });
         }
+      },
+
+      setAuth: (token: string, user: User) => {
+        api.setToken(token);
+        set({ user, token });
       },
     }),
     {

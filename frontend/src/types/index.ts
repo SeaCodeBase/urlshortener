@@ -59,3 +59,11 @@ export interface LinkStats {
   device_stats: DeviceStats[];
   browser_stats: BrowserStats[];
 }
+
+export interface Passkey {
+  id: number;
+  user_id: number;
+  name: string;
+  created_at: string;
+  last_used_at?: string;
+}

@@ -1,12 +1,16 @@
--- backend/migrations/001_initial_schema.sql
+-- Consolidated database schema for URL Shortener
+
+-- Users table
 CREATE TABLE IF NOT EXISTS users (
     id              BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
     email           VARCHAR(255) NOT NULL UNIQUE,
+    display_name    VARCHAR(255) DEFAULT NULL,
     password_hash   VARCHAR(255) NOT NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+-- Links table
 CREATE TABLE IF NOT EXISTS links (
     id              BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
     user_id         BIGINT UNSIGNED NOT NULL,
@@ -22,6 +26,7 @@ CREATE TABLE IF NOT EXISTS links (
     INDEX idx_user_id (user_id)
 );
 
+-- Clicks table
 CREATE TABLE IF NOT EXISTS clicks (
     id              BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
     link_id         BIGINT UNSIGNED NOT NULL,
@@ -40,6 +45,7 @@ CREATE TABLE IF NOT EXISTS clicks (
     INDEX idx_link_clicked (link_id, clicked_at)
 );
 
+-- Daily stats table
 CREATE TABLE IF NOT EXISTS link_stats_daily (
     link_id         BIGINT UNSIGNED NOT NULL,
     date            DATE NOT NULL,
@@ -47,4 +53,18 @@ CREATE TABLE IF NOT EXISTS link_stats_daily (
     unique_visitors INT UNSIGNED DEFAULT 0,
     PRIMARY KEY (link_id, date),
     FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE
+);
+
+-- Passkeys table for WebAuthn 2FA
+CREATE TABLE IF NOT EXISTS passkeys (
+    id              BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+    user_id         BIGINT UNSIGNED NOT NULL,
+    name            VARCHAR(255) NOT NULL,
+    credential_id   VARBINARY(1024) NOT NULL,
+    public_key      VARBINARY(1024) NOT NULL,
+    counter         INT UNSIGNED NOT NULL DEFAULT 0,
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_used_at    TIMESTAMP NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_credential (credential_id(255))
 );

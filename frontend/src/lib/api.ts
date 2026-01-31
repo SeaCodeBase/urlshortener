@@ -1,4 +1,5 @@
-import type { AuthResponse, User, Link, LinksListResponse, LinkStats } from '@/types';
+import type { AuthResponse, User, Link, LinksListResponse, LinkStats, Passkey } from '@/types';
+import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
@@ -106,6 +107,41 @@ class ApiClient {
 
   async getLinkStats(id: number) {
     return this.request<LinkStats>(`/api/links/${id}/stats`);
+  }
+
+  // Profile
+  async updateProfile(displayName: string): Promise<User> {
+    return this.request('/api/auth/me', {
+      method: 'PUT',
+      body: JSON.stringify({ display_name: displayName }),
+    });
+  }
+
+  // Passkeys
+  async getPasskeys(): Promise<Passkey[]> {
+    return this.request('/api/auth/passkeys');
+  }
+
+  async beginPasskeyRegistration(): Promise<{ options: { publicKey: PublicKeyCredentialCreationOptionsJSON }; session_data: string }> {
+    return this.request('/api/auth/passkeys/register/begin', { method: 'POST' });
+  }
+
+  async renamePasskey(id: number, name: string): Promise<void> {
+    return this.request(`/api/auth/passkeys/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  async deletePasskey(id: number): Promise<void> {
+    return this.request(`/api/auth/passkeys/${id}`, { method: 'DELETE' });
+  }
+
+  async beginPasskeyVerify(userId: number): Promise<{ options: { publicKey: PublicKeyCredentialRequestOptionsJSON }; session_data: string }> {
+    return this.request('/api/auth/passkeys/verify/begin', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    });
   }
 }
 
