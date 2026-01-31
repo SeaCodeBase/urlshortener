@@ -1,7 +1,6 @@
 package model
 
 import (
-	"database/sql"
 	"time"
 )
 
@@ -11,7 +10,7 @@ type Link struct {
 	ShortCode   string       `db:"short_code" json:"short_code"`
 	OriginalURL string       `db:"original_url" json:"original_url"`
 	Title       *string      `db:"title" json:"title,omitempty"`
-	ExpiresAt   sql.NullTime `db:"expires_at" json:"expires_at,omitempty"`
+	ExpiresAt   NullTime `db:"expires_at" json:"expires_at"`
 	IsActive    bool         `db:"is_active" json:"is_active"`
 	CreatedAt   time.Time    `db:"created_at" json:"created_at"`
 	UpdatedAt   time.Time    `db:"updated_at" json:"updated_at"`

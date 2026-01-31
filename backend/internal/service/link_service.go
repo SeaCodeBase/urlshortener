@@ -95,7 +95,7 @@ func (s *LinkServiceImpl) Create(ctx context.Context, userID uint64, input Creat
 	}
 
 	if input.ExpiresAt != nil {
-		link.ExpiresAt = sql.NullTime{Time: *input.ExpiresAt, Valid: true}
+		link.ExpiresAt = model.NullTime{NullTime: sql.NullTime{Time: *input.ExpiresAt, Valid: true}}
 	}
 
 	if err := s.linkRepo.Create(ctx, link); err != nil {
@@ -172,7 +172,7 @@ func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, inp
 		link.Title = &input.Title
 	}
 	if input.ExpiresAt != nil {
-		link.ExpiresAt = sql.NullTime{Time: *input.ExpiresAt, Valid: true}
+		link.ExpiresAt = model.NullTime{NullTime: sql.NullTime{Time: *input.ExpiresAt, Valid: true}}
 	}
 	if input.IsActive != nil {
 		link.IsActive = *input.IsActive
