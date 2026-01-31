@@ -37,12 +37,16 @@ func main() {
 
 	// Setup repositories
 	userRepo := repository.NewUserRepository(db)
+	linkRepo := repository.NewLinkRepository(db)
 
 	// Setup services
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret)
+	shortCodeSvc := service.NewShortCodeService(linkRepo)
+	linkService := service.NewLinkService(linkRepo, shortCodeSvc)
 
 	// Setup handlers
 	authHandler := handler.NewAuthHandler(authService)
+	linkHandler := handler.NewLinkHandler(linkService, cfg)
 
 	// Routes
 	api := r.Group("/api")
@@ -52,6 +56,17 @@ func main() {
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/login", authHandler.Login)
 			auth.GET("/me", middleware.AuthMiddleware(authService), authHandler.Me)
+		}
+
+		// Link routes (protected)
+		links := api.Group("/links")
+		links.Use(middleware.AuthMiddleware(authService))
+		{
+			links.POST("", linkHandler.Create)
+			links.GET("", linkHandler.List)
+			links.GET("/:id", linkHandler.Get)
+			links.PUT("/:id", linkHandler.Update)
+			links.DELETE("/:id", linkHandler.Delete)
 		}
 	}
 
