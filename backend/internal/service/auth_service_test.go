@@ -122,3 +122,77 @@ func TestAuthService_ValidateToken(t *testing.T) {
 		t.Errorf("Expected user ID %d, got %d", resp.User.ID, userID)
 	}
 }
+
+func TestAuthService_ChangePassword(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+
+	userRepo := repository.NewUserRepository(db)
+	authService := service.NewAuthService(userRepo, "test-secret")
+
+	ctx := context.Background()
+
+	// Register first
+	registerInput := service.RegisterInput{
+		Email:    "test@example.com",
+		Password: "password123",
+	}
+	resp, err := authService.Register(ctx, registerInput)
+	if err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	// Change password
+	changeInput := service.ChangePasswordInput{
+		OldPassword: "password123",
+		NewPassword: "newpassword456",
+	}
+	err = authService.ChangePassword(ctx, resp.User.ID, changeInput)
+	if err != nil {
+		t.Fatalf("ChangePassword failed: %v", err)
+	}
+
+	// Verify old password no longer works
+	loginInput := service.LoginInput{
+		Email:    "test@example.com",
+		Password: "password123",
+	}
+	_, err = authService.Login(ctx, loginInput)
+	if err != service.ErrInvalidCredentials {
+		t.Errorf("Expected old password to be invalid, got %v", err)
+	}
+
+	// Verify new password works
+	loginInput.Password = "newpassword456"
+	_, err = authService.Login(ctx, loginInput)
+	if err != nil {
+		t.Errorf("Expected new password to work, got %v", err)
+	}
+}
+
+func TestAuthService_ChangePassword_WrongOldPassword(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+
+	userRepo := repository.NewUserRepository(db)
+	authService := service.NewAuthService(userRepo, "test-secret")
+
+	ctx := context.Background()
+
+	// Register
+	registerInput := service.RegisterInput{
+		Email:    "test@example.com",
+		Password: "password123",
+	}
+	resp, _ := authService.Register(ctx, registerInput)
+
+	// Try to change with wrong old password
+	changeInput := service.ChangePasswordInput{
+		OldPassword: "wrongpassword",
+		NewPassword: "newpassword456",
+	}
+	err := authService.ChangePassword(ctx, resp.User.ID, changeInput)
+	if err != service.ErrWrongPassword {
+		t.Errorf("Expected ErrWrongPassword, got %v", err)
+	}
+}

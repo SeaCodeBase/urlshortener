@@ -142,3 +142,50 @@ func TestUserRepository_EmailExists(t *testing.T) {
 		t.Error("Expected email to exist")
 	}
 }
+
+func TestUserRepository_UpdatePassword(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+
+	repo := repository.NewUserRepository(db)
+	ctx := context.Background()
+
+	// Create user first
+	user := &model.User{
+		Email:        "test@example.com",
+		PasswordHash: "old_hash",
+	}
+	err := repo.Create(ctx, user)
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	// Update password
+	err = repo.UpdatePassword(ctx, user.ID, "new_hash")
+	if err != nil {
+		t.Fatalf("UpdatePassword failed: %v", err)
+	}
+
+	// Verify password was updated
+	found, err := repo.GetByID(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("GetByID failed: %v", err)
+	}
+
+	if found.PasswordHash != "new_hash" {
+		t.Errorf("Expected password hash 'new_hash', got '%s'", found.PasswordHash)
+	}
+}
+
+func TestUserRepository_UpdatePassword_NotFound(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+
+	repo := repository.NewUserRepository(db)
+	ctx := context.Background()
+
+	err := repo.UpdatePassword(ctx, 99999, "new_hash")
+	if err != repository.ErrUserNotFound {
+		t.Errorf("Expected ErrUserNotFound, got %v", err)
+	}
+}

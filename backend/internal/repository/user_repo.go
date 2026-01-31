@@ -74,3 +74,19 @@ func (r *UserRepository) EmailExists(ctx context.Context, email string) (bool, e
 	}
 	return count > 0, nil
 }
+
+func (r *UserRepository) UpdatePassword(ctx context.Context, userID uint64, passwordHash string) error {
+	query := `UPDATE users SET password_hash = ? WHERE id = ?`
+	result, err := r.db.ExecContext(ctx, query, passwordHash, userID)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}

@@ -78,16 +78,18 @@ func main() {
 	// Routes
 	api := r.Group("/api")
 	{
+		authMiddleware := middleware.AuthMiddleware(authService)
 		auth := api.Group("/auth")
 		{
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/login", authHandler.Login)
-			auth.GET("/me", middleware.AuthMiddleware(authService), authHandler.Me)
+			auth.GET("/me", authMiddleware, authHandler.Me)
+			auth.PUT("/password", authMiddleware, authHandler.ChangePassword)
 		}
 
 		// Link routes (protected)
 		links := api.Group("/links")
-		links.Use(middleware.AuthMiddleware(authService))
+		links.Use(authMiddleware)
 		{
 			links.POST("", linkHandler.Create)
 			links.GET("", linkHandler.List)

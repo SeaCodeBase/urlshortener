@@ -14,6 +14,7 @@ import (
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrEmailTaken         = errors.New("email already taken")
+	ErrWrongPassword      = errors.New("current password is incorrect")
 )
 
 type AuthService struct {
@@ -36,6 +37,11 @@ type RegisterInput struct {
 type LoginInput struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
+}
+
+type ChangePasswordInput struct {
+	OldPassword string `json:"old_password" binding:"required,min=8"`
+	NewPassword string `json:"new_password" binding:"required,min=8"`
 }
 
 type AuthResponse struct {
@@ -97,6 +103,24 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*AuthRespons
 
 func (s *AuthService) GetUserByID(ctx context.Context, userID uint64) (*model.User, error) {
 	return s.userRepo.GetByID(ctx, userID)
+}
+
+func (s *AuthService) ChangePassword(ctx context.Context, userID uint64, input ChangePasswordInput) error {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.OldPassword)); err != nil {
+		return ErrWrongPassword
+	}
+
+	newHash, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	return s.userRepo.UpdatePassword(ctx, userID, string(newHash))
 }
 
 func (s *AuthService) generateToken(userID uint64) (string, error) {
