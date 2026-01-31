@@ -2,6 +2,7 @@
 package main
 
 import (
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/jose/urlshortener/internal/cache"
@@ -18,7 +19,11 @@ import (
 func main() {
 	_ = godotenv.Load()
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Init(true)
+		logger.Log.Fatalf("Configuration error: %v", err)
+	}
 	logger.Init(true)
 	defer logger.Sync()
 
@@ -35,6 +40,14 @@ func main() {
 	defer rdb.Close()
 
 	r := gin.Default()
+
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:3000", "http://frontend:3000"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+	}))
 
 	// Setup repositories
 	userRepo := repository.NewUserRepository(db)
