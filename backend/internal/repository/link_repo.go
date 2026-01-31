@@ -40,6 +40,15 @@ func (r *LinkRepositoryImpl) Create(ctx context.Context, link *model.Link) error
 		return err
 	}
 	link.ID = uint64(id)
+
+	// Fetch the created record to get DB-generated timestamps
+	created, err := r.GetByID(ctx, link.ID)
+	if err != nil {
+		return err
+	}
+	link.CreatedAt = created.CreatedAt
+	link.UpdatedAt = created.UpdatedAt
+
 	return nil
 }
 
