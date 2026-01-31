@@ -7,8 +7,8 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
-	"github.com/jose/urlshortener/internal/config"
-	"github.com/jose/urlshortener/pkg/logger"
+	"github.com/SeaCodeBase/urlshortener/internal/config"
+	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 )
 
 func Connect(cfg *config.Config) (*sqlx.DB, error) {

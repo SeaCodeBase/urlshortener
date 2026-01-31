@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jose/urlshortener/internal/repository"
-	"github.com/jose/urlshortener/internal/service"
-	"github.com/jose/urlshortener/internal/testutil"
+	"github.com/SeaCodeBase/urlshortener/internal/repository"
+	"github.com/SeaCodeBase/urlshortener/internal/service"
+	"github.com/SeaCodeBase/urlshortener/internal/testutil"
 )
 
 func TestAuthService_Register(t *testing.T) {

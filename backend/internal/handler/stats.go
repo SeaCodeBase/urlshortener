@@ -6,9 +6,9 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jose/urlshortener/internal/middleware"
-	"github.com/jose/urlshortener/internal/repository"
-	"github.com/jose/urlshortener/internal/service"
+	"github.com/SeaCodeBase/urlshortener/internal/middleware"
+	"github.com/SeaCodeBase/urlshortener/internal/repository"
+	"github.com/SeaCodeBase/urlshortener/internal/service"
 )
 
 type StatsHandler struct {

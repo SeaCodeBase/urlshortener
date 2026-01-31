@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jose/urlshortener/internal/service"
+	"github.com/SeaCodeBase/urlshortener/internal/service"
 )
 
 // mockShortCodeRepository is a mock implementation of ShortCodeRepository for testing.

@@ -6,8 +6,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/jose/urlshortener/internal/model"
-	"github.com/jose/urlshortener/internal/repository"
+	"github.com/SeaCodeBase/urlshortener/internal/model"
+	"github.com/SeaCodeBase/urlshortener/internal/repository"
 )
 
 var (

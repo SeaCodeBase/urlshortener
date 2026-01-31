@@ -6,8 +6,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jose/urlshortener/internal/middleware"
-	"github.com/jose/urlshortener/internal/service"
+	"github.com/SeaCodeBase/urlshortener/internal/middleware"
+	"github.com/SeaCodeBase/urlshortener/internal/service"
 )
 
 type AuthHandler struct {

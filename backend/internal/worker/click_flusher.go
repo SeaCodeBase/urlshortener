@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/jose/urlshortener/internal/model"
-	"github.com/jose/urlshortener/internal/repository"
-	"github.com/jose/urlshortener/internal/service"
-	"github.com/jose/urlshortener/pkg/logger"
+	"github.com/SeaCodeBase/urlshortener/internal/model"
+	"github.com/SeaCodeBase/urlshortener/internal/repository"
+	"github.com/SeaCodeBase/urlshortener/internal/service"
+	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 	"github.com/redis/go-redis/v9"
 )
 

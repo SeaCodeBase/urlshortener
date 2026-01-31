@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jose/urlshortener/internal/config"
-	"github.com/jose/urlshortener/pkg/logger"
+	"github.com/SeaCodeBase/urlshortener/internal/config"
+	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 	"github.com/redis/go-redis/v9"
 )
 

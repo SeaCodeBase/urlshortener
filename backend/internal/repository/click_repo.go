@@ -5,7 +5,7 @@ import (
 	"context"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/jose/urlshortener/internal/model"
+	"github.com/SeaCodeBase/urlshortener/internal/model"
 )
 
 type ClickRepository struct {

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jose/urlshortener/internal/service"
+	"github.com/SeaCodeBase/urlshortener/internal/service"
 )
 
 func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {

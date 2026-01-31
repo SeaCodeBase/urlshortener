@@ -7,10 +7,10 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jose/urlshortener/internal/config"
-	"github.com/jose/urlshortener/internal/middleware"
-	"github.com/jose/urlshortener/internal/model"
-	"github.com/jose/urlshortener/internal/service"
+	"github.com/SeaCodeBase/urlshortener/internal/config"
+	"github.com/SeaCodeBase/urlshortener/internal/middleware"
+	"github.com/SeaCodeBase/urlshortener/internal/model"
+	"github.com/SeaCodeBase/urlshortener/internal/service"
 )
 
 type LinkHandler struct {

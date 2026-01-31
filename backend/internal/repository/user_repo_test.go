@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jose/urlshortener/internal/model"
-	"github.com/jose/urlshortener/internal/repository"
-	"github.com/jose/urlshortener/internal/testutil"
+	"github.com/SeaCodeBase/urlshortener/internal/model"
+	"github.com/SeaCodeBase/urlshortener/internal/repository"
+	"github.com/SeaCodeBase/urlshortener/internal/testutil"
 )
 
 func TestUserRepository_Create(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/jose/urlshortener/internal/model"
+	"github.com/SeaCodeBase/urlshortener/internal/model"
 )
 
 var ErrLinkNotFound = errors.New("link not found")

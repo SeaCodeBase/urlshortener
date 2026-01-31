@@ -7,8 +7,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/jose/urlshortener/pkg/logger"
-	"github.com/jose/urlshortener/internal/repository"
+	"github.com/SeaCodeBase/urlshortener/pkg/logger"
+	"github.com/SeaCodeBase/urlshortener/internal/repository"
 	"github.com/redis/go-redis/v9"
 )
 

@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/jose/urlshortener/internal/model"
-	"github.com/jose/urlshortener/internal/repository"
+	"github.com/SeaCodeBase/urlshortener/internal/model"
+	"github.com/SeaCodeBase/urlshortener/internal/repository"
 	"golang.org/x/crypto/bcrypt"
 )
 

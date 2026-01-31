@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/jose/urlshortener/internal/model"
+	"github.com/SeaCodeBase/urlshortener/internal/model"
 )
 
 var ErrUserNotFound = errors.New("user not found")

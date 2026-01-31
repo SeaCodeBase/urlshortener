@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jose/urlshortener/internal/service"
-	"github.com/jose/urlshortener/pkg/logger"
+	"github.com/SeaCodeBase/urlshortener/internal/service"
+	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 )
 
 type RedirectHandler struct {

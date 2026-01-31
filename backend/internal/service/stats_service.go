@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 
-	"github.com/jose/urlshortener/internal/repository"
+	"github.com/SeaCodeBase/urlshortener/internal/repository"
 )
 
 type StatsService struct {
