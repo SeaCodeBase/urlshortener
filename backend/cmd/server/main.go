@@ -7,6 +7,10 @@ import (
 	"github.com/jose/urlshortener/internal/cache"
 	"github.com/jose/urlshortener/internal/config"
 	"github.com/jose/urlshortener/internal/database"
+	"github.com/jose/urlshortener/internal/handler"
+	"github.com/jose/urlshortener/internal/middleware"
+	"github.com/jose/urlshortener/internal/repository"
+	"github.com/jose/urlshortener/internal/service"
 	"github.com/jose/urlshortener/pkg/logger"
 )
 
@@ -30,6 +34,26 @@ func main() {
 	defer rdb.Close()
 
 	r := gin.Default()
+
+	// Setup repositories
+	userRepo := repository.NewUserRepository(db)
+
+	// Setup services
+	authService := service.NewAuthService(userRepo, cfg.JWTSecret)
+
+	// Setup handlers
+	authHandler := handler.NewAuthHandler(authService)
+
+	// Routes
+	api := r.Group("/api")
+	{
+		auth := api.Group("/auth")
+		{
+			auth.POST("/register", authHandler.Register)
+			auth.POST("/login", authHandler.Login)
+			auth.GET("/me", middleware.AuthMiddleware(authService), authHandler.Me)
+		}
+	}
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
