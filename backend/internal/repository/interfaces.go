@@ -28,6 +28,18 @@ type LinkRepository interface {
 	ShortCodeExists(ctx context.Context, shortCode string) (bool, error)
 }
 
+//go:generate mockgen -destination=mocks/mock_passkey_repo.go -package=mocks . PasskeyRepository
+type PasskeyRepository interface {
+	Create(ctx context.Context, passkey *model.Passkey) error
+	GetByCredentialID(ctx context.Context, credentialID []byte) (*model.Passkey, error)
+	ListByUserID(ctx context.Context, userID uint64) ([]model.Passkey, error)
+	UpdateCounter(ctx context.Context, id uint64, counter uint32) error
+	UpdateLastUsedAt(ctx context.Context, id uint64) error
+	UpdateName(ctx context.Context, id uint64, name string) error
+	Delete(ctx context.Context, id uint64) error
+	CountByUserID(ctx context.Context, userID uint64) (int, error)
+}
+
 //go:generate mockgen -destination=mocks/mock_click_repo.go -package=mocks . ClickRepository
 type ClickRepository interface {
 	BatchInsert(ctx context.Context, clicks []model.Click) error
