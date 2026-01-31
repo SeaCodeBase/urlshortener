@@ -50,20 +50,36 @@ func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint
 	if err != nil {
 		return nil, err
 	}
+	// Ensure non-nil slice for JSON serialization
+	if daily == nil {
+		daily = []repository.DailyClickStats{}
+	}
 
 	referrers, err := s.clickRepo.GetTopReferrers(ctx, linkID, 10)
 	if err != nil {
 		return nil, err
+	}
+	// Ensure non-nil slice for JSON serialization
+	if referrers == nil {
+		referrers = []repository.ReferrerStats{}
 	}
 
 	devices, err := s.clickRepo.GetDeviceStats(ctx, linkID)
 	if err != nil {
 		return nil, err
 	}
+	// Ensure non-nil slice for JSON serialization
+	if devices == nil {
+		devices = []repository.DeviceStats{}
+	}
 
 	browsers, err := s.clickRepo.GetBrowserStats(ctx, linkID)
 	if err != nil {
 		return nil, err
+	}
+	// Ensure non-nil slice for JSON serialization
+	if browsers == nil {
+		browsers = []repository.BrowserStats{}
 	}
 
 	return &LinkStatsResponse{
