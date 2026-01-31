@@ -4,6 +4,7 @@ package main
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"github.com/jose/urlshortener/internal/cache"
 	"github.com/jose/urlshortener/internal/config"
 	"github.com/jose/urlshortener/internal/database"
 	"github.com/jose/urlshortener/pkg/logger"
@@ -21,6 +22,12 @@ func main() {
 		logger.Log.Fatalf("Database connection failed: %v", err)
 	}
 	defer db.Close()
+
+	rdb, err := cache.Connect(cfg)
+	if err != nil {
+		logger.Log.Fatalf("Redis connection failed: %v", err)
+	}
+	defer rdb.Close()
 
 	r := gin.Default()
 

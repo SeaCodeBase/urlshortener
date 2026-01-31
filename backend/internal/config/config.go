@@ -13,8 +13,9 @@ type Config struct {
 	DBUser     string
 	DBPassword string
 	DBName     string
-	RedisHost  string
-	RedisPort  string
+	RedisHost     string
+	RedisPort     string
+	RedisPassword string
 	JWTSecret  string
 	BaseURL    string
 }
@@ -27,8 +28,9 @@ func Load() *Config {
 		DBUser:     getEnv("DB_USER", "urlshortener"),
 		DBPassword: getEnv("DB_PASSWORD", ""),
 		DBName:     getEnv("DB_NAME", "urlshortener"),
-		RedisHost:  getEnv("REDIS_HOST", "localhost"),
-		RedisPort:  getEnv("REDIS_PORT", "6379"),
+		RedisHost:     getEnv("REDIS_HOST", "localhost"),
+		RedisPort:     getEnv("REDIS_PORT", "6379"),
+		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 		JWTSecret:  getEnv("JWT_SECRET", "dev-secret-change-in-prod"),
 		BaseURL:    getEnv("BASE_URL", "http://localhost:8080"),
 	}
