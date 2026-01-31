@@ -1,67 +1,49 @@
-'use client';
+'use client'
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { useAuthStore } from '@/stores/auth';
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuthStore } from '@/stores/auth'
+import { Sidebar, TopNav } from '@/components/layout'
 
 export default function DashboardLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode
 }) {
-  const router = useRouter();
-  const { user, isLoading, checkAuth, logout } = useAuthStore();
+  const router = useRouter()
+  const { user, isLoading, checkAuth } = useAuthStore()
 
   useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
+    checkAuth()
+  }, [checkAuth])
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push('/login');
+      router.push('/login')
     }
-  }, [isLoading, user, router]);
+  }, [user, isLoading, router])
 
   if (isLoading) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    )
   }
 
   if (!user) {
-    return null;
+    return null
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              <Link href="/dashboard" className="text-xl font-bold">
-                URL Shortener
-              </Link>
-              <nav className="ml-8 flex gap-4">
-                <Link href="/dashboard" className="text-sm text-gray-600 hover:text-gray-900">
-                  Links
-                </Link>
-                <Link href="/dashboard/settings" className="text-sm text-gray-600 hover:text-gray-900">
-                  Settings
-                </Link>
-              </nav>
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600">{user.email}</span>
-              <Button variant="outline" onClick={logout}>
-                Logout
-              </Button>
-            </div>
-          </div>
-        </div>
-      </nav>
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {children}
-      </main>
+    <div className="min-h-screen flex bg-gray-50">
+      <Sidebar />
+      <div className="flex-1 flex flex-col">
+        <TopNav />
+        <main className="flex-1 p-6">
+          {children}
+        </main>
+      </div>
     </div>
-  );
+  )
 }
