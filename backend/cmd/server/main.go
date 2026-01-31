@@ -48,6 +48,10 @@ func main() {
 	authHandler := handler.NewAuthHandler(authService)
 	linkHandler := handler.NewLinkHandler(linkService, cfg)
 
+	// Redirect service and handler
+	redirectService := service.NewRedirectService(linkRepo, rdb)
+	redirectHandler := handler.NewRedirectHandler(redirectService)
+
 	// Routes
 	api := r.Group("/api")
 	{
@@ -73,6 +77,9 @@ func main() {
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
+
+	// Redirect route (must be after API routes to avoid conflicts)
+	r.GET("/:code", redirectHandler.Redirect)
 
 	logger.Log.Infof("Starting server on port %s", cfg.ServerPort)
 	if err := r.Run(":" + cfg.ServerPort); err != nil {
