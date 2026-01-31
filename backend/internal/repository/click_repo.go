@@ -23,8 +23,8 @@ func (r *ClickRepositoryImpl) BatchInsert(ctx context.Context, clicks []model.Cl
 		return nil
 	}
 
-	query := `INSERT INTO clicks (link_id, clicked_at, ip_hash, user_agent, referrer, country, city, device_type, browser, utm_source, utm_medium, utm_campaign)
-			  VALUES (:link_id, :clicked_at, :ip_hash, :user_agent, :referrer, :country, :city, :device_type, :browser, :utm_source, :utm_medium, :utm_campaign)`
+	query := `INSERT INTO clicks (link_id, clicked_at, ip_hash, ip_address, user_agent, referrer, country, city, device_type, browser, utm_source, utm_medium, utm_campaign)
+			  VALUES (:link_id, :clicked_at, :ip_hash, :ip_address, :user_agent, :referrer, :country, :city, :device_type, :browser, :utm_source, :utm_medium, :utm_campaign)`
 
 	_, err := r.db.NamedExecContext(ctx, query, clicks)
 	return err

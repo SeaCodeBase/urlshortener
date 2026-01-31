@@ -8,6 +8,7 @@ type Click struct {
 	LinkID      uint64    `db:"link_id" json:"link_id"`
 	ClickedAt   time.Time `db:"clicked_at" json:"clicked_at"`
 	IPHash      string    `db:"ip_hash" json:"-"`
+	IPAddress   string    `db:"ip_address" json:"-"`
 	UserAgent   string    `db:"user_agent" json:"user_agent"`
 	Referrer    string    `db:"referrer" json:"referrer"`
 	Country     string    `db:"country" json:"country"`
