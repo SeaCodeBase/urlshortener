@@ -9,6 +9,7 @@ import (
 	"github.com/SeaCodeBase/urlshortener/internal/model"
 	"github.com/SeaCodeBase/urlshortener/internal/repository"
 	"github.com/SeaCodeBase/urlshortener/internal/service"
+	"github.com/SeaCodeBase/urlshortener/internal/util"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 	"github.com/redis/go-redis/v9"
 )
@@ -84,13 +85,23 @@ func (f *ClickFlusher) flush() {
 				continue
 			}
 
+			// Parse User-Agent
+			uaResult := util.ParseUserAgent(event.UserAgent)
+
+			// Lookup GeoIP
+			geoResult := util.LookupIP(event.IPAddress)
+
 			click := model.Click{
 				LinkID:      event.LinkID,
 				ClickedAt:   event.ClickedAt,
 				IPHash:      event.IPHash,
+				IPAddress:   event.IPAddress,
 				UserAgent:   event.UserAgent,
 				Referrer:    event.Referrer,
-				DeviceType:  "unknown", // TODO: Parse from user agent
+				Country:     geoResult.Country,
+				City:        geoResult.City,
+				DeviceType:  uaResult.DeviceType,
+				Browser:     uaResult.Browser,
 				UTMSource:   event.UTMSource,
 				UTMMedium:   event.UTMMedium,
 				UTMCampaign: event.UTMCampaign,
