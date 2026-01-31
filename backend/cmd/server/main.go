@@ -48,9 +48,12 @@ func main() {
 	authHandler := handler.NewAuthHandler(authService)
 	linkHandler := handler.NewLinkHandler(linkService, cfg)
 
+	// Click service
+	clickService := service.NewClickService(rdb)
+
 	// Redirect service and handler
 	redirectService := service.NewRedirectService(linkRepo, rdb)
-	redirectHandler := handler.NewRedirectHandler(redirectService)
+	redirectHandler := handler.NewRedirectHandler(redirectService, clickService, cfg.JWTSecret)
 
 	// Routes
 	api := r.Group("/api")
