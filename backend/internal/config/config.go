@@ -21,6 +21,7 @@ type Config struct {
 	BaseURL       string
 	RPID          string
 	RPOrigin      string
+	GeoIPPath     string
 }
 
 func Load() (*Config, error) {
@@ -38,6 +39,7 @@ func Load() (*Config, error) {
 		BaseURL:       getEnv("BASE_URL", "http://localhost:8080"),
 		RPID:          getEnv("RP_ID", "localhost"),
 		RPOrigin:      getEnv("RP_ORIGIN", "http://localhost:3000"),
+		GeoIPPath:     getEnv("GEOIP_PATH", ""),
 	}
 
 	if cfg.JWTSecret == "" {
