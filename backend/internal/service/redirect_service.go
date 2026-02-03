@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/repository"
@@ -45,6 +46,11 @@ type cachedLink struct {
 }
 
 func (s *RedirectService) Resolve(ctx context.Context, host, code string) (string, uint64, error) {
+	// Strip port from host if present (e.g., "example.com:8080" -> "example.com")
+	if colonIdx := strings.LastIndex(host, ":"); colonIdx != -1 {
+		host = host[:colonIdx]
+	}
+
 	// Determine domain ID from host
 	var domainID *uint64
 	domain, err := s.domainRepo.GetByDomain(ctx, host)
