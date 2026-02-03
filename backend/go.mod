@@ -12,6 +12,9 @@ require (
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/redis/go-redis/v9 v9.17.3
 	github.com/stretchr/testify v1.11.1
+	go.opentelemetry.io/otel v1.40.0
+	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.40.0
+	go.opentelemetry.io/otel/sdk v1.40.0
 	go.uber.org/mock v0.6.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/crypto v0.47.0
@@ -30,6 +33,8 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
+	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.30.1 // indirect
@@ -50,10 +55,12 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
-	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
+	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
+	go.opentelemetry.io/otel/metric v1.40.0 // indirect
+	go.opentelemetry.io/otel/trace v1.40.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/arch v0.23.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
