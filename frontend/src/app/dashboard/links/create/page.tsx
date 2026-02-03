@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
+import { Domain } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,6 +19,20 @@ export default function CreateLinkPage() {
   const [expiresAt, setExpiresAt] = useState('')
   const [loading, setLoading] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [domains, setDomains] = useState<Domain[]>([])
+  const [selectedDomainId, setSelectedDomainId] = useState<number | null>(null)
+
+  useEffect(() => {
+    const fetchDomains = async () => {
+      try {
+        const response = await api.getDomains()
+        setDomains(response.domains || [])
+      } catch {
+        // Ignore error, domains are optional
+      }
+    }
+    fetchDomains()
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -33,6 +48,7 @@ export default function CreateLinkPage() {
         custom_code: customCode || undefined,
         title: title || undefined,
         expires_at: expiresAt ? new Date(expiresAt).toISOString() : undefined,
+        domain_id: selectedDomainId || undefined,
       })
       toast.success('Link created successfully!')
       router.push('/dashboard/links')
@@ -69,12 +85,17 @@ export default function CreateLinkPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="domain">Short link domain</Label>
-                <Input
+                <select
                   id="domain"
-                  value="localhost:8080"
-                  disabled
-                  className="bg-gray-50"
-                />
+                  value={selectedDomainId || ''}
+                  onChange={(e) => setSelectedDomainId(e.target.value ? Number(e.target.value) : null)}
+                  className="w-full h-10 px-3 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Default</option>
+                  {domains.map((d) => (
+                    <option key={d.id} value={d.id}>{d.domain}</option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="customCode">Back-half (optional)</Label>
