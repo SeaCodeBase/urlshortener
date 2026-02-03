@@ -115,7 +115,22 @@ func (s *passkeyService) BeginRegistration(ctx context.Context, userID uint64) (
 	if err != nil {
 		return nil, "", err
 	}
-	options, session, err := s.webauthn.BeginRegistration(waUser)
+
+	// Build excludeCredentials from user's existing credentials
+	// This prevents the same authenticator from being registered twice
+	var registrationOpts []webauthn.RegistrationOption
+	if len(waUser.credentials) > 0 {
+		excludeList := make([]protocol.CredentialDescriptor, len(waUser.credentials))
+		for i, cred := range waUser.credentials {
+			excludeList[i] = protocol.CredentialDescriptor{
+				Type:         protocol.PublicKeyCredentialType,
+				CredentialID: cred.ID,
+			}
+		}
+		registrationOpts = append(registrationOpts, webauthn.WithExclusions(excludeList))
+	}
+
+	options, session, err := s.webauthn.BeginRegistration(waUser, registrationOpts...)
 	if err != nil {
 		logger.Error(ctx, "passkey-service: WebAuthn BeginRegistration failed",
 			zap.Uint64("user_id", userID),
