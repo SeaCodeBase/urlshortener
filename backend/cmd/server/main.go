@@ -14,7 +14,6 @@ import (
 	"github.com/SeaCodeBase/urlshortener/internal/util"
 	"github.com/SeaCodeBase/urlshortener/internal/worker"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -53,13 +52,8 @@ func main() {
 
 	r := gin.Default()
 
-	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "http://127.0.0.1:3000", "http://frontend:3000"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
-	}))
+	// Use configurable CORS middleware
+	r.Use(middleware.CORSMiddleware(cfg.Server.AllowOrigins))
 
 	// Setup repositories
 	userRepo := repository.NewUserRepository(db)
