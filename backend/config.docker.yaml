@@ -1,0 +1,30 @@
+# Docker configuration for URL Shortener
+# Environment variables can override these values
+
+server:
+  port: "8080"
+
+database:
+  host: "mariadb"
+  port: "3306"
+  user: "urlshortener"
+  password: ""  # Set via DB_PASSWORD env var
+  name: "urlshortener"
+
+redis:
+  host: "redis"
+  port: "6379"
+  password: ""
+
+jwt:
+  secret: ""  # Set via JWT_SECRET env var
+
+webauthn:
+  rp_id: "localhost"
+  rp_origin: "http://localhost:3000"
+
+urls:
+  base_url: ""  # Set via BASE_URL env var
+
+geoip:
+  path: ""
