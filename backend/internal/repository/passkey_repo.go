@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
@@ -22,9 +23,10 @@ func NewPasskeyRepository(db *sqlx.DB) PasskeyRepository {
 }
 
 func (r *passkeyRepo) Create(ctx context.Context, passkey *model.Passkey) error {
-	query := `INSERT INTO passkeys (user_id, name, credential_id, public_key, counter, backup_eligible, backup_state)
-	          VALUES (?, ?, ?, ?, ?, ?, ?)`
-	result, err := r.db.ExecContext(ctx, query, passkey.UserID, passkey.Name, passkey.CredentialID, passkey.PublicKey, passkey.Counter, passkey.BackupEligible, passkey.BackupState)
+	now := time.Now()
+	query := `INSERT INTO passkeys (user_id, name, credential_id, public_key, counter, backup_eligible, backup_state, created_at)
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	result, err := r.db.ExecContext(ctx, query, passkey.UserID, passkey.Name, passkey.CredentialID, passkey.PublicKey, passkey.Counter, passkey.BackupEligible, passkey.BackupState, now)
 	if err != nil {
 		logger.Error(ctx, "passkey-repo: failed to create passkey",
 			zap.Uint64("user_id", passkey.UserID),
@@ -40,6 +42,7 @@ func (r *passkeyRepo) Create(ctx context.Context, passkey *model.Passkey) error 
 		return err
 	}
 	passkey.ID = uint64(id)
+	passkey.CreatedAt = now
 	return nil
 }
 
