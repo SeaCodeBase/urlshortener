@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ChevronDown, ChevronUp, Copy, Check, Info } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Link } from '@/types'
+import type { Link, Domain } from '@/types'
 
 export default function EditLinkPage() {
   const router = useRouter()
@@ -34,9 +34,23 @@ export default function EditLinkPage() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [copied, setCopied] = useState(false)
 
+  // Domain
+  const [domains, setDomains] = useState<Domain[]>([])
+  const [selectedDomainId, setSelectedDomainId] = useState<number | null>(null)
+
   useEffect(() => {
     loadLink()
+    fetchDomains()
   }, [linkId])
+
+  const fetchDomains = async () => {
+    try {
+      const response = await api.getDomains()
+      setDomains(response.domains || [])
+    } catch {
+      // Ignore error, domains are optional
+    }
+  }
 
   const loadLink = async () => {
     try {
@@ -46,6 +60,7 @@ export default function EditLinkPage() {
       setTitle(data.title || '')
       setShortCode(data.short_code)
       setIsActive(data.is_active)
+      setSelectedDomainId(data.domain_id || null)
       if (data.expires_at) {
         // Convert to datetime-local format
         const date = new Date(data.expires_at)
@@ -142,12 +157,17 @@ export default function EditLinkPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="domain">Domain</Label>
-                <Input
+                <select
                   id="domain"
-                  value="localhost:8080"
+                  value={selectedDomainId || ''}
                   disabled
-                  className="bg-gray-50"
-                />
+                  className="w-full h-10 px-3 border border-gray-300 rounded-md text-sm bg-gray-50 cursor-not-allowed"
+                >
+                  <option value="">Default</option>
+                  {domains.map((d) => (
+                    <option key={d.id} value={d.id}>{d.domain}</option>
+                  ))}
+                </select>
                 <p className="text-xs text-gray-500">
                   The domain cannot be changed after a link has been shortened.
                 </p>
