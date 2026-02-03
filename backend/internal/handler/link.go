@@ -23,7 +23,7 @@ type LinkHandler struct {
 func NewLinkHandler(linkService service.LinkService, cfg *config.Config) *LinkHandler {
 	return &LinkHandler{
 		linkService: linkService,
-		baseURL:     cfg.BaseURL,
+		baseURL:     cfg.URLs.BaseURL,
 	}
 }
 

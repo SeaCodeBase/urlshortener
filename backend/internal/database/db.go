@@ -14,7 +14,7 @@ import (
 
 func Connect(ctx context.Context, cfg *config.Config) (*sqlx.DB, error) {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&loc=UTC",
-		cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName)
+		cfg.Database.User, cfg.Database.Password, cfg.Database.Host, cfg.Database.Port, cfg.Database.Name)
 
 	db, err := sqlx.Connect("mysql", dsn)
 	if err != nil {

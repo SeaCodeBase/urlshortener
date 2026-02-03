@@ -13,8 +13,8 @@ import (
 
 func Connect(ctx context.Context, cfg *config.Config) (*redis.Client, error) {
 	client := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
-		Password: cfg.RedisPassword,
+		Addr:     fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port),
+		Password: cfg.Redis.Password,
 	})
 
 	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)

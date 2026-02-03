@@ -34,9 +34,9 @@ func main() {
 	defer logger.Sync()
 
 	// Initialize GeoIP (optional - logs warning if path invalid)
-	if err := util.InitGeoIP(ctx, cfg.GeoIPPath); err != nil {
+	if err := util.InitGeoIP(ctx, cfg.GeoIP.Path); err != nil {
 		logger.Warn(ctx, "geoip initialization failed - location lookups disabled",
-			zap.String("path", cfg.GeoIPPath),
+			zap.String("path", cfg.GeoIP.Path),
 			zap.Error(err),
 		)
 	}
@@ -76,11 +76,11 @@ func main() {
 	defer clickFlusher.Stop()
 
 	// Setup services
-	authService := service.NewAuthService(userRepo, cfg.JWTSecret)
+	authService := service.NewAuthService(userRepo, cfg.JWT.Secret)
 	shortCodeSvc := service.NewShortCodeService(linkRepo)
 	linkService := service.NewLinkService(linkRepo, shortCodeSvc)
 	statsService := service.NewStatsService(clickRepo, linkRepo)
-	passkeyService, err := service.NewPasskeyService(passkeyRepo, userRepo, cfg.RPID, cfg.RPOrigin, "URL Shortener")
+	passkeyService, err := service.NewPasskeyService(passkeyRepo, userRepo, cfg.WebAuthn.RPID, cfg.WebAuthn.RPOrigin, "URL Shortener")
 	if err != nil {
 		logger.Fatal(ctx, "failed to create passkey service", zap.Error(err))
 	}
@@ -97,7 +97,7 @@ func main() {
 
 	// Redirect service and handler
 	redirectService := service.NewRedirectService(linkRepo, rdb)
-	redirectHandler := handler.NewRedirectHandler(redirectService, clickService, cfg.JWTSecret)
+	redirectHandler := handler.NewRedirectHandler(redirectService, clickService, cfg.JWT.Secret)
 
 	// Routes
 	api := r.Group("/api")
@@ -143,8 +143,8 @@ func main() {
 	// Redirect route (must be after API routes to avoid conflicts)
 	r.GET("/:code", redirectHandler.Redirect)
 
-	logger.Info(ctx, "starting server", zap.String("port", cfg.ServerPort))
-	if err := r.Run(":" + cfg.ServerPort); err != nil {
+	logger.Info(ctx, "starting server", zap.String("port", cfg.Server.Port))
+	if err := r.Run(":" + cfg.Server.Port); err != nil {
 		logger.Fatal(ctx, "failed to start server", zap.Error(err))
 	}
 }
