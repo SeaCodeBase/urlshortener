@@ -30,7 +30,7 @@ func Init(isDev bool) {
 	// Always use JSON encoding for structured logs
 	cfg.Encoding = "json"
 
-	logger, err := cfg.Build()
+	logger, err := cfg.Build(zap.AddCallerSkip(1))
 	if err != nil {
 		panic(err)
 	}
