@@ -171,7 +171,7 @@ func getCountryName(code string) string {
 		"DE": "Germany", "FR": "France", "KR": "South Korea", "IN": "India",
 		"BR": "Brazil", "RU": "Russia", "CA": "Canada", "AU": "Australia",
 		"ES": "Spain", "IT": "Italy", "MX": "Mexico", "NL": "Netherlands",
-		"Unknown": "Unknown",
+		"XX": "Local", "Unknown": "Unknown",
 	}
 	if name, ok := names[code]; ok {
 		return name

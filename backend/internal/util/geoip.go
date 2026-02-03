@@ -59,10 +59,10 @@ func LookupIP(ctx context.Context, ipStr string) GeoIPResult {
 		return GeoIPResult{}
 	}
 
-	// Return "Local" for private/loopback IPs
+	// Return "XX" for private/loopback IPs (XX = unknown/local in ISO 3166)
 	if isPrivateIP(ip) {
 		return GeoIPResult{
-			Country: "Local",
+			Country: "XX",
 			City:    "Local",
 		}
 	}
