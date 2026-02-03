@@ -15,7 +15,9 @@ import (
 	"github.com/SeaCodeBase/urlshortener/internal/util"
 	"github.com/SeaCodeBase/urlshortener/internal/worker"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
+	"github.com/SeaCodeBase/urlshortener/pkg/telemetry"
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.uber.org/zap"
 )
 
@@ -29,6 +31,17 @@ func main() {
 	}
 	logger.Init(true)
 	defer logger.Sync()
+
+	// Initialize OpenTelemetry
+	shutdown, err := telemetry.Init(ctx, "urlshortener")
+	if err != nil {
+		logger.Fatal(ctx, "failed to initialize telemetry", zap.Error(err))
+	}
+	defer func() {
+		if err := shutdown(ctx); err != nil {
+			logger.Error(ctx, "failed to shutdown telemetry", zap.Error(err))
+		}
+	}()
 
 	// Initialize GeoIP (optional - logs warning if path invalid)
 	if err := util.InitGeoIP(ctx, cfg.GeoIP.Path); err != nil {
@@ -91,6 +104,8 @@ func main() {
 	// Redirect Router (public, minimal - for URL redirects)
 	redirectRouter := gin.New()
 	redirectRouter.Use(gin.Recovery())
+	redirectRouter.Use(otelgin.Middleware("redirect-server"))
+	redirectRouter.Use(middleware.LogMiddleware())
 	redirectRouter.GET("/:code", redirectHandler.Redirect)
 	redirectRouter.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "server": "redirect"})
@@ -99,6 +114,8 @@ func main() {
 	// API Router (authenticated, full functionality)
 	apiRouter := gin.New()
 	apiRouter.Use(gin.Recovery())
+	apiRouter.Use(otelgin.Middleware("api-server"))
+	apiRouter.Use(middleware.LogMiddleware())
 	apiRouter.Use(middleware.CORSMiddleware(cfg.Server.AllowOrigins))
 
 	apiRouter.GET("/health", func(c *gin.Context) {
