@@ -6,6 +6,7 @@ services:
       - "0.0.0.0:8080:8080"
     volumes:
       - ./backend/config.docker.yaml:/app/config.yaml:ro
+      - ./backend/data:/app/data:ro
     depends_on:
       mariadb:
         condition: service_healthy

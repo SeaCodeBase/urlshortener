@@ -26,4 +26,4 @@ urls:
   base_url: "http://localhost:8080"
 
 geoip:
-  path: ""
+  path: "/app/data/GeoLite2-City.mmdb"
