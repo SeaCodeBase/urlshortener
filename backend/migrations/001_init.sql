@@ -79,6 +79,8 @@ CREATE TABLE IF NOT EXISTS passkeys (
     credential_id   VARBINARY(1024) NOT NULL,
     public_key      VARBINARY(1024) NOT NULL,
     counter         INT UNSIGNED NOT NULL DEFAULT 0,
+    backup_eligible BOOLEAN NOT NULL DEFAULT FALSE,
+    backup_state    BOOLEAN NOT NULL DEFAULT FALSE,
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_used_at    TIMESTAMP NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,

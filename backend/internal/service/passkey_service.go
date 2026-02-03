@@ -84,6 +84,10 @@ func (s *passkeyService) toWebAuthnUser(ctx context.Context, user *model.User) (
 			ID:              pk.CredentialID,
 			PublicKey:       pk.PublicKey,
 			AttestationType: "",
+			Flags: webauthn.CredentialFlags{
+				BackupEligible: pk.BackupEligible,
+				BackupState:    pk.BackupState,
+			},
 			Authenticator: webauthn.Authenticator{
 				SignCount: pk.Counter,
 			},
@@ -187,11 +191,13 @@ func (s *passkeyService) FinishRegistration(ctx context.Context, userID uint64, 
 		return nil, fmt.Errorf("%w: %v", ErrCredentialInvalid, err)
 	}
 	passkey := &model.Passkey{
-		UserID:       userID,
-		Name:         name,
-		CredentialID: credential.ID,
-		PublicKey:    credential.PublicKey,
-		Counter:      credential.Authenticator.SignCount,
+		UserID:         userID,
+		Name:           name,
+		CredentialID:   credential.ID,
+		PublicKey:      credential.PublicKey,
+		Counter:        credential.Authenticator.SignCount,
+		BackupEligible: credential.Flags.BackupEligible,
+		BackupState:    credential.Flags.BackupState,
 	}
 	if err := s.passkeyRepo.Create(ctx, passkey); err != nil {
 		logger.Error(ctx, "passkey-service: failed to store credential",
