@@ -10,7 +10,9 @@ import (
 
 // ServerConfig holds server-related configuration
 type ServerConfig struct {
-	Port              string   `yaml:"port"`
+	Port              string   `yaml:"port"`               // Legacy, kept for backwards compat
+	RedirectPort      string   `yaml:"redirect_port"`      // Port for redirect server
+	APIPort           string   `yaml:"api_port"`           // Port for API server
 	AllowRegistration *bool    `yaml:"allow_registration"`
 	AllowOrigins      []string `yaml:"allow_origins"`
 }
@@ -100,6 +102,12 @@ func Load() (*Config, error) {
 func applyDefaults(cfg *Config) {
 	if cfg.Server.Port == "" {
 		cfg.Server.Port = "8080"
+	}
+	if cfg.Server.RedirectPort == "" {
+		cfg.Server.RedirectPort = "8080"
+	}
+	if cfg.Server.APIPort == "" {
+		cfg.Server.APIPort = "8081"
 	}
 	if cfg.Server.AllowRegistration == nil {
 		allowReg := true
