@@ -11,6 +11,11 @@ import (
 	"go.uber.org/zap"
 )
 
+// skipLogPaths contains paths that should not be logged
+var skipLogPaths = map[string]bool{
+	"/health": true,
+}
+
 // responseWriter wraps gin.ResponseWriter to capture the response body
 type responseWriter struct {
 	gin.ResponseWriter
@@ -26,6 +31,12 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 // URL, method, IP, latency, request body, response body, status code
 func LogMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Skip logging for certain paths
+		if skipLogPaths[c.Request.URL.Path] {
+			c.Next()
+			return
+		}
+
 		start := time.Now()
 		ctx := c.Request.Context()
 
