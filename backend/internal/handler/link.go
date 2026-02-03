@@ -2,6 +2,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"github.com/SeaCodeBase/urlshortener/internal/config"
 	"github.com/SeaCodeBase/urlshortener/internal/middleware"
 	"github.com/SeaCodeBase/urlshortener/internal/model"
+	"github.com/SeaCodeBase/urlshortener/internal/repository"
 	"github.com/SeaCodeBase/urlshortener/internal/service"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 	"github.com/gin-gonic/gin"
@@ -17,12 +19,14 @@ import (
 
 type LinkHandler struct {
 	linkService service.LinkService
+	domainRepo  repository.DomainRepository
 	baseURL     string
 }
 
-func NewLinkHandler(linkService service.LinkService, cfg *config.Config) *LinkHandler {
+func NewLinkHandler(linkService service.LinkService, domainRepo repository.DomainRepository, cfg *config.Config) *LinkHandler {
 	return &LinkHandler{
 		linkService: linkService,
+		domainRepo:  domainRepo,
 		baseURL:     cfg.URLs.BaseURL,
 	}
 }
@@ -39,17 +43,26 @@ type listLinksResponse struct {
 	TotalPages int            `json:"total_pages"`
 }
 
-func (h *LinkHandler) toResponse(link *model.Link) linkResponse {
+func (h *LinkHandler) buildShortURL(link *model.Link, domainMap map[uint64]string) string {
+	if link.DomainID != nil {
+		if domain, ok := domainMap[*link.DomainID]; ok {
+			return "http://" + domain + "/" + link.ShortCode
+		}
+	}
+	return h.baseURL + "/" + link.ShortCode
+}
+
+func (h *LinkHandler) toResponse(link *model.Link, domainMap map[uint64]string) linkResponse {
 	return linkResponse{
 		Link:     link,
-		ShortURL: h.baseURL + "/" + link.ShortCode,
+		ShortURL: h.buildShortURL(link, domainMap),
 	}
 }
 
-func (h *LinkHandler) toListResponse(result *service.ListLinksResult) listLinksResponse {
+func (h *LinkHandler) toListResponse(result *service.ListLinksResult, domainMap map[uint64]string) listLinksResponse {
 	links := make([]linkResponse, len(result.Links))
 	for i := range result.Links {
-		links[i] = h.toResponse(&result.Links[i])
+		links[i] = h.toResponse(&result.Links[i], domainMap)
 	}
 	return listLinksResponse{
 		Links:      links,
@@ -57,6 +70,22 @@ func (h *LinkHandler) toListResponse(result *service.ListLinksResult) listLinksR
 		Page:       result.Page,
 		TotalPages: result.TotalPages,
 	}
+}
+
+func (h *LinkHandler) loadDomainMap(ctx context.Context, userID uint64) map[uint64]string {
+	domains, err := h.domainRepo.ListByUserID(ctx, userID)
+	if err != nil {
+		logger.Warn(ctx, "link-handler: failed to load domains for user",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
+		return make(map[uint64]string)
+	}
+	domainMap := make(map[uint64]string, len(domains))
+	for _, d := range domains {
+		domainMap[d.ID] = d.Domain
+	}
+	return domainMap
 }
 
 func (h *LinkHandler) Create(c *gin.Context) {
@@ -99,7 +128,8 @@ func (h *LinkHandler) Create(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, h.toResponse(link))
+	domainMap := h.loadDomainMap(ctx, userID)
+	c.JSON(http.StatusCreated, h.toResponse(link, domainMap))
 }
 
 func (h *LinkHandler) Get(c *gin.Context) {
@@ -134,7 +164,8 @@ func (h *LinkHandler) Get(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, h.toResponse(link))
+	domainMap := h.loadDomainMap(ctx, userID)
+	c.JSON(http.StatusOK, h.toResponse(link, domainMap))
 }
 
 func (h *LinkHandler) List(c *gin.Context) {
@@ -159,7 +190,8 @@ func (h *LinkHandler) List(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, h.toListResponse(result))
+	domainMap := h.loadDomainMap(ctx, userID)
+	c.JSON(http.StatusOK, h.toListResponse(result, domainMap))
 }
 
 func (h *LinkHandler) Update(c *gin.Context) {
@@ -205,7 +237,8 @@ func (h *LinkHandler) Update(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, h.toResponse(link))
+	domainMap := h.loadDomainMap(ctx, userID)
+	c.JSON(http.StatusOK, h.toResponse(link, domainMap))
 }
 
 func (h *LinkHandler) Delete(c *gin.Context) {

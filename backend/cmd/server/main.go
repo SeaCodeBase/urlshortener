@@ -75,7 +75,7 @@ func main() {
 
 	// Setup handlers
 	authHandler := handler.NewAuthHandler(authService, passkeyService, cfg)
-	linkHandler := handler.NewLinkHandler(linkService, cfg)
+	linkHandler := handler.NewLinkHandler(linkService, domainRepo, cfg)
 	statsHandler := handler.NewStatsHandler(statsService)
 	passkeyHandler := handler.NewPasskeyHandler(passkeyService)
 	passkeyVerifyHandler := handler.NewPasskeyVerifyHandler(passkeyService, authService)
