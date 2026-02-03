@@ -1,0 +1,33 @@
+# URL Shortener Configuration
+# Copy this file to config.yaml and update values
+
+server:
+  port: "8080"
+
+database:
+  host: "localhost"
+  port: "3306"
+  user: "urlshortener"
+  password: ""
+  name: "urlshortener"
+
+redis:
+  host: "localhost"
+  port: "6379"
+  password: ""
+
+jwt:
+  secret: "" # REQUIRED - generate a secure random string
+
+webauthn:
+  rp_id: "localhost"
+  rp_origin: "http://localhost:3000"
+
+urls:
+  base_url: "http://localhost:8080"
+
+geoip:
+  # Path to MaxMind GeoIP2 City database (.mmdb file)
+  # Download from: https://www.maxmind.com/en/geoip2-databases
+  # Leave empty to disable GeoIP lookups
+  path: ""
