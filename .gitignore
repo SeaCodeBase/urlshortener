@@ -1,3 +1,6 @@
 .env
 *.log
 .worktrees/
+
+# Backend config with secrets
+backend/config.yaml
