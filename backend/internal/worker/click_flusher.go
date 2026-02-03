@@ -12,6 +12,7 @@ import (
 	"github.com/SeaCodeBase/urlshortener/internal/util"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 type ClickFlusher struct {
@@ -68,7 +69,9 @@ func (f *ClickFlusher) flush() {
 		// Get batch of events
 		events, err := f.rdb.LRange(ctx, bufferKey, 0, int64(f.batchSize-1)).Result()
 		if err != nil {
-			logger.Log.Errorf("Failed to get click events from buffer: %v", err)
+			logger.Error(ctx, "failed to get click events from buffer",
+			zap.Error(err),
+		)
 			return
 		}
 
@@ -81,7 +84,9 @@ func (f *ClickFlusher) flush() {
 		for _, eventData := range events {
 			var event service.ClickEvent
 			if err := json.Unmarshal([]byte(eventData), &event); err != nil {
-				logger.Log.Warnf("Failed to unmarshal click event: %v", err)
+				logger.Warn(ctx, "failed to unmarshal click event",
+				zap.Error(err),
+			)
 				continue
 			}
 
@@ -111,16 +116,22 @@ func (f *ClickFlusher) flush() {
 
 		// Insert into database
 		if err := f.clickRepo.BatchInsert(ctx, clicks); err != nil {
-			logger.Log.Errorf("Failed to batch insert clicks: %v", err)
+			logger.Error(ctx, "failed to batch insert clicks",
+			zap.Error(err),
+		)
 			return
 		}
 
 		// Remove processed events from buffer
 		if err := f.rdb.LTrim(ctx, bufferKey, int64(len(events)), -1).Err(); err != nil {
-			logger.Log.Errorf("Failed to trim click buffer: %v", err)
+			logger.Error(ctx, "failed to trim click buffer",
+				zap.Error(err),
+			)
 		}
 
-		logger.Log.Infof("Flushed %d click events to database", len(clicks))
+		logger.Info(ctx, "flushed click events to database",
+			zap.Int("count", len(clicks)),
+		)
 
 		if len(events) < f.batchSize {
 			return // No more events to process
