@@ -24,14 +24,16 @@ const (
 )
 
 type RedirectService struct {
-	linkRepo repository.LinkRepository
-	rdb      *redis.Client
+	linkRepo   repository.LinkRepository
+	domainRepo repository.DomainRepository
+	rdb        *redis.Client
 }
 
-func NewRedirectService(linkRepo repository.LinkRepository, rdb *redis.Client) *RedirectService {
+func NewRedirectService(linkRepo repository.LinkRepository, domainRepo repository.DomainRepository, rdb *redis.Client) *RedirectService {
 	return &RedirectService{
-		linkRepo: linkRepo,
-		rdb:      rdb,
+		linkRepo:   linkRepo,
+		domainRepo: domainRepo,
+		rdb:        rdb,
 	}
 }
 
@@ -42,9 +44,17 @@ type cachedLink struct {
 	LinkID      uint64    `json:"link_id"`
 }
 
-func (s *RedirectService) Resolve(ctx context.Context, code string) (string, uint64, error) {
-	// Try cache first
-	cacheKey := linkCacheKeyPrefix + code
+func (s *RedirectService) Resolve(ctx context.Context, host, code string) (string, uint64, error) {
+	// Determine domain ID from host
+	var domainID *uint64
+	domain, err := s.domainRepo.GetByDomain(ctx, host)
+	if err == nil {
+		domainID = &domain.ID
+	}
+	// If domain not found, domainID stays nil (default domain)
+
+	// Try cache first (include domain in cache key)
+	cacheKey := linkCacheKeyPrefix + host + ":" + code
 	cached, err := s.rdb.Get(ctx, cacheKey).Result()
 	if err == nil {
 		var cl cachedLink
@@ -53,8 +63,8 @@ func (s *RedirectService) Resolve(ctx context.Context, code string) (string, uin
 		}
 	}
 
-	// Cache miss - query DB
-	link, err := s.linkRepo.GetByShortCode(ctx, code)
+	// Cache miss - query DB by domain and short code
+	link, err := s.linkRepo.GetByDomainAndShortCode(ctx, domainID, code)
 	if errors.Is(err, repository.ErrLinkNotFound) {
 		return "", 0, ErrLinkNotFound
 	}

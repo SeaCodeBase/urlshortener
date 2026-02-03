@@ -72,7 +72,7 @@ func (s *LinkServiceImpl) Create(ctx context.Context, userID uint64, input Creat
 		if !s.shortCode.IsValid(input.CustomCode) {
 			return nil, ErrInvalidShortCode
 		}
-		available, err := s.shortCode.IsAvailable(ctx, input.CustomCode)
+		available, err := s.shortCode.IsAvailable(ctx, input.DomainID, input.CustomCode)
 		if err != nil {
 			logger.Error(ctx, "link-service: failed to check code availability",
 				zap.Uint64("user_id", userID),
@@ -86,7 +86,7 @@ func (s *LinkServiceImpl) Create(ctx context.Context, userID uint64, input Creat
 		}
 		shortCode = input.CustomCode
 	} else {
-		shortCode, err = s.shortCode.Generate(ctx)
+		shortCode, err = s.shortCode.Generate(ctx, input.DomainID)
 		if err != nil {
 			logger.Error(ctx, "link-service: failed to generate short code",
 				zap.Uint64("user_id", userID),

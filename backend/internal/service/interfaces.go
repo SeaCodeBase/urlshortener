@@ -34,9 +34,13 @@ type StatsService interface {
 
 //go:generate mockgen -destination=mocks/mock_shortcode_service.go -package=mocks . ShortCodeService
 type ShortCodeService interface {
-	Generate(ctx context.Context) (string, error)
+	// Generate creates a unique short code within the given domain.
+	// domainID nil means the default domain.
+	Generate(ctx context.Context, domainID *uint64) (string, error)
 	IsValid(code string) bool
-	IsAvailable(ctx context.Context, code string) (bool, error)
+	// IsAvailable checks if a short code is available within the given domain.
+	// domainID nil means the default domain.
+	IsAvailable(ctx context.Context, domainID *uint64, code string) (bool, error)
 }
 
 //go:generate mockgen -destination=mocks/mock_passkey_service.go -package=mocks . PasskeyService

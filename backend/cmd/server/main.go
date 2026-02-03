@@ -85,7 +85,7 @@ func main() {
 	clickService := service.NewClickService(rdb)
 
 	// Redirect service and handler
-	redirectService := service.NewRedirectService(linkRepo, rdb)
+	redirectService := service.NewRedirectService(linkRepo, domainRepo, rdb)
 	redirectHandler := handler.NewRedirectHandler(redirectService, clickService, cfg.JWT.Secret)
 
 	// Redirect Router (public, minimal - for URL redirects)

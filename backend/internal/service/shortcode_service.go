@@ -19,6 +19,7 @@ const (
 // ShortCodeRepository defines the interface for short code existence checks.
 type ShortCodeRepository interface {
 	ShortCodeExists(ctx context.Context, code string) (bool, error)
+	ShortCodeExistsInDomain(ctx context.Context, domainID *uint64, code string) (bool, error)
 }
 
 // Compile-time check: ShortCodeServiceImpl implements ShortCodeService
@@ -32,11 +33,11 @@ func NewShortCodeService(linkRepo ShortCodeRepository) *ShortCodeServiceImpl {
 	return &ShortCodeServiceImpl{linkRepo: linkRepo}
 }
 
-func (s *ShortCodeServiceImpl) Generate(ctx context.Context) (string, error) {
-	return s.generateWithLength(ctx, defaultLen)
+func (s *ShortCodeServiceImpl) Generate(ctx context.Context, domainID *uint64) (string, error) {
+	return s.generateWithLength(ctx, domainID, defaultLen)
 }
 
-func (s *ShortCodeServiceImpl) generateWithLength(ctx context.Context, length int) (string, error) {
+func (s *ShortCodeServiceImpl) generateWithLength(ctx context.Context, domainID *uint64, length int) (string, error) {
 	for attempts := 0; attempts < maxGenerateAttempts; attempts++ {
 		code, err := generateRandomCode(length)
 		if err != nil {
@@ -46,7 +47,7 @@ func (s *ShortCodeServiceImpl) generateWithLength(ctx context.Context, length in
 			return "", err
 		}
 
-		exists, err := s.linkRepo.ShortCodeExists(ctx, code)
+		exists, err := s.linkRepo.ShortCodeExistsInDomain(ctx, domainID, code)
 		if err != nil {
 			logger.Error(ctx, "shortcode-service: failed to check code availability",
 				zap.String("code", code),
@@ -60,7 +61,7 @@ func (s *ShortCodeServiceImpl) generateWithLength(ctx context.Context, length in
 	}
 
 	// If we exhausted attempts, try with longer code (recursively check for collisions)
-	return s.generateWithLength(ctx, length+1)
+	return s.generateWithLength(ctx, domainID, length+1)
 }
 
 func (s *ShortCodeServiceImpl) IsValid(code string) bool {
@@ -75,8 +76,8 @@ func (s *ShortCodeServiceImpl) IsValid(code string) bool {
 	return true
 }
 
-func (s *ShortCodeServiceImpl) IsAvailable(ctx context.Context, code string) (bool, error) {
-	exists, err := s.linkRepo.ShortCodeExists(ctx, code)
+func (s *ShortCodeServiceImpl) IsAvailable(ctx context.Context, domainID *uint64, code string) (bool, error) {
+	exists, err := s.linkRepo.ShortCodeExistsInDomain(ctx, domainID, code)
 	if err != nil {
 		logger.Error(ctx, "shortcode-service: failed to check code availability",
 			zap.String("code", code),

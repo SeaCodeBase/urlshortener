@@ -175,6 +175,57 @@ func (r *LinkRepositoryImpl) ShortCodeExists(ctx context.Context, code string) (
 	return count > 0, nil
 }
 
+func (r *LinkRepositoryImpl) ShortCodeExistsInDomain(ctx context.Context, domainID *uint64, code string) (bool, error) {
+	var count int
+	var query string
+	var err error
+
+	if domainID == nil {
+		query = `SELECT COUNT(*) FROM links WHERE domain_id IS NULL AND short_code = ?`
+		err = r.db.GetContext(ctx, &count, query, code)
+	} else {
+		query = `SELECT COUNT(*) FROM links WHERE domain_id = ? AND short_code = ?`
+		err = r.db.GetContext(ctx, &count, query, *domainID, code)
+	}
+
+	if err != nil {
+		logger.Error(ctx, "link-repo: failed to check short code existence in domain",
+			zap.String("short_code", code),
+			zap.Error(err),
+		)
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (r *LinkRepositoryImpl) GetByDomainAndShortCode(ctx context.Context, domainID *uint64, code string) (*model.Link, error) {
+	var link model.Link
+	var query string
+	var err error
+
+	if domainID == nil {
+		query = `SELECT id, user_id, short_code, original_url, title, expires_at, is_active, domain_id, created_at, updated_at
+				 FROM links WHERE domain_id IS NULL AND short_code = ?`
+		err = r.db.GetContext(ctx, &link, query, code)
+	} else {
+		query = `SELECT id, user_id, short_code, original_url, title, expires_at, is_active, domain_id, created_at, updated_at
+				 FROM links WHERE domain_id = ? AND short_code = ?`
+		err = r.db.GetContext(ctx, &link, query, *domainID, code)
+	}
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrLinkNotFound
+	}
+	if err != nil {
+		logger.Error(ctx, "link-repo: failed to get link by domain and short code",
+			zap.String("short_code", code),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+	return &link, nil
+}
+
 func (r *LinkRepositoryImpl) CountByUserID(ctx context.Context, userID uint64) (int64, error) {
 	var count int64
 	query := `SELECT COUNT(*) FROM links WHERE user_id = ?`

@@ -25,15 +25,19 @@ CREATE TABLE IF NOT EXISTS links (
     id              BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
     user_id         BIGINT UNSIGNED NOT NULL,
     domain_id       BIGINT UNSIGNED NULL,
-    short_code      VARCHAR(16) NOT NULL UNIQUE,
+    short_code      VARCHAR(16) NOT NULL,
     original_url    TEXT NOT NULL,
     title           VARCHAR(255),
     expires_at      TIMESTAMP NULL,
     is_active       BOOLEAN DEFAULT TRUE,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    -- Generated column for uniqueness (treats NULL domain_id as 0)
+    domain_id_key   BIGINT UNSIGNED GENERATED ALWAYS AS (COALESCE(domain_id, 0)) STORED,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE SET NULL,
+    -- Unique constraint on (domain, short_code) combination
+    UNIQUE INDEX idx_domain_short_code (domain_id_key, short_code),
     INDEX idx_short_code (short_code),
     INDEX idx_user_id (user_id),
     INDEX idx_links_domain_id (domain_id)

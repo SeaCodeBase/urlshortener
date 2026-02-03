@@ -42,7 +42,8 @@ func (h *RedirectHandler) Redirect(c *gin.Context) {
 		return
 	}
 
-	originalURL, linkID, err := h.redirectService.Resolve(c.Request.Context(), code)
+	host := c.Request.Host
+	originalURL, linkID, err := h.redirectService.Resolve(c.Request.Context(), host, code)
 	if errors.Is(err, service.ErrLinkNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "link not found"})
 		return
