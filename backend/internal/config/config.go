@@ -10,7 +10,8 @@ import (
 
 // ServerConfig holds server-related configuration
 type ServerConfig struct {
-	Port string `yaml:"port"`
+	Port              string `yaml:"port"`
+	AllowRegistration *bool  `yaml:"allow_registration"`
 }
 
 // DatabaseConfig holds database connection configuration
@@ -98,6 +99,10 @@ func Load() (*Config, error) {
 func applyDefaults(cfg *Config) {
 	if cfg.Server.Port == "" {
 		cfg.Server.Port = "8080"
+	}
+	if cfg.Server.AllowRegistration == nil {
+		allowReg := true
+		cfg.Server.AllowRegistration = &allowReg
 	}
 	if cfg.Database.Host == "" {
 		cfg.Database.Host = "localhost"
