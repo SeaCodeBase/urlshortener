@@ -11,6 +11,7 @@ import (
 	"github.com/SeaCodeBase/urlshortener/internal/middleware"
 	"github.com/SeaCodeBase/urlshortener/internal/repository"
 	"github.com/SeaCodeBase/urlshortener/internal/service"
+	"github.com/SeaCodeBase/urlshortener/internal/util"
 	"github.com/SeaCodeBase/urlshortener/internal/worker"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 	"github.com/gin-contrib/cors"
@@ -31,6 +32,15 @@ func main() {
 	}
 	logger.Init(true)
 	defer logger.Sync()
+
+	// Initialize GeoIP (optional - logs warning if path invalid)
+	if err := util.InitGeoIP(ctx, cfg.GeoIPPath); err != nil {
+		logger.Warn(ctx, "geoip initialization failed - location lookups disabled",
+			zap.String("path", cfg.GeoIPPath),
+			zap.Error(err),
+		)
+	}
+	defer util.CloseGeoIP()
 
 	db, err := database.Connect(ctx, cfg)
 	if err != nil {
