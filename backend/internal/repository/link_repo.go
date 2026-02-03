@@ -79,24 +79,6 @@ func (r *LinkRepositoryImpl) GetByID(ctx context.Context, id uint64) (*model.Lin
 	return &link, nil
 }
 
-func (r *LinkRepositoryImpl) GetByShortCode(ctx context.Context, code string) (*model.Link, error) {
-	var link model.Link
-	query := `SELECT id, user_id, short_code, original_url, title, expires_at, is_active, domain_id, created_at, updated_at
-			  FROM links WHERE short_code = ?`
-	err := r.db.GetContext(ctx, &link, query, code)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrLinkNotFound
-	}
-	if err != nil {
-		logger.Error(ctx, "link-repo: failed to get link by short code",
-			zap.String("short_code", code),
-			zap.Error(err),
-		)
-		return nil, err
-	}
-	return &link, nil
-}
-
 func (r *LinkRepositoryImpl) ListByUserID(ctx context.Context, userID uint64, limit, offset int) ([]model.Link, error) {
 	var links []model.Link
 	query := `SELECT id, user_id, short_code, original_url, title, expires_at, is_active, domain_id, created_at, updated_at
@@ -159,20 +141,6 @@ func (r *LinkRepositoryImpl) Delete(ctx context.Context, id uint64) error {
 		return ErrLinkNotFound
 	}
 	return nil
-}
-
-func (r *LinkRepositoryImpl) ShortCodeExists(ctx context.Context, code string) (bool, error) {
-	var count int
-	query := `SELECT COUNT(*) FROM links WHERE short_code = ?`
-	err := r.db.GetContext(ctx, &count, query, code)
-	if err != nil {
-		logger.Error(ctx, "link-repo: failed to check short code existence",
-			zap.String("short_code", code),
-			zap.Error(err),
-		)
-		return false, err
-	}
-	return count > 0, nil
 }
 
 func (r *LinkRepositoryImpl) ShortCodeExistsInDomain(ctx context.Context, domainID *uint64, code string) (bool, error) {

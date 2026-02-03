@@ -21,7 +21,7 @@ func newMockRepo() *mockShortCodeRepository {
 	}
 }
 
-func (m *mockShortCodeRepository) ShortCodeExists(ctx context.Context, code string) (bool, error) {
+func (m *mockShortCodeRepository) ShortCodeExistsInDomain(ctx context.Context, domainID *uint64, code string) (bool, error) {
 	m.callCount++
 	if m.err != nil {
 		return false, m.err
@@ -63,7 +63,7 @@ func TestShortCodeService_Generate(t *testing.T) {
 		mockRepo := newMockRepo()
 		svc := service.NewShortCodeService(mockRepo)
 
-		code, err := svc.Generate(context.Background())
+		code, err := svc.Generate(context.Background(), nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -71,7 +71,7 @@ func TestShortCodeService_Generate(t *testing.T) {
 			t.Errorf("expected code length 7, got %d", len(code))
 		}
 		if mockRepo.callCount != 1 {
-			t.Errorf("expected 1 call to ShortCodeExists, got %d", mockRepo.callCount)
+			t.Errorf("expected 1 call to ShortCodeExistsInDomain, got %d", mockRepo.callCount)
 		}
 	})
 
@@ -79,7 +79,7 @@ func TestShortCodeService_Generate(t *testing.T) {
 		// Create a custom mock that returns exists for first 3 calls
 		customMock := &countingMockRepo{existsUntil: 3}
 		svc := service.NewShortCodeService(customMock)
-		code, err := svc.Generate(context.Background())
+		code, err := svc.Generate(context.Background(), nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -87,7 +87,7 @@ func TestShortCodeService_Generate(t *testing.T) {
 			t.Errorf("expected code length 7, got %d", len(code))
 		}
 		if customMock.callCount != 4 {
-			t.Errorf("expected 4 calls to ShortCodeExists, got %d", customMock.callCount)
+			t.Errorf("expected 4 calls to ShortCodeExistsInDomain, got %d", customMock.callCount)
 		}
 	})
 
@@ -96,7 +96,7 @@ func TestShortCodeService_Generate(t *testing.T) {
 		customMock := &lengthBasedMockRepo{existsForLength: 7}
 		svc := service.NewShortCodeService(customMock)
 
-		code, err := svc.Generate(context.Background())
+		code, err := svc.Generate(context.Background(), nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -110,7 +110,7 @@ func TestShortCodeService_Generate(t *testing.T) {
 		mockRepo.err = errors.New("database error")
 		svc := service.NewShortCodeService(mockRepo)
 
-		_, err := svc.Generate(context.Background())
+		_, err := svc.Generate(context.Background(), nil)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -125,7 +125,7 @@ func TestShortCodeService_IsAvailable(t *testing.T) {
 		mockRepo := newMockRepo()
 		svc := service.NewShortCodeService(mockRepo)
 
-		available, err := svc.IsAvailable(context.Background(), "abc123")
+		available, err := svc.IsAvailable(context.Background(), nil, "abc123")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -139,7 +139,7 @@ func TestShortCodeService_IsAvailable(t *testing.T) {
 		mockRepo.existsCodes["existing"] = true
 		svc := service.NewShortCodeService(mockRepo)
 
-		available, err := svc.IsAvailable(context.Background(), "existing")
+		available, err := svc.IsAvailable(context.Background(), nil, "existing")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -153,7 +153,7 @@ func TestShortCodeService_IsAvailable(t *testing.T) {
 		mockRepo.err = errors.New("database error")
 		svc := service.NewShortCodeService(mockRepo)
 
-		_, err := svc.IsAvailable(context.Background(), "anycode")
+		_, err := svc.IsAvailable(context.Background(), nil, "anycode")
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -166,7 +166,7 @@ type countingMockRepo struct {
 	existsUntil int
 }
 
-func (m *countingMockRepo) ShortCodeExists(ctx context.Context, code string) (bool, error) {
+func (m *countingMockRepo) ShortCodeExistsInDomain(ctx context.Context, domainID *uint64, code string) (bool, error) {
 	m.callCount++
 	return m.callCount <= m.existsUntil, nil
 }
@@ -177,7 +177,7 @@ type lengthBasedMockRepo struct {
 	existsForLength int
 }
 
-func (m *lengthBasedMockRepo) ShortCodeExists(ctx context.Context, code string) (bool, error) {
+func (m *lengthBasedMockRepo) ShortCodeExistsInDomain(ctx context.Context, domainID *uint64, code string) (bool, error) {
 	m.callCount++
 	return len(code) == m.existsForLength, nil
 }

@@ -20,7 +20,6 @@ type UserRepository interface {
 type LinkRepository interface {
 	Create(ctx context.Context, link *model.Link) error
 	GetByID(ctx context.Context, id uint64) (*model.Link, error)
-	GetByShortCode(ctx context.Context, shortCode string) (*model.Link, error)
 	// GetByDomainAndShortCode finds a link by domain_id and short_code combination.
 	// domainID nil means the default domain (domain_id IS NULL)
 	GetByDomainAndShortCode(ctx context.Context, domainID *uint64, shortCode string) (*model.Link, error)
@@ -28,7 +27,6 @@ type LinkRepository interface {
 	CountByUserID(ctx context.Context, userID uint64) (int64, error)
 	Update(ctx context.Context, link *model.Link) error
 	Delete(ctx context.Context, id uint64) error
-	ShortCodeExists(ctx context.Context, shortCode string) (bool, error)
 	// ShortCodeExistsInDomain checks if a short code exists within a specific domain.
 	// domainID nil means the default domain (domain_id IS NULL)
 	ShortCodeExistsInDomain(ctx context.Context, domainID *uint64, shortCode string) (bool, error)
