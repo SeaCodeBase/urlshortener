@@ -40,6 +40,9 @@ func InitGeoIP(ctx context.Context, dbPath string) error {
 			return
 		}
 		geoIPInstance = &GeoIPLookup{db: db}
+		logger.Info(ctx, "geoip: database initialized successfully",
+			zap.String("path", dbPath),
+		)
 	})
 	return initErr
 }
