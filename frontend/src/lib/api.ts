@@ -1,4 +1,4 @@
-import type { AuthResponse, User, Link, LinksListResponse, LinkStats, Passkey } from '@/types';
+import type { AuthResponse, User, Link, LinksListResponse, LinkStats, Passkey, Domain, DomainsListResponse } from '@/types';
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
@@ -81,6 +81,7 @@ class ApiClient {
     custom_code?: string;
     title?: string;
     expires_at?: string;
+    domain_id?: number;
   }) {
     return this.request<Link>('/api/links', {
       method: 'POST',
@@ -97,6 +98,7 @@ class ApiClient {
     title?: string;
     expires_at?: string | null;
     is_active?: boolean;
+    domain_id?: number | null;
   }) {
     return this.request<Link>(`/api/links/${id}`, {
       method: 'PUT',
@@ -146,6 +148,24 @@ class ApiClient {
     return this.request('/api/auth/passkeys/verify/begin', {
       method: 'POST',
       body: JSON.stringify({ user_id: userId }),
+    });
+  }
+
+  // Domains
+  async getDomains(): Promise<DomainsListResponse> {
+    return this.request<DomainsListResponse>('/api/domains');
+  }
+
+  async createDomain(domain: string): Promise<Domain> {
+    return this.request<Domain>('/api/domains', {
+      method: 'POST',
+      body: JSON.stringify({ domain }),
+    });
+  }
+
+  async deleteDomain(id: number): Promise<void> {
+    return this.request<void>(`/api/domains/${id}`, {
+      method: 'DELETE',
     });
   }
 }
