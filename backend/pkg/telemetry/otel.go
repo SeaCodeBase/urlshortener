@@ -3,7 +3,7 @@ package telemetry
 
 import (
 	"context"
-	"os"
+	"io"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
@@ -15,10 +15,9 @@ import (
 // Init initializes OpenTelemetry with a stdout exporter for local development.
 // Returns a shutdown function that should be deferred.
 func Init(ctx context.Context, serviceName string) (func(context.Context) error, error) {
-	// Create stdout exporter (writes trace data to stdout as JSON)
+	// Create exporter that discards output - we only need trace/span IDs in logs
 	exporter, err := stdouttrace.New(
-		stdouttrace.WithWriter(os.Stdout),
-		stdouttrace.WithPrettyPrint(),
+		stdouttrace.WithWriter(io.Discard),
 	)
 	if err != nil {
 		return nil, err
