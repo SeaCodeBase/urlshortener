@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS clicks (
     link_id         BIGINT UNSIGNED NOT NULL,
     clicked_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     ip_hash         VARCHAR(64),
+    ip_address      VARCHAR(45),
     user_agent      VARCHAR(512),
     referrer        VARCHAR(2048),
     country         VARCHAR(2),
@@ -42,7 +43,8 @@ CREATE TABLE IF NOT EXISTS clicks (
     utm_medium      VARCHAR(255),
     utm_campaign    VARCHAR(255),
     FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE,
-    INDEX idx_link_clicked (link_id, clicked_at)
+    INDEX idx_link_clicked (link_id, clicked_at),
+    INDEX idx_clicks_ip_address (ip_address)
 );
 
 -- Daily stats table
