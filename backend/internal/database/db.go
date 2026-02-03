@@ -28,6 +28,6 @@ func Connect(cfg *config.Config) (*sqlx.DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	logger.Log.Info("Connected to MariaDB")
+	logger.Raw().Info("Connected to MariaDB")
 	return db, nil
 }

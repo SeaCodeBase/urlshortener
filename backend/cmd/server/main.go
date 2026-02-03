@@ -2,9 +2,6 @@
 package main
 
 import (
-	"github.com/gin-contrib/cors"
-	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 	"github.com/SeaCodeBase/urlshortener/internal/cache"
 	"github.com/SeaCodeBase/urlshortener/internal/config"
 	"github.com/SeaCodeBase/urlshortener/internal/database"
@@ -14,6 +11,10 @@ import (
 	"github.com/SeaCodeBase/urlshortener/internal/service"
 	"github.com/SeaCodeBase/urlshortener/internal/worker"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -22,20 +23,20 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		logger.Init(true)
-		logger.Log.Fatalf("Configuration error: %v", err)
+		logger.Raw().Fatal("configuration error", zap.Error(err))
 	}
 	logger.Init(true)
 	defer logger.Sync()
 
 	db, err := database.Connect(cfg)
 	if err != nil {
-		logger.Log.Fatalf("Database connection failed: %v", err)
+		logger.Raw().Fatal("database connection failed", zap.Error(err))
 	}
 	defer db.Close()
 
 	rdb, err := cache.Connect(cfg)
 	if err != nil {
-		logger.Log.Fatalf("Redis connection failed: %v", err)
+		logger.Raw().Fatal("redis connection failed", zap.Error(err))
 	}
 	defer rdb.Close()
 
@@ -67,7 +68,7 @@ func main() {
 	statsService := service.NewStatsService(clickRepo, linkRepo)
 	passkeyService, err := service.NewPasskeyService(passkeyRepo, userRepo, cfg.RPID, cfg.RPOrigin, "URL Shortener")
 	if err != nil {
-		logger.Log.Fatalf("Failed to create passkey service: %v", err)
+		logger.Raw().Fatal("failed to create passkey service", zap.Error(err))
 	}
 
 	// Setup handlers
@@ -128,8 +129,8 @@ func main() {
 	// Redirect route (must be after API routes to avoid conflicts)
 	r.GET("/:code", redirectHandler.Redirect)
 
-	logger.Log.Infof("Starting server on port %s", cfg.ServerPort)
+	logger.Raw().Info("starting server", zap.String("port", cfg.ServerPort))
 	if err := r.Run(":" + cfg.ServerPort); err != nil {
-		logger.Log.Fatalf("Failed to start server: %v", err)
+		logger.Raw().Fatal("failed to start server", zap.Error(err))
 	}
 }

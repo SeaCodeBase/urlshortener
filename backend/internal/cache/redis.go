@@ -23,6 +23,6 @@ func Connect(cfg *config.Config) (*redis.Client, error) {
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
-	logger.Log.Info("Connected to Redis")
+	logger.Raw().Info("Connected to Redis")
 	return client, nil
 }
