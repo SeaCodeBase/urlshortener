@@ -71,6 +71,36 @@ func (mr *MockClickRepositoryMockRecorder) GetBrowserStats(ctx, linkID any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBrowserStats", reflect.TypeOf((*MockClickRepository)(nil).GetBrowserStats), ctx, linkID)
 }
 
+// GetCityStats mocks base method.
+func (m *MockClickRepository) GetCityStats(ctx context.Context, linkID uint64, limit int) ([]repository.CityStats, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCityStats", ctx, linkID, limit)
+	ret0, _ := ret[0].([]repository.CityStats)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetCityStats indicates an expected call of GetCityStats.
+func (mr *MockClickRepositoryMockRecorder) GetCityStats(ctx, linkID, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCityStats", reflect.TypeOf((*MockClickRepository)(nil).GetCityStats), ctx, linkID, limit)
+}
+
+// GetCountryStats mocks base method.
+func (m *MockClickRepository) GetCountryStats(ctx context.Context, linkID uint64, limit int) ([]repository.CountryStats, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCountryStats", ctx, linkID, limit)
+	ret0, _ := ret[0].([]repository.CountryStats)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetCountryStats indicates an expected call of GetCountryStats.
+func (mr *MockClickRepositoryMockRecorder) GetCountryStats(ctx, linkID, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCountryStats", reflect.TypeOf((*MockClickRepository)(nil).GetCountryStats), ctx, linkID, limit)
+}
+
 // GetDailyStats mocks base method.
 func (m *MockClickRepository) GetDailyStats(ctx context.Context, linkID uint64, days int) ([]repository.DailyClickStats, error) {
 	m.ctrl.T.Helper()

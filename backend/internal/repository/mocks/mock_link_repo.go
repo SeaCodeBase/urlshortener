@@ -84,6 +84,21 @@ func (mr *MockLinkRepositoryMockRecorder) Delete(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockLinkRepository)(nil).Delete), ctx, id)
 }
 
+// GetByDomainAndShortCode mocks base method.
+func (m *MockLinkRepository) GetByDomainAndShortCode(ctx context.Context, domainID *uint64, shortCode string) (*model.Link, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetByDomainAndShortCode", ctx, domainID, shortCode)
+	ret0, _ := ret[0].(*model.Link)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetByDomainAndShortCode indicates an expected call of GetByDomainAndShortCode.
+func (mr *MockLinkRepositoryMockRecorder) GetByDomainAndShortCode(ctx, domainID, shortCode any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByDomainAndShortCode", reflect.TypeOf((*MockLinkRepository)(nil).GetByDomainAndShortCode), ctx, domainID, shortCode)
+}
+
 // GetByID mocks base method.
 func (m *MockLinkRepository) GetByID(ctx context.Context, id uint64) (*model.Link, error) {
 	m.ctrl.T.Helper()
@@ -97,21 +112,6 @@ func (m *MockLinkRepository) GetByID(ctx context.Context, id uint64) (*model.Lin
 func (mr *MockLinkRepositoryMockRecorder) GetByID(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MockLinkRepository)(nil).GetByID), ctx, id)
-}
-
-// GetByShortCode mocks base method.
-func (m *MockLinkRepository) GetByShortCode(ctx context.Context, shortCode string) (*model.Link, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetByShortCode", ctx, shortCode)
-	ret0, _ := ret[0].(*model.Link)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetByShortCode indicates an expected call of GetByShortCode.
-func (mr *MockLinkRepositoryMockRecorder) GetByShortCode(ctx, shortCode any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByShortCode", reflect.TypeOf((*MockLinkRepository)(nil).GetByShortCode), ctx, shortCode)
 }
 
 // ListByUserID mocks base method.
@@ -129,19 +129,19 @@ func (mr *MockLinkRepositoryMockRecorder) ListByUserID(ctx, userID, limit, offse
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListByUserID", reflect.TypeOf((*MockLinkRepository)(nil).ListByUserID), ctx, userID, limit, offset)
 }
 
-// ShortCodeExists mocks base method.
-func (m *MockLinkRepository) ShortCodeExists(ctx context.Context, shortCode string) (bool, error) {
+// ShortCodeExistsInDomain mocks base method.
+func (m *MockLinkRepository) ShortCodeExistsInDomain(ctx context.Context, domainID *uint64, shortCode string) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ShortCodeExists", ctx, shortCode)
+	ret := m.ctrl.Call(m, "ShortCodeExistsInDomain", ctx, domainID, shortCode)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// ShortCodeExists indicates an expected call of ShortCodeExists.
-func (mr *MockLinkRepositoryMockRecorder) ShortCodeExists(ctx, shortCode any) *gomock.Call {
+// ShortCodeExistsInDomain indicates an expected call of ShortCodeExistsInDomain.
+func (mr *MockLinkRepositoryMockRecorder) ShortCodeExistsInDomain(ctx, domainID, shortCode any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ShortCodeExists", reflect.TypeOf((*MockLinkRepository)(nil).ShortCodeExists), ctx, shortCode)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ShortCodeExistsInDomain", reflect.TypeOf((*MockLinkRepository)(nil).ShortCodeExistsInDomain), ctx, domainID, shortCode)
 }
 
 // Update mocks base method.

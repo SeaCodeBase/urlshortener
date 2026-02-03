@@ -100,20 +100,6 @@ func (mr *MockUserRepositoryMockRecorder) GetByID(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MockUserRepository)(nil).GetByID), ctx, id)
 }
 
-// UpdatePassword mocks base method.
-func (m *MockUserRepository) UpdatePassword(ctx context.Context, userID uint64, passwordHash string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdatePassword", ctx, userID, passwordHash)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// UpdatePassword indicates an expected call of UpdatePassword.
-func (mr *MockUserRepositoryMockRecorder) UpdatePassword(ctx, userID, passwordHash any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePassword", reflect.TypeOf((*MockUserRepository)(nil).UpdatePassword), ctx, userID, passwordHash)
-}
-
 // UpdateDisplayName mocks base method.
 func (m *MockUserRepository) UpdateDisplayName(ctx context.Context, userID uint64, displayName string) error {
 	m.ctrl.T.Helper()
@@ -126,4 +112,18 @@ func (m *MockUserRepository) UpdateDisplayName(ctx context.Context, userID uint6
 func (mr *MockUserRepositoryMockRecorder) UpdateDisplayName(ctx, userID, displayName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateDisplayName", reflect.TypeOf((*MockUserRepository)(nil).UpdateDisplayName), ctx, userID, displayName)
+}
+
+// UpdatePassword mocks base method.
+func (m *MockUserRepository) UpdatePassword(ctx context.Context, userID uint64, passwordHash string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdatePassword", ctx, userID, passwordHash)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdatePassword indicates an expected call of UpdatePassword.
+func (mr *MockUserRepositoryMockRecorder) UpdatePassword(ctx, userID, passwordHash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePassword", reflect.TypeOf((*MockUserRepository)(nil).UpdatePassword), ctx, userID, passwordHash)
 }
