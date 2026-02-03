@@ -18,7 +18,6 @@ import (
 
 var (
 	ErrPasskeyNotOwned   = errors.New("passkey does not belong to user")
-	ErrLastPasskey       = errors.New("cannot delete last passkey")
 	ErrInvalidSession    = errors.New("invalid session data")
 	ErrCredentialInvalid = errors.New("credential verification failed")
 )
@@ -359,9 +358,6 @@ func (s *passkeyService) Delete(ctx context.Context, userID, passkeyID uint64) e
 	}
 	if !found {
 		return ErrPasskeyNotOwned
-	}
-	if len(passkeys) == 1 {
-		return ErrLastPasskey
 	}
 	if err := s.passkeyRepo.Delete(ctx, passkeyID); err != nil {
 		logger.Error(ctx, "passkey-service: failed to delete passkey",

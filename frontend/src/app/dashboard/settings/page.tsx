@@ -91,10 +91,6 @@ export default function SettingsPage() {
   }
 
   const handleDeletePasskey = async (id: number) => {
-    if (passkeys.length === 1) {
-      toast.error('Cannot delete last passkey')
-      return
-    }
     if (!confirm('Are you sure you want to delete this passkey?')) return
     try {
       await api.deletePasskey(id)

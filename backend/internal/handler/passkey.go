@@ -182,14 +182,6 @@ func (h *PasskeyHandler) Delete(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "passkey not found"})
 			return
 		}
-		if err == service.ErrLastPasskey {
-			logger.Warn(ctx, "passkey-delete: cannot delete last passkey",
-				zap.Uint64("user_id", userID),
-				zap.Uint64("passkey_id", passkeyID),
-			)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot delete last passkey"})
-			return
-		}
 		logger.Error(ctx, "passkey-delete: failed",
 			zap.Uint64("user_id", userID),
 			zap.Uint64("passkey_id", passkeyID),
