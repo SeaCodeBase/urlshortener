@@ -3,16 +3,18 @@
 import * as React from 'react';
 
 interface CheckboxProps {
+  id?: string;
   checked?: boolean;
   onCheckedChange?: (checked: boolean) => void;
   className?: string;
 }
 
-export function Checkbox({ checked = false, onCheckedChange, className = '' }: CheckboxProps) {
+export function Checkbox({ id, checked = false, onCheckedChange, className = '' }: CheckboxProps) {
   return (
     <button
       type="button"
       role="checkbox"
+      id={id}
       aria-checked={checked}
       onClick={() => onCheckedChange?.(!checked)}
       className={`h-4 w-4 shrink-0 rounded border border-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
