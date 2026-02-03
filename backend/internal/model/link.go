@@ -5,15 +5,16 @@ import (
 )
 
 type Link struct {
-	ID          uint64       `db:"id" json:"id"`
-	UserID      uint64       `db:"user_id" json:"user_id"`
-	ShortCode   string       `db:"short_code" json:"short_code"`
-	OriginalURL string       `db:"original_url" json:"original_url"`
-	Title       *string      `db:"title" json:"title,omitempty"`
-	ExpiresAt   NullTime `db:"expires_at" json:"expires_at"`
-	IsActive    bool         `db:"is_active" json:"is_active"`
-	CreatedAt   time.Time    `db:"created_at" json:"created_at"`
-	UpdatedAt   time.Time    `db:"updated_at" json:"updated_at"`
+	ID          uint64    `db:"id" json:"id"`
+	UserID      uint64    `db:"user_id" json:"user_id"`
+	ShortCode   string    `db:"short_code" json:"short_code"`
+	OriginalURL string    `db:"original_url" json:"original_url"`
+	Title       *string   `db:"title" json:"title,omitempty"`
+	ExpiresAt   NullTime  `db:"expires_at" json:"expires_at"`
+	IsActive    bool      `db:"is_active" json:"is_active"`
+	DomainID    *uint64   `db:"domain_id" json:"domain_id,omitempty"`
+	CreatedAt   time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
 }
 
 type LinkWithStats struct {
