@@ -1,7 +1,7 @@
 import type { AuthResponse, User, Link, LinksListResponse, LinkStats, Passkey, Domain, DomainsListResponse } from '@/types';
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081';
 
 class ApiClient {
   private token: string | null = null;

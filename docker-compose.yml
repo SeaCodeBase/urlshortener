@@ -27,7 +27,7 @@ services:
     ports:
       - "0.0.0.0:3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8081
+      - NEXT_PUBLIC_API_URL=http://localhost:8081
     depends_on:
       backend:
         condition: service_healthy
