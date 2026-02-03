@@ -9,9 +9,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SeaCodeBase/urlshortener/internal/service"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type RedirectHandler struct {
@@ -72,7 +73,10 @@ func (h *RedirectHandler) Redirect(c *gin.Context) {
 			UTMCampaign: c.Query("utm_campaign"),
 		}
 		if err := h.clickService.RecordClick(ctx, event); err != nil {
-			logger.Log.Warnf("failed to record click: %v", err)
+			logger.Warn(ctx, "failed to record click",
+				zap.Uint64("link_id", linkID),
+				zap.Error(err),
+			)
 		}
 	}()
 

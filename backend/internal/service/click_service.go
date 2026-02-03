@@ -9,6 +9,7 @@ import (
 
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 type ClickEvent struct {
@@ -46,7 +47,10 @@ func (s *ClickService) RecordClick(ctx context.Context, event ClickEvent) error 
 	// Increment real-time counter
 	counterKey := fmt.Sprintf("clicks:count:%d", event.LinkID)
 	if err := s.rdb.Incr(ctx, counterKey).Err(); err != nil {
-		logger.Log.Warnf("failed to increment click counter: %v", err)
+		logger.Warn(ctx, "failed to increment click counter",
+			zap.Uint64("link_id", event.LinkID),
+			zap.Error(err),
+		)
 	}
 
 	return nil

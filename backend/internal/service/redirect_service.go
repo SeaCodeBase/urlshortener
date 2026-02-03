@@ -7,9 +7,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 	"github.com/SeaCodeBase/urlshortener/internal/repository"
+	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 var (
@@ -73,7 +74,10 @@ func (s *RedirectService) Resolve(ctx context.Context, code string) (string, uin
 
 	data, err := json.Marshal(cl)
 	if err != nil {
-		logger.Log.Warnf("failed to marshal cached link: %v", err)
+		logger.Warn(ctx, "failed to marshal cached link",
+			zap.Uint64("link_id", link.ID),
+			zap.Error(err),
+		)
 	} else {
 		s.rdb.Set(ctx, cacheKey, data, linkCacheTTL)
 	}
