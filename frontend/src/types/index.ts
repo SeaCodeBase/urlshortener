@@ -14,9 +14,21 @@ export interface Link {
   title?: string;
   expires_at?: string;
   is_active: boolean;
+  domain_id?: number;
   created_at: string;
   updated_at: string;
   short_url: string;
+}
+
+export interface Domain {
+  id: number;
+  user_id: number;
+  domain: string;
+  created_at: string;
+}
+
+export interface DomainsListResponse {
+  domains: Domain[];
 }
 
 export interface AuthResponse {
