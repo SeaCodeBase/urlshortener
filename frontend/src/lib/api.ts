@@ -92,7 +92,12 @@ class ApiClient {
     return this.request<Link>(`/api/links/${id}`);
   }
 
-  async updateLink(id: number, data: Partial<Link>) {
+  async updateLink(id: number, data: {
+    original_url?: string;
+    title?: string;
+    expires_at?: string | null;
+    is_active?: boolean;
+  }) {
     return this.request<Link>(`/api/links/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),

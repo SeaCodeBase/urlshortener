@@ -86,7 +86,7 @@ export default function EditLinkPage() {
         // Just update the existing link
         await api.updateLink(linkId, {
           original_url: originalUrl,
-          title: title || undefined,
+          title: title,
           expires_at: expiresAt ? new Date(expiresAt).toISOString() : undefined,
           is_active: isActive,
         })
@@ -147,8 +147,10 @@ export default function EditLinkPage() {
                   value="localhost:8080"
                   disabled
                   className="bg-gray-50"
-                  title="The domain cannot be changed after a link has been shortened."
                 />
+                <p className="text-xs text-gray-500">
+                  The domain cannot be changed after a link has been shortened.
+                </p>
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -252,12 +254,24 @@ export default function EditLinkPage() {
             <CardContent>
               <div className="space-y-2">
                 <Label htmlFor="expiresAt">Expiration date (optional)</Label>
-                <Input
-                  id="expiresAt"
-                  type="datetime-local"
-                  value={expiresAt}
-                  onChange={(e) => setExpiresAt(e.target.value)}
-                />
+                <div className="flex gap-2">
+                  <Input
+                    id="expiresAt"
+                    type="datetime-local"
+                    value={expiresAt}
+                    onChange={(e) => setExpiresAt(e.target.value)}
+                    className="flex-1"
+                  />
+                  {expiresAt && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setExpiresAt('')}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
               </div>
             </CardContent>
           )}
