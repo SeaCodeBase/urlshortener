@@ -41,6 +41,7 @@ type CreateLinkInput struct {
 	CustomCode  string     `json:"custom_code,omitempty"`
 	Title       string     `json:"title,omitempty"`
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	DomainID    *uint64    `json:"domain_id,omitempty"`
 }
 
 type UpdateLinkInput struct {
@@ -48,6 +49,7 @@ type UpdateLinkInput struct {
 	Title       string     `json:"title,omitempty"`
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 	IsActive    *bool      `json:"is_active,omitempty"`
+	DomainID    *uint64    `json:"domain_id,omitempty"`
 }
 
 type ListLinksParams struct {
@@ -99,6 +101,7 @@ func (s *LinkServiceImpl) Create(ctx context.Context, userID uint64, input Creat
 		ShortCode:   shortCode,
 		OriginalURL: input.OriginalURL,
 		IsActive:    true,
+		DomainID:    input.DomainID,
 	}
 
 	if input.Title != "" {
@@ -204,6 +207,9 @@ func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, inp
 	}
 	if input.IsActive != nil {
 		link.IsActive = *input.IsActive
+	}
+	if input.DomainID != nil {
+		link.DomainID = input.DomainID
 	}
 
 	if err := s.linkRepo.Update(ctx, link); err != nil {
