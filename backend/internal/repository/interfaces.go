@@ -40,6 +40,15 @@ type PasskeyRepository interface {
 	CountByUserID(ctx context.Context, userID uint64) (int, error)
 }
 
+//go:generate mockgen -destination=mocks/mock_domain_repo.go -package=mocks . DomainRepository
+type DomainRepository interface {
+	Create(ctx context.Context, domain *model.Domain) error
+	GetByID(ctx context.Context, id uint64) (*model.Domain, error)
+	GetByDomain(ctx context.Context, domain string) (*model.Domain, error)
+	ListByUserID(ctx context.Context, userID uint64) ([]*model.Domain, error)
+	Delete(ctx context.Context, id uint64) error
+}
+
 //go:generate mockgen -destination=mocks/mock_click_repo.go -package=mocks . ClickRepository
 type ClickRepository interface {
 	BatchInsert(ctx context.Context, clicks []model.Click) error
