@@ -80,30 +80,6 @@ func TestLoadYAML_FileNotFound(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestLoadYAML_EnvOverride(t *testing.T) {
-	content := `
-server:
-  port: "8080"
-jwt:
-  secret: "yaml-secret-that-is-long-enough!"
-`
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.yaml")
-	err := os.WriteFile(configPath, []byte(content), 0644)
-	require.NoError(t, err)
-
-	// Set env var override
-	t.Setenv("SERVER_PORT", "9999")
-	t.Setenv("JWT_SECRET", "env-override-secret-long-enough!")
-
-	cfg, err := LoadFromYAML(configPath)
-	require.NoError(t, err)
-
-	// Env vars should override YAML values
-	assert.Equal(t, "9999", cfg.Server.Port)
-	assert.Equal(t, "env-override-secret-long-enough!", cfg.JWT.Secret)
-}
-
 func TestLoad_ConfigNotFound(t *testing.T) {
 	// Change to a directory without config.yaml
 	oldWd, _ := os.Getwd()

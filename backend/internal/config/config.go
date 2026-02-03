@@ -61,7 +61,7 @@ type Config struct {
 	GeoIP    GeoIPConfig    `yaml:"geoip"`
 }
 
-// LoadFromYAML loads configuration from a YAML file with env var overrides
+// LoadFromYAML loads configuration from a YAML file
 func LoadFromYAML(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -73,7 +73,6 @@ func LoadFromYAML(path string) (*Config, error) {
 		return nil, err
 	}
 
-	applyEnvOverrides(&cfg)
 	applyDefaults(&cfg)
 
 	if err := validate(&cfg); err != nil {
@@ -93,52 +92,6 @@ func Load() (*Config, error) {
 	}
 
 	return nil, errors.New("config.yaml not found, please copy config.example.yaml to config.yaml")
-}
-
-// applyEnvOverrides applies environment variable overrides to config
-func applyEnvOverrides(cfg *Config) {
-	if v := os.Getenv("SERVER_PORT"); v != "" {
-		cfg.Server.Port = v
-	}
-	if v := os.Getenv("DB_HOST"); v != "" {
-		cfg.Database.Host = v
-	}
-	if v := os.Getenv("DB_PORT"); v != "" {
-		cfg.Database.Port = v
-	}
-	if v := os.Getenv("DB_USER"); v != "" {
-		cfg.Database.User = v
-	}
-	if v := os.Getenv("DB_PASSWORD"); v != "" {
-		cfg.Database.Password = v
-	}
-	if v := os.Getenv("DB_NAME"); v != "" {
-		cfg.Database.Name = v
-	}
-	if v := os.Getenv("REDIS_HOST"); v != "" {
-		cfg.Redis.Host = v
-	}
-	if v := os.Getenv("REDIS_PORT"); v != "" {
-		cfg.Redis.Port = v
-	}
-	if v := os.Getenv("REDIS_PASSWORD"); v != "" {
-		cfg.Redis.Password = v
-	}
-	if v := os.Getenv("JWT_SECRET"); v != "" {
-		cfg.JWT.Secret = v
-	}
-	if v := os.Getenv("BASE_URL"); v != "" {
-		cfg.URLs.BaseURL = v
-	}
-	if v := os.Getenv("RP_ID"); v != "" {
-		cfg.WebAuthn.RPID = v
-	}
-	if v := os.Getenv("RP_ORIGIN"); v != "" {
-		cfg.WebAuthn.RPOrigin = v
-	}
-	if v := os.Getenv("GEOIP_PATH"); v != "" {
-		cfg.GeoIP.Path = v
-	}
 }
 
 // applyDefaults sets default values for empty fields

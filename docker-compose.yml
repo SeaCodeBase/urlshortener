@@ -6,17 +6,6 @@ services:
       - "0.0.0.0:8080:8080"
     volumes:
       - ./backend/config.docker.yaml:/app/config.yaml:ro
-    environment:
-      - SERVER_PORT=8080
-      - DB_HOST=mariadb
-      - DB_PORT=3306
-      - DB_USER=urlshortener
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=urlshortener
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - JWT_SECRET=${JWT_SECRET}
-      - BASE_URL=${BASE_URL}
     depends_on:
       mariadb:
         condition: service_healthy
