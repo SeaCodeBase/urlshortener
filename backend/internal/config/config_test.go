@@ -72,7 +72,7 @@ jwt:
 
 	_, err = LoadFromYAML(configPath)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "JWT_SECRET")
+	assert.Contains(t, err.Error(), "jwt.secret")
 }
 
 func TestLoadYAML_FileNotFound(t *testing.T) {
@@ -104,15 +104,15 @@ jwt:
 	assert.Equal(t, "env-override-secret-long-enough!", cfg.JWT.Secret)
 }
 
-func TestLoad_FallbackToEnvOnly(t *testing.T) {
-	// When no YAML file exists, should fall back to env vars
-	t.Setenv("JWT_SECRET", "env-only-secret-long-enough!")
-	t.Setenv("SERVER_PORT", "7777")
+func TestLoad_ConfigNotFound(t *testing.T) {
+	// Change to a directory without config.yaml
+	oldWd, _ := os.Getwd()
+	defer os.Chdir(oldWd)
+	os.Chdir(t.TempDir())
 
-	cfg, err := Load()
-	require.NoError(t, err)
-	assert.Equal(t, "7777", cfg.Server.Port)
-	assert.Equal(t, "env-only-secret-long-enough!", cfg.JWT.Secret)
+	_, err := Load()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "config.yaml not found")
 }
 
 func TestLoadYAML_Defaults(t *testing.T) {

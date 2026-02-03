@@ -83,9 +83,8 @@ func LoadFromYAML(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// Load tries YAML config first, falls back to env-only
+// Load loads configuration from config.yaml
 func Load() (*Config, error) {
-	// Try YAML config first
 	yamlPaths := []string{"config.yaml", "../config.yaml", "../../config.yaml"}
 	for _, path := range yamlPaths {
 		if _, err := os.Stat(path); err == nil {
@@ -93,21 +92,7 @@ func Load() (*Config, error) {
 		}
 	}
 
-	// Fall back to env-only config
-	return loadFromEnv()
-}
-
-// loadFromEnv loads config from environment variables only (legacy behavior)
-func loadFromEnv() (*Config, error) {
-	cfg := &Config{}
-	applyEnvOverrides(cfg)
-	applyDefaults(cfg)
-
-	if err := validate(cfg); err != nil {
-		return nil, err
-	}
-
-	return cfg, nil
+	return nil, errors.New("config.yaml not found, please copy config.example.yaml to config.yaml")
 }
 
 // applyEnvOverrides applies environment variable overrides to config
@@ -193,7 +178,7 @@ func applyDefaults(cfg *Config) {
 // validate checks for required configuration values
 func validate(cfg *Config) error {
 	if cfg.JWT.Secret == "" {
-		return errors.New("JWT_SECRET environment variable is required")
+		return errors.New("jwt.secret is required in config.yaml")
 	}
 	return nil
 }

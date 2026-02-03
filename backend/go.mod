@@ -9,7 +9,6 @@ require (
 	github.com/go-webauthn/webauthn v0.15.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jmoiron/sqlx v1.4.0
-	github.com/joho/godotenv v1.5.1
 	github.com/mssola/useragent v1.0.0
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/redis/go-redis/v9 v9.17.3

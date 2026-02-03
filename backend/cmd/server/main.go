@@ -16,13 +16,10 @@ import (
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 )
 
 func main() {
-	_ = godotenv.Load()
-
 	ctx := context.Background()
 
 	cfg, err := config.Load()
