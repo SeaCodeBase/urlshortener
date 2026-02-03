@@ -83,7 +83,7 @@ func main() {
 	}
 
 	// Setup handlers
-	authHandler := handler.NewAuthHandler(authService, passkeyService)
+	authHandler := handler.NewAuthHandler(authService, passkeyService, cfg)
 	linkHandler := handler.NewLinkHandler(linkService, cfg)
 	statsHandler := handler.NewStatsHandler(statsService)
 	passkeyHandler := handler.NewPasskeyHandler(passkeyService)

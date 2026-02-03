@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/SeaCodeBase/urlshortener/internal/config"
 	"github.com/SeaCodeBase/urlshortener/internal/middleware"
 	"github.com/SeaCodeBase/urlshortener/internal/service"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
@@ -15,17 +16,27 @@ import (
 type AuthHandler struct {
 	authService    service.AuthService
 	passkeyService service.PasskeyService
+	cfg            *config.Config
 }
 
-func NewAuthHandler(authService service.AuthService, passkeyService service.PasskeyService) *AuthHandler {
+func NewAuthHandler(authService service.AuthService, passkeyService service.PasskeyService, cfg *config.Config) *AuthHandler {
 	return &AuthHandler{
 		authService:    authService,
 		passkeyService: passkeyService,
+		cfg:            cfg,
 	}
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {
 	ctx := c.Request.Context()
+
+	// Check if registration is allowed
+	if h.cfg.Server.AllowRegistration != nil && !*h.cfg.Server.AllowRegistration {
+		logger.Warn(ctx, "register: registration is disabled")
+		c.JSON(http.StatusForbidden, gin.H{"error": "Registration is disabled"})
+		return
+	}
+
 	var input service.RegisterInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		logger.Warn(ctx, "register: invalid request body",
