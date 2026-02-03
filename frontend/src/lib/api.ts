@@ -1,7 +1,9 @@
 import type { AuthResponse, User, Link, LinksListResponse, LinkStats, Passkey, Domain, DomainsListResponse } from '@/types';
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081';
+// API requests go through Next.js API route proxy (/api/[...path])
+// The proxy forwards to BACKEND_URL (server-side env var)
+const API_BASE = '';
 
 class ApiClient {
   private token: string | null = null;

@@ -32,7 +32,7 @@ export default function LoginPage() {
 
     try {
       // First try normal login
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081'}/api/auth/login`, {
+      const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -76,7 +76,7 @@ export default function LoginPage() {
       const credential = await startAuthentication({ optionsJSON: options.publicKey })
 
       // 3. Complete verification
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081'}/api/auth/passkeys/verify/finish`, {
+      const response = await fetch('/api/auth/passkeys/verify/finish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

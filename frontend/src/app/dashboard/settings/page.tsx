@@ -119,7 +119,7 @@ export default function SettingsPage() {
       const authStorage = localStorage.getItem('auth-storage')
       const token = authStorage ? JSON.parse(authStorage).state?.token : ''
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081'}/api/auth/passkeys/register/finish`, {
+      const response = await fetch('/api/auth/passkeys/register/finish', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
