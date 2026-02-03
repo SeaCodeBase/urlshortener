@@ -56,6 +56,7 @@ func main() {
 	linkRepo := repository.NewLinkRepository(db)
 	clickRepo := repository.NewClickRepository(db)
 	passkeyRepo := repository.NewPasskeyRepository(db)
+	domainRepo := repository.NewDomainRepository(db)
 
 	// Start click flusher worker
 	clickFlusher := worker.NewClickFlusher(rdb, clickRepo)
@@ -78,6 +79,7 @@ func main() {
 	statsHandler := handler.NewStatsHandler(statsService)
 	passkeyHandler := handler.NewPasskeyHandler(passkeyService)
 	passkeyVerifyHandler := handler.NewPasskeyVerifyHandler(passkeyService, authService)
+	domainHandler := handler.NewDomainHandler(domainRepo)
 
 	// Click service
 	clickService := service.NewClickService(rdb)
@@ -137,6 +139,15 @@ func main() {
 			links.PUT("/:id", linkHandler.Update)
 			links.DELETE("/:id", linkHandler.Delete)
 			links.GET("/:id/stats", statsHandler.GetLinkStats)
+		}
+
+		// Domain routes (protected)
+		domains := api.Group("/domains")
+		domains.Use(authMiddleware)
+		{
+			domains.GET("", domainHandler.List)
+			domains.POST("", domainHandler.Create)
+			domains.DELETE("/:id", domainHandler.Delete)
 		}
 	}
 
