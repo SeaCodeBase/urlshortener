@@ -4,7 +4,9 @@ import (
 	"net"
 	"sync"
 
+	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 	"github.com/oschwald/geoip2-golang"
+	"go.uber.org/zap"
 )
 
 type GeoIPResult struct {
@@ -29,6 +31,10 @@ func InitGeoIP(dbPath string) error {
 	geoIPOnce.Do(func() {
 		db, err := geoip2.Open(dbPath)
 		if err != nil {
+			logger.Raw().Error("geoip: failed to open database",
+				zap.String("path", dbPath),
+				zap.Error(err),
+			)
 			initErr = err
 			return
 		}
@@ -58,6 +64,10 @@ func LookupIP(ipStr string) GeoIPResult {
 
 	record, err := geoIPInstance.db.City(ip)
 	if err != nil {
+		logger.Raw().Warn("geoip: failed to lookup IP",
+			zap.String("ip", ipStr),
+			zap.Error(err),
+		)
 		return GeoIPResult{}
 	}
 

@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/SeaCodeBase/urlshortener/internal/repository"
+	"github.com/SeaCodeBase/urlshortener/pkg/logger"
+	"go.uber.org/zap"
 )
 
 // Compile-time check: StatsServiceImpl implements StatsService
@@ -40,6 +42,10 @@ func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint
 	// Verify ownership
 	link, err := s.linkRepo.GetByID(ctx, linkID)
 	if err != nil {
+		logger.Error(ctx, "stats-service: failed to get link",
+			zap.Uint64("link_id", linkID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 	if link.UserID != userID {
@@ -49,11 +55,19 @@ func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint
 	// Get all stats
 	stats, err := s.clickRepo.GetStatsByLinkID(ctx, linkID)
 	if err != nil {
+		logger.Error(ctx, "stats-service: failed to get click stats",
+			zap.Uint64("link_id", linkID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 
 	daily, err := s.clickRepo.GetDailyStats(ctx, linkID, 30)
 	if err != nil {
+		logger.Error(ctx, "stats-service: failed to get daily stats",
+			zap.Uint64("link_id", linkID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 	// Ensure non-nil slice for JSON serialization
@@ -63,6 +77,10 @@ func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint
 
 	referrers, err := s.clickRepo.GetTopReferrers(ctx, linkID, 10)
 	if err != nil {
+		logger.Error(ctx, "stats-service: failed to get top referrers",
+			zap.Uint64("link_id", linkID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 	// Ensure non-nil slice for JSON serialization
@@ -72,6 +90,10 @@ func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint
 
 	devices, err := s.clickRepo.GetDeviceStats(ctx, linkID)
 	if err != nil {
+		logger.Error(ctx, "stats-service: failed to get device stats",
+			zap.Uint64("link_id", linkID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 	// Ensure non-nil slice for JSON serialization
@@ -81,6 +103,10 @@ func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint
 
 	browsers, err := s.clickRepo.GetBrowserStats(ctx, linkID)
 	if err != nil {
+		logger.Error(ctx, "stats-service: failed to get browser stats",
+			zap.Uint64("link_id", linkID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 	// Ensure non-nil slice for JSON serialization
@@ -90,6 +116,10 @@ func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint
 
 	countries, err := s.clickRepo.GetCountryStats(ctx, linkID, 10)
 	if err != nil {
+		logger.Error(ctx, "stats-service: failed to get country stats",
+			zap.Uint64("link_id", linkID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 	if countries == nil {
@@ -105,6 +135,10 @@ func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint
 
 	cities, err := s.clickRepo.GetCityStats(ctx, linkID, 10)
 	if err != nil {
+		logger.Error(ctx, "stats-service: failed to get city stats",
+			zap.Uint64("link_id", linkID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 	if cities == nil {

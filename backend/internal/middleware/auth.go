@@ -5,12 +5,15 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SeaCodeBase/urlshortener/internal/service"
+	"github.com/SeaCodeBase/urlshortener/pkg/logger"
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 func AuthMiddleware(authService service.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ctx := c.Request.Context()
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authorization header required"})
@@ -26,6 +29,9 @@ func AuthMiddleware(authService service.AuthService) gin.HandlerFunc {
 		token := parts[1]
 		userID, err := authService.ValidateToken(token)
 		if err != nil {
+			logger.Warn(ctx, "auth: invalid or expired token",
+				zap.Error(err),
+			)
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			return
 		}

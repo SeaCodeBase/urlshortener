@@ -4,6 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"math/big"
+
+	"github.com/SeaCodeBase/urlshortener/pkg/logger"
+	"go.uber.org/zap"
 )
 
 const (
@@ -37,11 +40,18 @@ func (s *ShortCodeServiceImpl) generateWithLength(ctx context.Context, length in
 	for attempts := 0; attempts < maxGenerateAttempts; attempts++ {
 		code, err := generateRandomCode(length)
 		if err != nil {
+			logger.Error(ctx, "shortcode-service: failed to generate random bytes",
+				zap.Error(err),
+			)
 			return "", err
 		}
 
 		exists, err := s.linkRepo.ShortCodeExists(ctx, code)
 		if err != nil {
+			logger.Error(ctx, "shortcode-service: failed to check code availability",
+				zap.String("code", code),
+				zap.Error(err),
+			)
 			return "", err
 		}
 		if !exists {
@@ -67,7 +77,14 @@ func (s *ShortCodeServiceImpl) IsValid(code string) bool {
 
 func (s *ShortCodeServiceImpl) IsAvailable(ctx context.Context, code string) (bool, error) {
 	exists, err := s.linkRepo.ShortCodeExists(ctx, code)
-	return !exists, err
+	if err != nil {
+		logger.Error(ctx, "shortcode-service: failed to check code availability",
+			zap.String("code", code),
+			zap.Error(err),
+		)
+		return false, err
+	}
+	return !exists, nil
 }
 
 func generateRandomCode(length int) (string, error) {

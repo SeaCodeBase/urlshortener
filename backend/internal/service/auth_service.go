@@ -5,9 +5,11 @@ import (
 	"errors"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/SeaCodeBase/urlshortener/internal/model"
 	"github.com/SeaCodeBase/urlshortener/internal/repository"
+	"github.com/SeaCodeBase/urlshortener/pkg/logger"
+	"github.com/golang-jwt/jwt/v5"
+	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -55,6 +57,10 @@ type AuthResponse struct {
 func (s *AuthServiceImpl) Register(ctx context.Context, input RegisterInput) (*AuthResponse, error) {
 	exists, err := s.userRepo.EmailExists(ctx, input.Email)
 	if err != nil {
+		logger.Error(ctx, "auth-service: failed to check email existence",
+			zap.String("email", input.Email),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 	if exists {
@@ -63,6 +69,9 @@ func (s *AuthServiceImpl) Register(ctx context.Context, input RegisterInput) (*A
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
+		logger.Error(ctx, "auth-service: failed to hash password",
+			zap.Error(err),
+		)
 		return nil, err
 	}
 
@@ -72,11 +81,19 @@ func (s *AuthServiceImpl) Register(ctx context.Context, input RegisterInput) (*A
 	}
 
 	if err := s.userRepo.Create(ctx, user); err != nil {
+		logger.Error(ctx, "auth-service: failed to create user",
+			zap.String("email", input.Email),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 
 	token, err := s.generateToken(user.ID)
 	if err != nil {
+		logger.Error(ctx, "auth-service: failed to generate token",
+			zap.Uint64("user_id", user.ID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 
@@ -89,6 +106,10 @@ func (s *AuthServiceImpl) Login(ctx context.Context, input LoginInput) (*AuthRes
 		return nil, ErrInvalidCredentials
 	}
 	if err != nil {
+		logger.Error(ctx, "auth-service: failed to get user by email",
+			zap.String("email", input.Email),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 
@@ -98,6 +119,10 @@ func (s *AuthServiceImpl) Login(ctx context.Context, input LoginInput) (*AuthRes
 
 	token, err := s.generateToken(user.ID)
 	if err != nil {
+		logger.Error(ctx, "auth-service: failed to generate token",
+			zap.Uint64("user_id", user.ID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 
@@ -105,12 +130,24 @@ func (s *AuthServiceImpl) Login(ctx context.Context, input LoginInput) (*AuthRes
 }
 
 func (s *AuthServiceImpl) GetUserByID(ctx context.Context, userID uint64) (*model.User, error) {
-	return s.userRepo.GetByID(ctx, userID)
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		logger.Error(ctx, "auth-service: failed to get user by ID",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+	return user, nil
 }
 
 func (s *AuthServiceImpl) ChangePassword(ctx context.Context, userID uint64, input ChangePasswordInput) error {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
+		logger.Error(ctx, "auth-service: failed to get user for password change",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
 		return err
 	}
 
@@ -120,14 +157,32 @@ func (s *AuthServiceImpl) ChangePassword(ctx context.Context, userID uint64, inp
 
 	newHash, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
+		logger.Error(ctx, "auth-service: failed to hash new password",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
 		return err
 	}
 
-	return s.userRepo.UpdatePassword(ctx, userID, string(newHash))
+	if err := s.userRepo.UpdatePassword(ctx, userID, string(newHash)); err != nil {
+		logger.Error(ctx, "auth-service: failed to update password",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
+		return err
+	}
+	return nil
 }
 
 func (s *AuthServiceImpl) UpdateDisplayName(ctx context.Context, userID uint64, displayName string) error {
-	return s.userRepo.UpdateDisplayName(ctx, userID, displayName)
+	if err := s.userRepo.UpdateDisplayName(ctx, userID, displayName); err != nil {
+		logger.Error(ctx, "auth-service: failed to update display name",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
+		return err
+	}
+	return nil
 }
 
 func (s *AuthServiceImpl) GenerateToken(userID uint64) (string, error) {

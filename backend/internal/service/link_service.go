@@ -8,6 +8,8 @@ import (
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
 	"github.com/SeaCodeBase/urlshortener/internal/repository"
+	"github.com/SeaCodeBase/urlshortener/pkg/logger"
+	"go.uber.org/zap"
 )
 
 var (
@@ -70,6 +72,11 @@ func (s *LinkServiceImpl) Create(ctx context.Context, userID uint64, input Creat
 		}
 		available, err := s.shortCode.IsAvailable(ctx, input.CustomCode)
 		if err != nil {
+			logger.Error(ctx, "link-service: failed to check code availability",
+				zap.Uint64("user_id", userID),
+				zap.String("custom_code", input.CustomCode),
+				zap.Error(err),
+			)
 			return nil, err
 		}
 		if !available {
@@ -79,6 +86,10 @@ func (s *LinkServiceImpl) Create(ctx context.Context, userID uint64, input Creat
 	} else {
 		shortCode, err = s.shortCode.Generate(ctx)
 		if err != nil {
+			logger.Error(ctx, "link-service: failed to generate short code",
+				zap.Uint64("user_id", userID),
+				zap.Error(err),
+			)
 			return nil, err
 		}
 	}
@@ -102,6 +113,10 @@ func (s *LinkServiceImpl) Create(ctx context.Context, userID uint64, input Creat
 		if errors.Is(err, repository.ErrShortCodeExists) {
 			return nil, ErrShortCodeTaken
 		}
+		logger.Error(ctx, "link-service: failed to create link",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 
@@ -114,6 +129,11 @@ func (s *LinkServiceImpl) GetByID(ctx context.Context, userID, linkID uint64) (*
 		return nil, ErrLinkNotFound
 	}
 	if err != nil {
+		logger.Error(ctx, "link-service: failed to get link by ID",
+			zap.Uint64("link_id", linkID),
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 
@@ -138,11 +158,19 @@ func (s *LinkServiceImpl) List(ctx context.Context, userID uint64, params ListLi
 
 	links, err := s.linkRepo.ListByUserID(ctx, userID, params.Limit, offset)
 	if err != nil {
+		logger.Error(ctx, "link-service: failed to list links",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 
 	total, err := s.linkRepo.CountByUserID(ctx, userID)
 	if err != nil {
+		logger.Error(ctx, "link-service: failed to count links",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 
@@ -179,6 +207,11 @@ func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, inp
 	}
 
 	if err := s.linkRepo.Update(ctx, link); err != nil {
+		logger.Error(ctx, "link-service: failed to update link",
+			zap.Uint64("link_id", linkID),
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 
@@ -191,5 +224,13 @@ func (s *LinkServiceImpl) Delete(ctx context.Context, userID, linkID uint64) err
 		return err
 	}
 
-	return s.linkRepo.Delete(ctx, link.ID)
+	if err := s.linkRepo.Delete(ctx, link.ID); err != nil {
+		logger.Error(ctx, "link-service: failed to delete link",
+			zap.Uint64("link_id", linkID),
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
+		return err
+	}
+	return nil
 }

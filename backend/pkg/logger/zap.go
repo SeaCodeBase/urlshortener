@@ -45,8 +45,14 @@ func Sync() {
 
 // WithContext adds context fields to a new logger instance
 func WithContext(ctx context.Context) *zap.Logger {
+	l := log
+	if l == nil {
+		// Return no-op logger if not initialized (e.g., during tests)
+		l = zap.NewNop()
+	}
+
 	if ctx == nil {
-		return log
+		return l
 	}
 
 	fields := make([]zap.Field, 0, 3)
@@ -62,9 +68,9 @@ func WithContext(ctx context.Context) *zap.Logger {
 	}
 
 	if len(fields) == 0 {
-		return log
+		return l
 	}
-	return log.With(fields...)
+	return l.With(fields...)
 }
 
 // Helper functions that accept context
@@ -91,5 +97,8 @@ func Fatal(ctx context.Context, msg string, fields ...zap.Field) {
 
 // Raw returns the underlying zap.Logger for cases without context
 func Raw() *zap.Logger {
+	if log == nil {
+		return zap.NewNop()
+	}
 	return log
 }

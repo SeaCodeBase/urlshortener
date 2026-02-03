@@ -6,8 +6,10 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/SeaCodeBase/urlshortener/internal/model"
+	"github.com/SeaCodeBase/urlshortener/pkg/logger"
+	"github.com/jmoiron/sqlx"
+	"go.uber.org/zap"
 )
 
 var ErrUserNotFound = errors.New("user not found")
@@ -32,10 +34,17 @@ func (r *UserRepositoryImpl) Create(ctx context.Context, user *model.User) error
 		if strings.Contains(err.Error(), "Duplicate entry") {
 			return ErrEmailExists
 		}
+		logger.Error(ctx, "user-repo: failed to create user",
+			zap.String("email", user.Email),
+			zap.Error(err),
+		)
 		return err
 	}
 	id, err := result.LastInsertId()
 	if err != nil {
+		logger.Error(ctx, "user-repo: failed to get last insert ID",
+			zap.Error(err),
+		)
 		return err
 	}
 	user.ID = uint64(id)
@@ -50,6 +59,10 @@ func (r *UserRepositoryImpl) GetByEmail(ctx context.Context, email string) (*mod
 		return nil, ErrUserNotFound
 	}
 	if err != nil {
+		logger.Error(ctx, "user-repo: failed to get user by email",
+			zap.String("email", email),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 	return &user, nil
@@ -63,6 +76,10 @@ func (r *UserRepositoryImpl) GetByID(ctx context.Context, id uint64) (*model.Use
 		return nil, ErrUserNotFound
 	}
 	if err != nil {
+		logger.Error(ctx, "user-repo: failed to get user by ID",
+			zap.Uint64("user_id", id),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 	return &user, nil
@@ -73,6 +90,10 @@ func (r *UserRepositoryImpl) EmailExists(ctx context.Context, email string) (boo
 	query := `SELECT COUNT(*) FROM users WHERE email = ?`
 	err := r.db.GetContext(ctx, &count, query, email)
 	if err != nil {
+		logger.Error(ctx, "user-repo: failed to check email existence",
+			zap.String("email", email),
+			zap.Error(err),
+		)
 		return false, err
 	}
 	return count > 0, nil
@@ -82,10 +103,18 @@ func (r *UserRepositoryImpl) UpdatePassword(ctx context.Context, userID uint64, 
 	query := `UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?`
 	result, err := r.db.ExecContext(ctx, query, passwordHash, userID)
 	if err != nil {
+		logger.Error(ctx, "user-repo: failed to update password",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
 		return err
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {
+		logger.Error(ctx, "user-repo: failed to get rows affected",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
 		return err
 	}
 	if rows == 0 {
@@ -97,5 +126,12 @@ func (r *UserRepositoryImpl) UpdatePassword(ctx context.Context, userID uint64, 
 func (r *UserRepositoryImpl) UpdateDisplayName(ctx context.Context, userID uint64, displayName string) error {
 	query := `UPDATE users SET display_name = ?, updated_at = NOW() WHERE id = ?`
 	_, err := r.db.ExecContext(ctx, query, displayName, userID)
-	return err
+	if err != nil {
+		logger.Error(ctx, "user-repo: failed to update display name",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
+		return err
+	}
+	return nil
 }
