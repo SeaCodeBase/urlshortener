@@ -4,6 +4,7 @@ package logger
 import (
 	"context"
 
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -13,7 +14,6 @@ type ctxKey string
 
 const (
 	RequestIDKey ctxKey = "request_id"
-	TraceIDKey   ctxKey = "trace_id"
 	UserIDKey    ctxKey = "user_id"
 )
 
@@ -43,7 +43,8 @@ func Sync() {
 	}
 }
 
-// WithContext adds context fields to a new logger instance
+// WithContext adds context fields to a new logger instance.
+// Extracts trace_id and span_id from OpenTelemetry span context if present.
 func WithContext(ctx context.Context) *zap.Logger {
 	l := log
 	if l == nil {
@@ -55,13 +56,17 @@ func WithContext(ctx context.Context) *zap.Logger {
 		return l
 	}
 
-	fields := make([]zap.Field, 0, 3)
+	fields := make([]zap.Field, 0, 4)
+
+	// Extract trace_id and span_id from OpenTelemetry span context
+	spanCtx := trace.SpanContextFromContext(ctx)
+	if spanCtx.IsValid() {
+		fields = append(fields, zap.String("trace_id", spanCtx.TraceID().String()))
+		fields = append(fields, zap.String("span_id", spanCtx.SpanID().String()))
+	}
 
 	if requestID, ok := ctx.Value(RequestIDKey).(string); ok && requestID != "" {
 		fields = append(fields, zap.String("request_id", requestID))
-	}
-	if traceID, ok := ctx.Value(TraceIDKey).(string); ok && traceID != "" {
-		fields = append(fields, zap.String("trace_id", traceID))
 	}
 	if userID, ok := ctx.Value(UserIDKey).(uint64); ok && userID != 0 {
 		fields = append(fields, zap.Uint64("user_id", userID))
