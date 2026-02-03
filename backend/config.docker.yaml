@@ -1,7 +1,12 @@
 # Docker configuration for URL Shortener
 
 server:
-  port: "8080"
+  redirect_port: "8080"  # Port for redirect server (public)
+  api_port: "8081"       # Port for API server (frontend calls)
+  allow_registration: true  # Set to false to disable new user signups
+  allow_origins:         # CORS allowed origins (supports wildcards like *.example.com)
+    - "http://localhost:3000"
+    - "http://127.0.0.1:3000"
 
 database:
   host: "mariadb"

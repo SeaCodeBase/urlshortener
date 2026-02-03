@@ -9,14 +9,6 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// Context keys for logging
-type ctxKey string
-
-const (
-	RequestIDKey ctxKey = "request_id"
-	UserIDKey    ctxKey = "user_id"
-)
-
 var log *zap.Logger
 
 func Init(isDev bool) {
@@ -69,13 +61,6 @@ func WithContext(ctx context.Context) *zap.Logger {
 	if spanCtx.IsValid() {
 		fields = append(fields, zap.String("trace_id", spanCtx.TraceID().String()))
 		fields = append(fields, zap.String("span_id", spanCtx.SpanID().String()))
-	}
-
-	if requestID, ok := ctx.Value(RequestIDKey).(string); ok && requestID != "" {
-		fields = append(fields, zap.String("request_id", requestID))
-	}
-	if userID, ok := ctx.Value(UserIDKey).(uint64); ok && userID != 0 {
-		fields = append(fields, zap.Uint64("user_id", userID))
 	}
 
 	if len(fields) == 0 {
