@@ -10,8 +10,9 @@ import (
 
 // ServerConfig holds server-related configuration
 type ServerConfig struct {
-	Port              string `yaml:"port"`
-	AllowRegistration *bool  `yaml:"allow_registration"`
+	Port              string   `yaml:"port"`
+	AllowRegistration *bool    `yaml:"allow_registration"`
+	AllowOrigins      []string `yaml:"allow_origins"`
 }
 
 // DatabaseConfig holds database connection configuration
@@ -103,6 +104,12 @@ func applyDefaults(cfg *Config) {
 	if cfg.Server.AllowRegistration == nil {
 		allowReg := true
 		cfg.Server.AllowRegistration = &allowReg
+	}
+	if len(cfg.Server.AllowOrigins) == 0 {
+		cfg.Server.AllowOrigins = []string{
+			"http://localhost:3000",
+			"http://127.0.0.1:3000",
+		}
 	}
 	if cfg.Database.Host == "" {
 		cfg.Database.Host = "localhost"
