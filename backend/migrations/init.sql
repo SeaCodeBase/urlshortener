@@ -10,10 +10,21 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+-- Domains table
+CREATE TABLE IF NOT EXISTS domains (
+    id          BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+    user_id     BIGINT UNSIGNED NOT NULL,
+    domain      VARCHAR(255) NOT NULL UNIQUE,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_domains_user_id (user_id)
+);
+
 -- Links table
 CREATE TABLE IF NOT EXISTS links (
     id              BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
     user_id         BIGINT UNSIGNED NOT NULL,
+    domain_id       BIGINT UNSIGNED NULL,
     short_code      VARCHAR(16) NOT NULL UNIQUE,
     original_url    TEXT NOT NULL,
     title           VARCHAR(255),
@@ -22,8 +33,10 @@ CREATE TABLE IF NOT EXISTS links (
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE SET NULL,
     INDEX idx_short_code (short_code),
-    INDEX idx_user_id (user_id)
+    INDEX idx_user_id (user_id),
+    INDEX idx_links_domain_id (domain_id)
 );
 
 -- Clicks table
