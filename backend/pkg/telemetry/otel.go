@@ -35,8 +35,10 @@ func Init(ctx context.Context, serviceName string) (func(context.Context) error,
 	}
 
 	// Create trace provider
+	// Use WithSyncer for immediate export (good for development)
+	// Use WithBatcher for production (batches spans before export)
 	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
+		sdktrace.WithSyncer(exporter),
 		sdktrace.WithResource(res),
 	)
 
