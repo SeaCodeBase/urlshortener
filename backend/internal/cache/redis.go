@@ -11,18 +11,18 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func Connect(cfg *config.Config) (*redis.Client, error) {
+func Connect(ctx context.Context, cfg *config.Config) (*redis.Client, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
 		Password: cfg.RedisPassword,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := client.Ping(ctx).Err(); err != nil {
+	if err := client.Ping(pingCtx).Err(); err != nil {
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
-	logger.Raw().Info("Connected to Redis")
+	logger.Info(ctx, "Connected to Redis")
 	return client, nil
 }

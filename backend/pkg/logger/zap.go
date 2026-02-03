@@ -94,11 +94,3 @@ func Debug(ctx context.Context, msg string, fields ...zap.Field) {
 func Fatal(ctx context.Context, msg string, fields ...zap.Field) {
 	WithContext(ctx).Fatal(msg, fields...)
 }
-
-// Raw returns the underlying zap.Logger for cases without context
-func Raw() *zap.Logger {
-	if log == nil {
-		return zap.NewNop()
-	}
-	return log
-}

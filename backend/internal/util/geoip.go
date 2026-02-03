@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"net"
 	"sync"
 
@@ -22,7 +23,7 @@ type GeoIPLookup struct {
 var geoIPInstance *GeoIPLookup
 var geoIPOnce sync.Once
 
-func InitGeoIP(dbPath string) error {
+func InitGeoIP(ctx context.Context, dbPath string) error {
 	if dbPath == "" {
 		return nil // GeoIP disabled
 	}
@@ -31,7 +32,7 @@ func InitGeoIP(dbPath string) error {
 	geoIPOnce.Do(func() {
 		db, err := geoip2.Open(dbPath)
 		if err != nil {
-			logger.Raw().Error("geoip: failed to open database",
+			logger.Error(ctx, "geoip: failed to open database",
 				zap.String("path", dbPath),
 				zap.Error(err),
 			)
@@ -49,7 +50,7 @@ func CloseGeoIP() {
 	}
 }
 
-func LookupIP(ipStr string) GeoIPResult {
+func LookupIP(ctx context.Context, ipStr string) GeoIPResult {
 	if geoIPInstance == nil || geoIPInstance.db == nil {
 		return GeoIPResult{}
 	}
@@ -64,7 +65,7 @@ func LookupIP(ipStr string) GeoIPResult {
 
 	record, err := geoIPInstance.db.City(ip)
 	if err != nil {
-		logger.Raw().Warn("geoip: failed to lookup IP",
+		logger.Warn(ctx, "geoip: failed to lookup IP",
 			zap.String("ip", ipStr),
 			zap.Error(err),
 		)

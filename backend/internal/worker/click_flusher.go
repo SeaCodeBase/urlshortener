@@ -94,7 +94,7 @@ func (f *ClickFlusher) flush() {
 			uaResult := util.ParseUserAgent(event.UserAgent)
 
 			// Lookup GeoIP
-			geoResult := util.LookupIP(event.IPAddress)
+			geoResult := util.LookupIP(ctx, event.IPAddress)
 
 			click := model.Click{
 				LinkID:      event.LinkID,

@@ -2,6 +2,7 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 )
 
-func Connect(cfg *config.Config) (*sqlx.DB, error) {
+func Connect(ctx context.Context, cfg *config.Config) (*sqlx.DB, error) {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&loc=UTC",
 		cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName)
 
@@ -28,6 +29,6 @@ func Connect(cfg *config.Config) (*sqlx.DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	logger.Raw().Info("Connected to MariaDB")
+	logger.Info(ctx, "Connected to MariaDB")
 	return db, nil
 }

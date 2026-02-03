@@ -2,6 +2,8 @@
 package main
 
 import (
+	"context"
+
 	"github.com/SeaCodeBase/urlshortener/internal/cache"
 	"github.com/SeaCodeBase/urlshortener/internal/config"
 	"github.com/SeaCodeBase/urlshortener/internal/database"
@@ -20,23 +22,25 @@ import (
 func main() {
 	_ = godotenv.Load()
 
+	ctx := context.Background()
+
 	cfg, err := config.Load()
 	if err != nil {
 		logger.Init(true)
-		logger.Raw().Fatal("configuration error", zap.Error(err))
+		logger.Fatal(ctx, "configuration error", zap.Error(err))
 	}
 	logger.Init(true)
 	defer logger.Sync()
 
-	db, err := database.Connect(cfg)
+	db, err := database.Connect(ctx, cfg)
 	if err != nil {
-		logger.Raw().Fatal("database connection failed", zap.Error(err))
+		logger.Fatal(ctx, "database connection failed", zap.Error(err))
 	}
 	defer db.Close()
 
-	rdb, err := cache.Connect(cfg)
+	rdb, err := cache.Connect(ctx, cfg)
 	if err != nil {
-		logger.Raw().Fatal("redis connection failed", zap.Error(err))
+		logger.Fatal(ctx, "redis connection failed", zap.Error(err))
 	}
 	defer rdb.Close()
 
@@ -68,7 +72,7 @@ func main() {
 	statsService := service.NewStatsService(clickRepo, linkRepo)
 	passkeyService, err := service.NewPasskeyService(passkeyRepo, userRepo, cfg.RPID, cfg.RPOrigin, "URL Shortener")
 	if err != nil {
-		logger.Raw().Fatal("failed to create passkey service", zap.Error(err))
+		logger.Fatal(ctx, "failed to create passkey service", zap.Error(err))
 	}
 
 	// Setup handlers
@@ -129,8 +133,8 @@ func main() {
 	// Redirect route (must be after API routes to avoid conflicts)
 	r.GET("/:code", redirectHandler.Redirect)
 
-	logger.Raw().Info("starting server", zap.String("port", cfg.ServerPort))
+	logger.Info(ctx, "starting server", zap.String("port", cfg.ServerPort))
 	if err := r.Run(":" + cfg.ServerPort); err != nil {
-		logger.Raw().Fatal("failed to start server", zap.Error(err))
+		logger.Fatal(ctx, "failed to start server", zap.Error(err))
 	}
 }
