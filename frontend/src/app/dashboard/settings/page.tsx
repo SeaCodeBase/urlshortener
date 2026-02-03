@@ -141,23 +141,25 @@ export default function SettingsPage() {
       setNewPasskeyName('')
       toast.success('Passkey added successfully!')
     } catch (error: unknown) {
-      console.error('Passkey registration error:', error)
+      // Handle WebAuthn-specific errors with user-friendly messages
+      const errorName = error instanceof Error ? error.name : ''
+      const errorMessage = error instanceof Error ? error.message : ''
 
-      // Check for InvalidStateError - thrown when authenticator already has a credential
-      // from excludeCredentials list (i.e., this YubiKey is already registered)
-      if (error instanceof Error && error.name === 'InvalidStateError') {
-        toast.error('This security key is already registered to your account')
+      // InvalidStateError - authenticator already registered (from excludeCredentials)
+      if (errorName === 'InvalidStateError' || errorMessage.includes('previously registered')) {
+        toast.error('This passkey is already registered to your account')
         return
       }
 
-      // Check for NotAllowedError - user cancelled or timeout
-      if (error instanceof Error && error.name === 'NotAllowedError') {
+      // NotAllowedError - user cancelled or timeout
+      if (errorName === 'NotAllowedError') {
         toast.error('Registration was cancelled or timed out')
         return
       }
 
-      const message = error instanceof Error ? error.message : 'Failed to add passkey'
-      toast.error(message)
+      // Log unexpected errors for debugging
+      console.error('Passkey registration error:', error)
+      toast.error('Failed to add passkey')
     } finally {
       setAddingPasskey(false)
     }
