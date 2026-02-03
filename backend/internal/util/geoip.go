@@ -54,12 +54,20 @@ func CloseGeoIP() {
 }
 
 func LookupIP(ctx context.Context, ipStr string) GeoIPResult {
-	if geoIPInstance == nil || geoIPInstance.db == nil {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
 		return GeoIPResult{}
 	}
 
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
+	// Return "Local" for private/loopback IPs
+	if isPrivateIP(ip) {
+		return GeoIPResult{
+			Country: "Local",
+			City:    "Local",
+		}
+	}
+
+	if geoIPInstance == nil || geoIPInstance.db == nil {
 		return GeoIPResult{}
 	}
 
@@ -79,4 +87,12 @@ func LookupIP(ctx context.Context, ipStr string) GeoIPResult {
 		Country: record.Country.IsoCode,
 		City:    record.City.Names["en"],
 	}
+}
+
+// isPrivateIP checks if an IP is private, loopback, or link-local
+func isPrivateIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return true
+	}
+	return false
 }
