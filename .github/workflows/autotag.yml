@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   calculate-version:
@@ -15,6 +16,7 @@ jobs:
     outputs:
       version: ${{ steps.semver.outputs.version }}
       version_tag: ${{ steps.semver.outputs.version_tag }}
+      created: ${{ steps.create-tag.outputs.created }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,25 +40,32 @@ jobs:
           echo "Version Tag: ${{ steps.semver.outputs.version_tag }}"
           echo "Version Type: ${{ steps.semver.outputs.version_type }}"
 
-  create-tag:
-    name: Create Git Tag
-    runs-on: ubuntu-latest
-    needs: calculate-version
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Create and Push Tag
+        id: create-tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          TAG="v${{ needs.calculate-version.outputs.version }}"
+          TAG="v${{ steps.semver.outputs.version }}"
           if ! git rev-parse "$TAG" >/dev/null 2>&1; then
             git tag -a "$TAG" -m "Release $TAG"
             git push origin "$TAG"
             echo "Created and pushed tag: $TAG"
+            echo "created=true" >> $GITHUB_OUTPUT
           else
             echo "Tag $TAG already exists, skipping"
+            echo "created=false" >> $GITHUB_OUTPUT
           fi
+
+  trigger-release:
+    name: Trigger AutoRelease
+    runs-on: ubuntu-latest
+    needs: calculate-version
+    if: needs.calculate-version.outputs.created == 'true'
+    steps:
+      - name: Trigger AutoRelease Workflow
+        run: |
+          gh workflow run autorelease.yml \
+            --repo ${{ github.repository }} \
+            --field version=${{ needs.calculate-version.outputs.version }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
