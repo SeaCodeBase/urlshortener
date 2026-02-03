@@ -111,6 +111,6 @@ func (s *RedirectService) validateAndReturn(cl cachedLink) (string, uint64, erro
 	return cl.OriginalURL, cl.LinkID, nil
 }
 
-func (s *RedirectService) InvalidateCache(ctx context.Context, code string) error {
-	return s.rdb.Del(ctx, linkCacheKeyPrefix+code).Err()
+func (s *RedirectService) InvalidateCache(ctx context.Context, host, code string) error {
+	return s.rdb.Del(ctx, linkCacheKeyPrefix+host+":"+code).Err()
 }
