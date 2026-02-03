@@ -85,10 +85,11 @@ func main() {
 	if err != nil {
 		logger.Fatal(ctx, "failed to create passkey service", zap.Error(err))
 	}
+	redirectService := service.NewRedirectService(linkRepo, domainRepo, rdb)
 
 	// Setup handlers
 	authHandler := handler.NewAuthHandler(authService, passkeyService, cfg)
-	linkHandler := handler.NewLinkHandler(linkService, domainRepo, cfg)
+	linkHandler := handler.NewLinkHandler(linkService, redirectService, domainRepo, cfg)
 	statsHandler := handler.NewStatsHandler(statsService)
 	passkeyHandler := handler.NewPasskeyHandler(passkeyService)
 	passkeyVerifyHandler := handler.NewPasskeyVerifyHandler(passkeyService, authService)
@@ -97,8 +98,7 @@ func main() {
 	// Click service
 	clickService := service.NewClickService(rdb)
 
-	// Redirect service and handler
-	redirectService := service.NewRedirectService(linkRepo, domainRepo, rdb)
+	// Redirect handler
 	redirectHandler := handler.NewRedirectHandler(redirectService, clickService, cfg.JWT.Secret)
 
 	// Redirect Router (public, minimal - for URL redirects)

@@ -18,16 +18,18 @@ import (
 )
 
 type LinkHandler struct {
-	linkService service.LinkService
-	domainRepo  repository.DomainRepository
-	baseURL     string
+	linkService     service.LinkService
+	redirectService *service.RedirectService
+	domainRepo      repository.DomainRepository
+	baseURL         string
 }
 
-func NewLinkHandler(linkService service.LinkService, domainRepo repository.DomainRepository, cfg *config.Config) *LinkHandler {
+func NewLinkHandler(linkService service.LinkService, redirectService *service.RedirectService, domainRepo repository.DomainRepository, cfg *config.Config) *LinkHandler {
 	return &LinkHandler{
-		linkService: linkService,
-		domainRepo:  domainRepo,
-		baseURL:     cfg.URLs.BaseURL,
+		linkService:     linkService,
+		redirectService: redirectService,
+		domainRepo:      domainRepo,
+		baseURL:         cfg.URLs.BaseURL,
 	}
 }
 
