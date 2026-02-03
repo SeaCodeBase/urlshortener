@@ -23,12 +23,18 @@ func Init(isDev bool) {
 	var cfg zap.Config
 	if isDev {
 		cfg = zap.NewDevelopmentConfig()
-		cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	} else {
 		cfg = zap.NewProductionConfig()
 	}
 	// Always use JSON encoding for structured logs
 	cfg.Encoding = "json"
+
+	// Use full key names instead of short ones (L, T, C, M)
+	cfg.EncoderConfig.LevelKey = "level"
+	cfg.EncoderConfig.TimeKey = "time"
+	cfg.EncoderConfig.CallerKey = "caller"
+	cfg.EncoderConfig.MessageKey = "message"
+	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 
 	logger, err := cfg.Build(zap.AddCallerSkip(1))
 	if err != nil {
