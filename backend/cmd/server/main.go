@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"sync"
 
 	"github.com/SeaCodeBase/urlshortener/internal/cache"
 	"github.com/SeaCodeBase/urlshortener/internal/config"
@@ -50,11 +51,6 @@ func main() {
 	}
 	defer rdb.Close()
 
-	r := gin.Default()
-
-	// Use configurable CORS middleware
-	r.Use(middleware.CORSMiddleware(cfg.Server.AllowOrigins))
-
 	// Setup repositories
 	userRepo := repository.NewUserRepository(db)
 	linkRepo := repository.NewLinkRepository(db)
@@ -90,8 +86,25 @@ func main() {
 	redirectService := service.NewRedirectService(linkRepo, rdb)
 	redirectHandler := handler.NewRedirectHandler(redirectService, clickService, cfg.JWT.Secret)
 
-	// Routes
-	api := r.Group("/api")
+	// Redirect Router (public, minimal - for URL redirects)
+	redirectRouter := gin.New()
+	redirectRouter.Use(gin.Recovery())
+	redirectRouter.GET("/:code", redirectHandler.Redirect)
+	redirectRouter.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok", "server": "redirect"})
+	})
+
+	// API Router (authenticated, full functionality)
+	apiRouter := gin.New()
+	apiRouter.Use(gin.Recovery())
+	apiRouter.Use(middleware.CORSMiddleware(cfg.Server.AllowOrigins))
+
+	apiRouter.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok", "server": "api"})
+	})
+
+	// API Routes
+	api := apiRouter.Group("/api")
 	{
 		authMiddleware := middleware.AuthMiddleware(authService)
 		auth := api.Group("/auth")
@@ -127,15 +140,27 @@ func main() {
 		}
 	}
 
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
+	// Start both servers
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	// Redirect route (must be after API routes to avoid conflicts)
-	r.GET("/:code", redirectHandler.Redirect)
+	go func() {
+		defer wg.Done()
+		addr := ":" + cfg.Server.RedirectPort
+		logger.Info(ctx, "starting redirect server", zap.String("addr", addr))
+		if err := redirectRouter.Run(addr); err != nil {
+			logger.Fatal(ctx, "redirect server failed", zap.Error(err))
+		}
+	}()
 
-	logger.Info(ctx, "starting server", zap.String("port", cfg.Server.Port))
-	if err := r.Run(":" + cfg.Server.Port); err != nil {
-		logger.Fatal(ctx, "failed to start server", zap.Error(err))
-	}
+	go func() {
+		defer wg.Done()
+		addr := ":" + cfg.Server.APIPort
+		logger.Info(ctx, "starting API server", zap.String("addr", addr))
+		if err := apiRouter.Run(addr); err != nil {
+			logger.Fatal(ctx, "API server failed", zap.Error(err))
+		}
+	}()
+
+	wg.Wait()
 }
