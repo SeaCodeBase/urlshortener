@@ -124,6 +124,7 @@ func main() {
 		cfg.URLs.RedirectHost, baseHost, frontendHost)
 	redirectService := service.NewRedirectService(linkRepo, domainRepo, routingRuleRepo, rdb, baseHost,
 		cfg.URLs.RedirectHost, frontendHost)
+	domainService.SetCacheInvalidator(redirectService)
 
 	// Legacy domain rows for the service's own hosts (backfilled as "ok" by
 	// migration 002) must not stay usable.

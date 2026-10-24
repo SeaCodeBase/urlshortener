@@ -394,3 +394,28 @@ func TestDomainService_Verify_TransientErrorOnPendingIsError(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, model.DomainVerificationError, got.VerificationStatus)
 }
+
+type fakeDomainCache struct{ hosts []string }
+
+func (f *fakeDomainCache) InvalidateDomain(_ context.Context, host string) error {
+	f.hosts = append(f.hosts, host)
+	return nil
+}
+
+func TestDomainService_InvalidatesDomainCache(t *testing.T) {
+	d := newDomainService(t)
+	cache := &fakeDomainCache{}
+	d.svc.SetCacheInvalidator(cache)
+
+	d.domains.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(pendingDomain(), nil).Times(3)
+	d.domains.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	d.domains.EXPECT().Delete(gomock.Any(), uint64(3)).Return(nil)
+
+	_, err := d.svc.Verify(context.Background(), 1, 3)
+	require.NoError(t, err)
+	_, err = d.svc.Update(context.Background(), 1, 3, service.UpdateDomainInput{RootRedirect: sp("")})
+	require.NoError(t, err)
+	_, err = d.svc.Delete(context.Background(), 1, 3)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"go.example.com", "go.example.com", "go.example.com"}, cache.hosts)
+}

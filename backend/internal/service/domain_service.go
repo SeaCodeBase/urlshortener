@@ -60,6 +60,12 @@ type UpdateDomainInput struct {
 	ClearGroup       bool
 }
 
+// DomainCacheInvalidator drops cached host lookups for a domain
+// (implemented by *RedirectService).
+type DomainCacheInvalidator interface {
+	InvalidateDomain(ctx context.Context, host string) error
+}
+
 // Compile-time check: DomainServiceImpl implements DomainService
 var _ DomainService = (*DomainServiceImpl)(nil)
 
@@ -69,6 +75,23 @@ type DomainServiceImpl struct {
 	resolver     DNSResolver
 	redirectHost string
 	reserved     map[string]bool
+	cache        DomainCacheInvalidator
+}
+
+// SetCacheInvalidator makes verify/update/delete drop the redirect server's
+// cached lookup of the domain so changes apply immediately.
+func (s *DomainServiceImpl) SetCacheInvalidator(c DomainCacheInvalidator) { s.cache = c }
+
+func (s *DomainServiceImpl) invalidate(ctx context.Context, host string) {
+	if s.cache == nil {
+		return
+	}
+	if err := s.cache.InvalidateDomain(ctx, host); err != nil {
+		logger.Warn(ctx, "domain-service: failed to invalidate domain cache",
+			zap.String("domain", host),
+			zap.Error(err),
+		)
+	}
 }
 
 // NewDomainService creates the domain service. redirectHost is the hostname
@@ -213,6 +236,7 @@ func (s *DomainServiceImpl) Verify(ctx context.Context, userID, domainID uint64)
 		)
 		return nil, err
 	}
+	s.invalidate(ctx, domain.Domain)
 	return domain, nil
 }
 
@@ -289,6 +313,7 @@ func (s *DomainServiceImpl) Update(ctx context.Context, userID, domainID uint64,
 		}
 		return nil, err
 	}
+	s.invalidate(ctx, domain.Domain)
 	return domain, nil
 }
 
@@ -303,6 +328,7 @@ func (s *DomainServiceImpl) Delete(ctx context.Context, userID, domainID uint64)
 		}
 		return nil, err
 	}
+	s.invalidate(ctx, domain.Domain)
 	return domain, nil
 }
 

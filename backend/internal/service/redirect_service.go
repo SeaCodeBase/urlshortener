@@ -25,6 +25,9 @@ const (
 	// v2 entries carry archived/rules/not_found_redirect; the version bump makes
 	// stale v1 entries ("link:{host}:{code}") invisible.
 	linkCacheKeyPrefix = "link:v2:"
+	// domainCacheKeyPrefix caches host -> custom-domain lookups so cache
+	// hits stay DB-free; DomainService invalidates it on verify/update/delete.
+	domainCacheKeyPrefix = "domain:v1:"
 )
 
 // ResolvedLink is what the redirect server needs to serve a short link.
@@ -59,7 +62,7 @@ func NewRedirectService(linkRepo repository.LinkRepository, domainRepo repositor
 		domainRepo: domainRepo,
 		ruleRepo:   ruleRepo,
 		rdb:        rdb,
-		baseHost:   stripPort(baseHost),
+		baseHost:   normalizeHost(stripPort(baseHost)),
 		reserved:   ReservedHostSet(append([]string{baseHost}, reservedHosts...)...),
 	}
 }
@@ -87,43 +90,79 @@ func cacheKey(host, code string) string {
 	return linkCacheKeyPrefix + host + ":" + code
 }
 
+// cachedDomain is the cached answer for a host: Verified false means the host
+// is served as the default domain (unknown or unverified domain).
+type cachedDomain struct {
+	Verified         bool   `json:"verified"`
+	ID               uint64 `json:"id,omitempty"`
+	NotFoundRedirect string `json:"not_found_redirect,omitempty"`
+}
+
+// canonicalHost maps a request host to the host its links are cached under
+// and the custom domain (nil = default domain) they belong to. Reserved,
+// unknown and unverified hosts all map to the base host, so InvalidateLink's
+// base-host key covers every default-domain entry.
+func (s *RedirectService) canonicalHost(ctx context.Context, host string) (string, *uint64, string, error) {
+	h := normalizeHost(stripPort(host))
+	if h == "" || s.reserved[h] {
+		return s.baseHost, nil, "", nil
+	}
+	var info cachedDomain
+	cached := false
+	if raw, err := s.rdb.Get(ctx, domainCacheKeyPrefix+h).Result(); err == nil {
+		cached = json.Unmarshal([]byte(raw), &info) == nil
+	}
+	if !cached {
+		domain, err := s.domainRepo.GetByDomain(ctx, h)
+		switch {
+		case errors.Is(err, repository.ErrDomainNotFound):
+		case err != nil:
+			return "", nil, "", err
+		case domain.VerificationStatus == model.DomainVerificationOK:
+			info = cachedDomain{Verified: true, ID: domain.ID}
+			if domain.NotFoundRedirect != nil {
+				info.NotFoundRedirect = *domain.NotFoundRedirect
+			}
+		}
+		if data, err := json.Marshal(info); err == nil {
+			if err := s.rdb.Set(ctx, domainCacheKeyPrefix+h, data, linkCacheTTL).Err(); err != nil {
+				logger.Warn(ctx, "failed to cache domain", zap.String("host", h), zap.Error(err))
+			}
+		}
+	}
+	if !info.Verified {
+		return s.baseHost, nil, "", nil
+	}
+	id := info.ID
+	return h, &id, info.NotFoundRedirect, nil
+}
+
+// InvalidateDomain drops the cached host lookup for a custom domain.
+func (s *RedirectService) InvalidateDomain(ctx context.Context, host string) error {
+	return s.rdb.Del(ctx, domainCacheKeyPrefix+normalizeHost(stripPort(host))).Err()
+}
+
 // Resolve looks up the link for host+code (cache first). Archived links still
 // resolve. It returns ErrLinkNotFound, ErrLinkInactive or ErrLinkExpired; for
 // expired links (and unknown codes on a custom domain) the returned
 // ResolvedLink carries ExpiredRedirect when the domain has not_found_redirect.
+// Reserved hosts (the service's own) and unknown or unverified hosts are
+// served as the default domain and share the base host's cache entries.
 func (s *RedirectService) Resolve(ctx context.Context, host, code string) (*ResolvedLink, error) {
-	host = stripPort(host)
-	key := cacheKey(host, code)
+	canon, domainID, notFoundRedirect, err := s.canonicalHost(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	key := cacheKey(canon, code)
 
 	if cached, err := s.rdb.Get(ctx, key).Result(); err == nil {
 		var cl cachedLink
 		if err := json.Unmarshal([]byte(cached), &cl); err == nil {
+			// The domain's current not_found_redirect wins over the copy in
+			// the link entry (domain settings invalidate only the domain key).
+			cl.NotFoundRedirect = notFoundRedirect
 			return validate(cl)
 		}
-	}
-
-	// Cache miss: map host to a custom domain (unknown host = default domain).
-	// Unverified domains count as unknown hosts: their links and redirects
-	// are not served, and nothing is cached under their host, so a domain
-	// that gets verified later has no stale entries.
-	var domainID *uint64
-	var notFoundRedirect string
-	cacheable := true
-	var domain *model.Domain
-	err := repository.ErrDomainNotFound
-	if !s.reserved[normalizeHost(host)] {
-		domain, err = s.domainRepo.GetByDomain(ctx, host)
-	}
-	switch {
-	case err == nil && domain.VerificationStatus != model.DomainVerificationOK:
-		cacheable = false
-	case err == nil:
-		domainID = &domain.ID
-		if domain.NotFoundRedirect != nil {
-			notFoundRedirect = *domain.NotFoundRedirect
-		}
-	case !errors.Is(err, repository.ErrDomainNotFound):
-		return nil, err
 	}
 
 	link, err := s.linkRepo.GetByDomainAndShortCode(ctx, domainID, code)
@@ -159,9 +198,6 @@ func (s *RedirectService) Resolve(ctx context.Context, host, code string) (*Reso
 		cl.ExpiresAt = &t
 	}
 
-	if !cacheable {
-		return validate(cl)
-	}
 	if data, err := json.Marshal(cl); err != nil {
 		logger.Warn(ctx, "failed to marshal cached link",
 			zap.Uint64("link_id", link.ID),
@@ -204,7 +240,7 @@ func (s *RedirectService) InvalidateLink(ctx context.Context, link *model.Link, 
 		keys = append(keys, cacheKey(s.baseHost, link.ShortCode))
 	}
 	if domainName != "" {
-		keys = append(keys, cacheKey(stripPort(domainName), link.ShortCode))
+		keys = append(keys, cacheKey(normalizeHost(stripPort(domainName)), link.ShortCode))
 	}
 	if len(keys) == 0 {
 		return nil

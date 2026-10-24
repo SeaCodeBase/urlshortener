@@ -314,3 +314,99 @@ func TestRedirectService_ReservedHostIsDefaultDomain(t *testing.T) {
 		t.Fatalf("reserved host resolves default-domain links: %+v %v", res, err)
 	}
 }
+
+func newRedirectFixtureReserved(t *testing.T, reserved ...string) *redirectFixture {
+	f := newRedirectFixture(t)
+	f.svc = NewRedirectService(f.links, f.domains, f.rules, f.svc.rdb, "sho.rt", reserved...)
+	return f
+}
+
+func TestRedirectService_ReservedHostUsesBaseCacheKey(t *testing.T) {
+	f := newRedirectFixtureReserved(t, "r.sho.rt")
+	ctx := context.Background()
+	link := &model.Link{ID: 7, ShortCode: "abc", OriginalURL: "https://example.com", IsActive: true}
+	// Two DB hits: the first resolve, and the one after InvalidateLink.
+	f.links.EXPECT().GetByDomainAndShortCode(gomock.Any(), nil, "abc").Return(link, nil).Times(2)
+	f.rules.EXPECT().ListByLinkID(gomock.Any(), uint64(7)).Return(nil, nil).Times(2)
+
+	for i := 0; i < 2; i++ { // second call is a cache hit
+		if _, err := f.svc.Resolve(ctx, "R.Sho.RT:8080", "abc"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !f.mr.Exists(linkCacheKeyPrefix + "sho.rt:abc") {
+		t.Fatal("expected the entry under the base-host key")
+	}
+	for _, k := range f.mr.Keys() {
+		if strings.Contains(strings.ToLower(k), "r.sho.rt") {
+			t.Fatalf("unexpected cache key %s", k)
+		}
+	}
+	if err := f.svc.InvalidateLink(ctx, link, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.Resolve(ctx, "R.Sho.RT:8080", "abc"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRedirectService_UnknownHostUsesBaseCacheKey(t *testing.T) {
+	f := newRedirectFixture(t)
+	ctx := context.Background()
+	link := &model.Link{ID: 7, ShortCode: "abc", OriginalURL: "https://example.com", IsActive: true}
+	// The unknown-host answer is cached too, so the domain is looked up once.
+	f.domains.EXPECT().GetByDomain(gomock.Any(), "other.example").Return(nil, repository.ErrDomainNotFound).Times(1)
+	f.links.EXPECT().GetByDomainAndShortCode(gomock.Any(), nil, "abc").Return(link, nil).Times(2)
+	f.rules.EXPECT().ListByLinkID(gomock.Any(), uint64(7)).Return(nil, nil).Times(2)
+
+	for i := 0; i < 2; i++ {
+		if _, err := f.svc.Resolve(ctx, "Other.Example.:80", "abc"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !f.mr.Exists(linkCacheKeyPrefix + "sho.rt:abc") {
+		t.Fatal("expected the entry under the base-host key")
+	}
+	if f.mr.Exists(linkCacheKeyPrefix + "other.example:abc") {
+		t.Fatal("unknown hosts must not get their own link cache entries")
+	}
+	if err := f.svc.InvalidateLink(ctx, link, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.Resolve(ctx, "other.example", "abc"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRedirectService_DomainCacheInvalidation(t *testing.T) {
+	f := newRedirectFixture(t)
+	ctx := context.Background()
+	domainID := uint64(3)
+	// pending first, then verified after InvalidateDomain.
+	gomock.InOrder(
+		f.domains.EXPECT().GetByDomain(gomock.Any(), "go.brand.com").
+			Return(&model.Domain{ID: 3, Domain: "go.brand.com", VerificationStatus: model.DomainVerificationPending}, nil),
+		f.domains.EXPECT().GetByDomain(gomock.Any(), "go.brand.com").
+			Return(&model.Domain{ID: 3, Domain: "go.brand.com", VerificationStatus: model.DomainVerificationOK}, nil),
+	)
+	f.links.EXPECT().GetByDomainAndShortCode(gomock.Any(), nil, "x").Return(nil, repository.ErrLinkNotFound).Times(2)
+	for i := 0; i < 2; i++ { // second call uses the cached "unknown" answer
+		if _, err := f.svc.Resolve(ctx, "go.brand.com", "x"); !errors.Is(err, ErrLinkNotFound) {
+			t.Fatalf("expected ErrLinkNotFound, got %v", err)
+		}
+	}
+
+	if err := f.svc.InvalidateDomain(ctx, "Go.Brand.com"); err != nil {
+		t.Fatal(err)
+	}
+	f.links.EXPECT().GetByDomainAndShortCode(gomock.Any(), &domainID, "x").
+		Return(&model.Link{ID: 8, ShortCode: "x", OriginalURL: "https://brand.example.com", IsActive: true, DomainID: &domainID}, nil)
+	f.rules.EXPECT().ListByLinkID(gomock.Any(), uint64(8)).Return(nil, nil)
+	res, err := f.svc.Resolve(ctx, "go.brand.com", "x")
+	if err != nil || res.LinkID != 8 {
+		t.Fatalf("verified domain must resolve its links: %+v %v", res, err)
+	}
+	if !f.mr.Exists(linkCacheKeyPrefix + "go.brand.com:x") {
+		t.Fatal("verified custom domain links are cached under the domain host")
+	}
+}
