@@ -107,6 +107,7 @@ func main() {
 		BaseURL:    cfg.URLs.BaseURL,
 	})
 	statsService := service.NewStatsService(clickRepo, linkRepo)
+	domainService := service.NewDomainService(domainRepo, groupRepo, service.NewNetResolver(), cfg.URLs.RedirectHost)
 	passkeyService, err := service.NewPasskeyService(passkeyRepo, userRepo, cfg.WebAuthn.RPID, cfg.WebAuthn.RPOrigin, "URL Shortener")
 	if err != nil {
 		logger.Fatal(ctx, "failed to create passkey service", zap.Error(err))
@@ -123,8 +124,11 @@ func main() {
 	statsHandler := handler.NewStatsHandler(statsService)
 	passkeyHandler := handler.NewPasskeyHandler(passkeyService)
 	passkeyVerifyHandler := handler.NewPasskeyVerifyHandler(passkeyService, authService)
-	domainHandler := handler.NewDomainHandler(domainRepo)
-	tokenHandler := handler.NewTokenHandler(tokenService)
+	domainHandler := handler.NewDomainHandler(domainService, activityService)
+	tokenHandler := handler.NewTokenHandler(tokenService, activityService)
+	groupHandler := handler.NewGroupHandler(groupService, activityService)
+	searchHandler := handler.NewSearchHandler(linkRepo)
+	metaHandler := handler.NewMetaHandler(cfg)
 	tagHandler := handler.NewTagHandler(tagService)
 	activityHandler := handler.NewActivityHandler(activityService)
 	analyticsHandler := handler.NewAnalyticsHandler(statsService)
@@ -160,6 +164,9 @@ func main() {
 	// API Routes
 	api := apiRouter.Group("/api")
 	{
+		// Public, non-secret configuration for the web UI.
+		api.GET("/meta", metaHandler.Get)
+
 		authMiddleware := middleware.AuthMiddleware(authService, tokenService)
 		groupMW := middleware.GroupMiddleware(groupService)
 		auth := api.Group("/auth")
@@ -169,6 +176,7 @@ func main() {
 			auth.GET("/me", authMiddleware, authHandler.Me)
 			auth.PUT("/me", authMiddleware, authHandler.UpdateMe)
 			auth.PUT("/password", authMiddleware, authHandler.ChangePassword)
+			auth.PUT("/email", authMiddleware, authHandler.UpdateEmail)
 
 			// Passkey routes (protected)
 			auth.GET("/passkeys", authMiddleware, passkeyHandler.List)
@@ -198,14 +206,28 @@ func main() {
 			links.GET("/:id/stats", statsHandler.GetLinkStats)
 		}
 
-		// API token routes (protected, not group-scoped)
+		// API token routes (tokens are user-level; the active group is only
+		// used to file token.create/token.revoke in the activity log)
 		apiTokens := api.Group("/api-tokens")
-		apiTokens.Use(authMiddleware)
+		apiTokens.Use(authMiddleware, groupMW)
 		{
 			apiTokens.GET("", tokenHandler.List)
 			apiTokens.POST("", tokenHandler.Create)
 			apiTokens.DELETE("/:id", tokenHandler.Revoke)
 		}
+
+		// Groups (protected, not group-scoped: the path names the group)
+		groups := api.Group("/groups")
+		groups.Use(authMiddleware)
+		{
+			groups.GET("", groupHandler.List)
+			groups.POST("", groupHandler.Create)
+			groups.GET("/:id", groupHandler.Get)
+			groups.PUT("/:id", groupHandler.Update)
+		}
+
+		// Global search (protected, group-scoped)
+		api.GET("/search", authMiddleware, groupMW, searchHandler.Search)
 
 		// Tags and activity log (protected, group-scoped)
 		api.GET("/tags", authMiddleware, groupMW, tagHandler.List)
@@ -224,6 +246,8 @@ func main() {
 		{
 			domains.GET("", domainHandler.List)
 			domains.POST("", domainHandler.Create)
+			domains.PUT("/:id", domainHandler.Update)
+			domains.POST("/:id/verify", domainHandler.Verify)
 			domains.DELETE("/:id", domainHandler.Delete)
 		}
 	}

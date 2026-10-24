@@ -302,3 +302,37 @@ func TestUserRepository_SetDefaultGroupIfUnset(t *testing.T) {
 		t.Errorf("expected default_group_id %d, got %v", g2.ID, got.DefaultGroupID)
 	}
 }
+
+func TestUserRepository_UpdateEmail(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+
+	repo := repository.NewUserRepository(db)
+	ctx := context.Background()
+
+	user := createTestUser(t, db, "old@example.com")
+	other := createTestUser(t, db, "taken@example.com")
+
+	if err := repo.UpdateEmail(ctx, user.ID, "new@example.com"); err != nil {
+		t.Fatalf("UpdateEmail failed: %v", err)
+	}
+	found, err := repo.GetByID(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("GetByID failed: %v", err)
+	}
+	if found.Email != "new@example.com" {
+		t.Errorf("expected email new@example.com, got %s", found.Email)
+	}
+
+	// Same value again is not an error (0 rows changed but the user exists).
+	if err := repo.UpdateEmail(ctx, user.ID, "new@example.com"); err != nil {
+		t.Errorf("UpdateEmail with unchanged value: %v", err)
+	}
+
+	if err := repo.UpdateEmail(ctx, user.ID, other.Email); err != repository.ErrEmailExists {
+		t.Errorf("expected ErrEmailExists, got %v", err)
+	}
+	if err := repo.UpdateEmail(ctx, 999999, "ghost@example.com"); err != repository.ErrUserNotFound {
+		t.Errorf("expected ErrUserNotFound, got %v", err)
+	}
+}

@@ -348,11 +348,12 @@ func (r *LinkRepositoryImpl) ListByGroup(ctx context.Context, groupID uint64, f 
 	return rows, total, nil
 }
 
-// CountByGroup counts the group's links shown in the Links list
-// (source = 'link', hidden ones included).
-func (r *LinkRepositoryImpl) CountByGroup(ctx context.Context, groupID uint64) (int64, error) {
+// CountByGroup counts the group's links matching f (by default those shown
+// in the Links list: source = 'link', hidden ones included).
+func (r *LinkRepositoryImpl) CountByGroup(ctx context.Context, groupID uint64, f LinkFilter) (int64, error) {
+	where, args := f.where(groupID)
 	var count int64
-	err := r.db.GetContext(ctx, &count, `SELECT COUNT(*) FROM links WHERE group_id = ? AND source = 'link'`, groupID)
+	err := r.db.GetContext(ctx, &count, `SELECT COUNT(*) FROM links l WHERE `+where, args...)
 	if err != nil {
 		logger.Error(ctx, "link-repo: failed to count links by group",
 			zap.Uint64("group_id", groupID),

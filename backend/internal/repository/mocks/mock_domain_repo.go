@@ -113,3 +113,17 @@ func (mr *MockDomainRepositoryMockRecorder) ListByUserID(ctx, userID any) *gomoc
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListByUserID", reflect.TypeOf((*MockDomainRepository)(nil).ListByUserID), ctx, userID)
 }
+
+// Update mocks base method.
+func (m *MockDomainRepository) Update(ctx context.Context, domain *model.Domain) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Update", ctx, domain)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Update indicates an expected call of Update.
+func (mr *MockDomainRepositoryMockRecorder) Update(ctx, domain any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Update", reflect.TypeOf((*MockDomainRepository)(nil).Update), ctx, domain)
+}

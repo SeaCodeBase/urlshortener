@@ -226,9 +226,17 @@ func TestLinkRepository_ListByGroup_FilterArchivedDefault(t *testing.T) {
 	assert.Equal(t, int64(3), total)
 	assert.Len(t, rows, 3)
 
-	count, err := repo.CountByGroup(ctx, group.ID)
+	count, err := repo.CountByGroup(ctx, group.ID, repository.LinkFilter{})
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count)
+
+	// The filter applies to the count (used by global search).
+	count, err = repo.CountByGroup(ctx, group.ID, repository.LinkFilter{Query: "hid"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+	count, err = repo.CountByGroup(ctx, group.ID, repository.LinkFilter{Query: "nomatch-xyz"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count)
 }
 
 func TestLinkRepository_ListByGroup_FilterTags(t *testing.T) {

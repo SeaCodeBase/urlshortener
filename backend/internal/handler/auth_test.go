@@ -7,12 +7,17 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/config"
 	"github.com/SeaCodeBase/urlshortener/internal/model"
 	"github.com/SeaCodeBase/urlshortener/internal/service"
+	"github.com/SeaCodeBase/urlshortener/internal/service/mocks"
 	"github.com/gin-gonic/gin"
 	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 // MockAuthService implements service.AuthService for testing
@@ -49,6 +54,14 @@ func (m *MockAuthService) UpdateDisplayName(ctx context.Context, userID uint64, 
 
 func (m *MockAuthService) GenerateToken(userID uint64) (string, error) {
 	return "", nil
+}
+
+func (m *MockAuthService) UpdateEmail(ctx context.Context, userID uint64, password, newEmail string) error {
+	return nil
+}
+
+func (m *MockAuthService) UpdateAccount(ctx context.Context, userID uint64, input service.UpdateAccountInput) error {
+	return nil
 }
 
 // MockPasskeyService implements service.PasskeyService for testing
@@ -161,4 +174,103 @@ func TestRegisterEnabled(t *testing.T) {
 	if !registerCalled {
 		t.Error("expected Register to be called on auth service")
 	}
+}
+
+func newAccountRouter(t *testing.T) (*gin.Engine, *mocks.MockAuthService) {
+	gin.SetMode(gin.TestMode)
+	svc := mocks.NewMockAuthService(gomock.NewController(t))
+	h := NewAuthHandler(svc, &MockPasskeyService{}, &config.Config{})
+	r := gin.New()
+	auth := r.Group("/api/auth", func(c *gin.Context) { c.Set("user_id", uint64(1)); c.Next() })
+	auth.GET("/me", h.Me)
+	auth.PUT("/me", h.UpdateMe)
+	auth.PUT("/email", h.UpdateEmail)
+	return r, svc
+}
+
+func accountUser() *model.User {
+	name, acct := "Jose", "Acme"
+	created := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	return &model.User{ID: 1, Email: "me@example.com", DisplayName: &name, PasswordHash: "secret-hash",
+		DefaultGroupID: u64p(7), AccountName: &acct, HomeChecklistDismissed: true, CreatedAt: created, UpdatedAt: created}
+}
+
+const accountUserJSON = `{"id":1,"email":"me@example.com","display_name":"Jose","default_group_id":7,
+	"account_name":"Acme","home_checklist_dismissed":true,
+	"created_at":"2026-10-24T12:00:00Z","updated_at":"2026-10-24T12:00:00Z"}`
+
+func TestAuthHandler_Me_ReturnsAccountFields(t *testing.T) {
+	r, svc := newAccountRouter(t)
+	svc.EXPECT().GetUserByID(gomock.Any(), uint64(1)).Return(accountUser(), nil)
+	w := doJSON(r, http.MethodGet, "/api/auth/me", "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, accountUserJSON, w.Body.String())
+}
+
+func TestAuthHandler_UpdateMe_AllFields(t *testing.T) {
+	r, svc := newAccountRouter(t)
+	name, acct, dismissed := "Jose", "Acme", true
+	svc.EXPECT().UpdateAccount(gomock.Any(), uint64(1), service.UpdateAccountInput{
+		DisplayName: &name, AccountName: &acct, DefaultGroupID: u64p(7), HomeChecklistDismissed: &dismissed,
+	}).Return(nil)
+	svc.EXPECT().GetUserByID(gomock.Any(), uint64(1)).Return(accountUser(), nil)
+
+	w := doJSON(r, http.MethodPut, "/api/auth/me",
+		`{"display_name":"Jose","account_name":"Acme","default_group_id":7,"home_checklist_dismissed":true}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.JSONEq(t, accountUserJSON, w.Body.String())
+}
+
+func TestAuthHandler_UpdateMe_ForeignDefaultGroup404(t *testing.T) {
+	r, svc := newAccountRouter(t)
+	svc.EXPECT().UpdateAccount(gomock.Any(), uint64(1), service.UpdateAccountInput{DefaultGroupID: u64p(9)}).
+		Return(service.ErrGroupNotFound)
+	w := doJSON(r, http.MethodPut, "/api/auth/me", `{"default_group_id":9}`)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.JSONEq(t, `{"error":"group not found"}`, w.Body.String())
+}
+
+func TestAuthHandler_UpdateMe_BlankAccountName400(t *testing.T) {
+	r, svc := newAccountRouter(t)
+	blank := " "
+	svc.EXPECT().UpdateAccount(gomock.Any(), uint64(1), service.UpdateAccountInput{AccountName: &blank}).
+		Return(service.ErrInvalidAccountName)
+	w := doJSON(r, http.MethodPut, "/api/auth/me", `{"account_name":" "}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAuthHandler_UpdateEmail_OK(t *testing.T) {
+	r, svc := newAccountRouter(t)
+	svc.EXPECT().UpdateEmail(gomock.Any(), uint64(1), "password123", "new@example.com").Return(nil)
+	svc.EXPECT().GetUserByID(gomock.Any(), uint64(1)).Return(accountUser(), nil)
+	w := doJSON(r, http.MethodPut, "/api/auth/email", `{"password":"password123","new_email":"new@example.com"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.NotContains(t, w.Body.String(), "secret-hash")
+}
+
+func TestAuthHandler_UpdateEmail_WrongPassword401(t *testing.T) {
+	r, svc := newAccountRouter(t)
+	svc.EXPECT().UpdateEmail(gomock.Any(), uint64(1), "bad", "new@example.com").Return(service.ErrWrongPassword)
+	w := doJSON(r, http.MethodPut, "/api/auth/email", `{"password":"bad","new_email":"new@example.com"}`)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.JSONEq(t, `{"error":"password is incorrect"}`, w.Body.String())
+}
+
+func TestAuthHandler_UpdateEmail_Taken409(t *testing.T) {
+	r, svc := newAccountRouter(t)
+	svc.EXPECT().UpdateEmail(gomock.Any(), uint64(1), "pw", "taken@example.com").Return(service.ErrEmailTaken)
+	w := doJSON(r, http.MethodPut, "/api/auth/email", `{"password":"pw","new_email":"taken@example.com"}`)
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.JSONEq(t, `{"error":"email already in use"}`, w.Body.String())
+}
+
+func TestAuthHandler_UpdateEmail_Invalid400(t *testing.T) {
+	r, svc := newAccountRouter(t)
+	svc.EXPECT().UpdateEmail(gomock.Any(), uint64(1), "pw", "nope").Return(service.ErrInvalidEmail)
+	w := doJSON(r, http.MethodPut, "/api/auth/email", `{"password":"pw","new_email":"nope"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	// Missing fields never reach the service.
+	w = doJSON(r, http.MethodPut, "/api/auth/email", `{"new_email":"a@b.com"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }

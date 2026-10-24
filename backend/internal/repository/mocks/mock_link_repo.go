@@ -43,18 +43,18 @@ func (m *MockLinkRepository) EXPECT() *MockLinkRepositoryMockRecorder {
 }
 
 // CountByGroup mocks base method.
-func (m *MockLinkRepository) CountByGroup(ctx context.Context, groupID uint64) (int64, error) {
+func (m *MockLinkRepository) CountByGroup(ctx context.Context, groupID uint64, f repository.LinkFilter) (int64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CountByGroup", ctx, groupID)
+	ret := m.ctrl.Call(m, "CountByGroup", ctx, groupID, f)
 	ret0, _ := ret[0].(int64)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CountByGroup indicates an expected call of CountByGroup.
-func (mr *MockLinkRepositoryMockRecorder) CountByGroup(ctx, groupID any) *gomock.Call {
+func (mr *MockLinkRepositoryMockRecorder) CountByGroup(ctx, groupID, f any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountByGroup", reflect.TypeOf((*MockLinkRepository)(nil).CountByGroup), ctx, groupID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountByGroup", reflect.TypeOf((*MockLinkRepository)(nil).CountByGroup), ctx, groupID, f)
 }
 
 // CountByUserID mocks base method.

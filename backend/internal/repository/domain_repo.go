@@ -32,8 +32,13 @@ func NewDomainRepository(db *sqlx.DB) *DomainRepositoryImpl {
 }
 
 func (r *DomainRepositoryImpl) Create(ctx context.Context, domain *model.Domain) error {
-	query := `INSERT INTO domains (user_id, domain) VALUES (?, ?)`
-	result, err := r.db.ExecContext(ctx, query, domain.UserID, domain.Domain)
+	if domain.VerificationStatus == "" {
+		domain.VerificationStatus = model.DomainVerificationPending
+	}
+	query := `INSERT INTO domains (user_id, group_id, domain, verification_token, verification_status)
+		VALUES (?, ?, ?, ?, ?)`
+	result, err := r.db.ExecContext(ctx, query, domain.UserID, domain.GroupID, domain.Domain,
+		domain.VerificationToken, domain.VerificationStatus)
 	if err != nil {
 		if strings.Contains(err.Error(), "Duplicate entry") {
 			return ErrDomainExists
@@ -102,6 +107,41 @@ func (r *DomainRepositoryImpl) ListByUserID(ctx context.Context, userID uint64) 
 		return nil, err
 	}
 	return domains, nil
+}
+
+func (r *DomainRepositoryImpl) Update(ctx context.Context, domain *model.Domain) error {
+	query := `UPDATE domains SET group_id = ?, verification_status = ?, verification_error = ?,
+		verified_at = ?, last_checked_at = ?, root_redirect = ?, not_found_redirect = ?
+		WHERE id = ?`
+	result, err := r.db.ExecContext(ctx, query, domain.GroupID, domain.VerificationStatus, domain.VerificationError,
+		domain.VerifiedAt.NullTime, domain.LastCheckedAt.NullTime, domain.RootRedirect, domain.NotFoundRedirect, domain.ID)
+	if err != nil {
+		logger.Error(ctx, "domain-repo: failed to update domain",
+			zap.Uint64("id", domain.ID),
+			zap.Error(err),
+		)
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows > 0 {
+		return nil
+	}
+	// MariaDB reports 0 affected rows when nothing changed; re-check existence.
+	var count int
+	if err := r.db.GetContext(ctx, &count, `SELECT COUNT(*) FROM domains WHERE id = ?`, domain.ID); err != nil {
+		logger.Error(ctx, "domain-repo: failed to check domain existence",
+			zap.Uint64("id", domain.ID),
+			zap.Error(err),
+		)
+		return err
+	}
+	if count == 0 {
+		return ErrDomainNotFound
+	}
+	return nil
 }
 
 func (r *DomainRepositoryImpl) Delete(ctx context.Context, id uint64) error {

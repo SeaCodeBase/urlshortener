@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"net/mail"
+	"strings"
 	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
@@ -17,7 +19,21 @@ var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrEmailTaken         = errors.New("email already taken")
 	ErrWrongPassword      = errors.New("current password is incorrect")
+	ErrInvalidEmail       = errors.New("invalid email address")
+	ErrInvalidAccountName = errors.New("account name must not be empty")
 )
+
+// maxAccountNameLen matches users.account_name VARCHAR(255).
+const maxAccountNameLen = 255
+
+// UpdateAccountInput is a partial profile/account update: nil fields are
+// left unchanged.
+type UpdateAccountInput struct {
+	DisplayName            *string `json:"display_name"`
+	AccountName            *string `json:"account_name"`
+	DefaultGroupID         *uint64 `json:"default_group_id"`
+	HomeChecklistDismissed *bool   `json:"home_checklist_dismissed"`
+}
 
 // Compile-time check: AuthServiceImpl implements AuthService
 var _ AuthService = (*AuthServiceImpl)(nil)
@@ -189,6 +205,111 @@ func (s *AuthServiceImpl) UpdateDisplayName(ctx context.Context, userID uint64, 
 			zap.Error(err),
 		)
 		return err
+	}
+	return nil
+}
+
+func (s *AuthServiceImpl) UpdateEmail(ctx context.Context, userID uint64, password, newEmail string) error {
+	newEmail = strings.TrimSpace(newEmail)
+	if !validEmail(newEmail) {
+		return ErrInvalidEmail
+	}
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		logger.Error(ctx, "auth-service: failed to get user for email change",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
+		return err
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		return ErrWrongPassword
+	}
+	if newEmail == user.Email {
+		return nil
+	}
+	exists, err := s.userRepo.EmailExists(ctx, newEmail)
+	if err != nil {
+		logger.Error(ctx, "auth-service: failed to check email existence",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
+		return err
+	}
+	if exists {
+		return ErrEmailTaken
+	}
+	if err := s.userRepo.UpdateEmail(ctx, userID, newEmail); err != nil {
+		if errors.Is(err, repository.ErrEmailExists) {
+			return ErrEmailTaken
+		}
+		logger.Error(ctx, "auth-service: failed to update email",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
+		return err
+	}
+	return nil
+}
+
+// validEmail accepts a bare address (no display name) of at most 255 bytes.
+func validEmail(email string) bool {
+	if email == "" || len(email) > 255 {
+		return false
+	}
+	addr, err := mail.ParseAddress(email)
+	return err == nil && addr.Address == email
+}
+
+func (s *AuthServiceImpl) UpdateAccount(ctx context.Context, userID uint64, input UpdateAccountInput) error {
+	var accountName *string
+	if input.AccountName != nil {
+		name := strings.TrimSpace(*input.AccountName)
+		if name == "" {
+			return ErrInvalidAccountName
+		}
+		name = truncateRunes(name, maxAccountNameLen)
+		accountName = &name
+	}
+	if input.DefaultGroupID != nil {
+		group, err := s.groupRepo.GetByID(ctx, *input.DefaultGroupID)
+		if errors.Is(err, repository.ErrGroupNotFound) {
+			return ErrGroupNotFound
+		}
+		if err != nil {
+			logger.Error(ctx, "auth-service: failed to get group",
+				zap.Uint64("group_id", *input.DefaultGroupID),
+				zap.Error(err),
+			)
+			return err
+		}
+		if group.UserID != userID {
+			return ErrGroupNotFound
+		}
+	}
+
+	if input.DisplayName != nil {
+		if err := s.UpdateDisplayName(ctx, userID, *input.DisplayName); err != nil {
+			return err
+		}
+	}
+	if accountName != nil || input.HomeChecklistDismissed != nil {
+		if err := s.userRepo.UpdateAccount(ctx, userID, accountName, input.HomeChecklistDismissed); err != nil {
+			logger.Error(ctx, "auth-service: failed to update account",
+				zap.Uint64("user_id", userID),
+				zap.Error(err),
+			)
+			return err
+		}
+	}
+	if input.DefaultGroupID != nil {
+		if err := s.userRepo.UpdateDefaultGroup(ctx, userID, *input.DefaultGroupID); err != nil {
+			logger.Error(ctx, "auth-service: failed to update default group",
+				zap.Uint64("user_id", userID),
+				zap.Error(err),
+			)
+			return err
+		}
 	}
 	return nil
 }

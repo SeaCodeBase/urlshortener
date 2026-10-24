@@ -18,6 +18,14 @@ type AuthService interface {
 	ChangePassword(ctx context.Context, userID uint64, input ChangePasswordInput) error
 	UpdateDisplayName(ctx context.Context, userID uint64, displayName string) error
 	GenerateToken(userID uint64) (string, error)
+	// UpdateEmail re-checks the password (ErrWrongPassword) and changes the
+	// email; ErrInvalidEmail for a malformed address, ErrEmailTaken when
+	// another user has it.
+	UpdateEmail(ctx context.Context, userID uint64, password, newEmail string) error
+	// UpdateAccount applies the non-nil fields of input; ErrGroupNotFound
+	// when DefaultGroupID is not one of the user's groups,
+	// ErrInvalidAccountName for a blank account name.
+	UpdateAccount(ctx context.Context, userID uint64, input UpdateAccountInput) error
 }
 
 //go:generate mockgen -destination=mocks/mock_group_service.go -package=mocks . GroupService
@@ -30,6 +38,24 @@ type GroupService interface {
 	// the X-Group-ID header when given (must be owned by userID), otherwise
 	// the user's default group, created lazily when missing.
 	ResolveActive(ctx context.Context, userID uint64, headerGroupID *uint64) (*model.Group, error)
+}
+
+//go:generate mockgen -destination=mocks/mock_domain_service.go -package=mocks . DomainService
+type DomainService interface {
+	// List returns the user's domains, newest first; never nil.
+	List(ctx context.Context, userID uint64) ([]*model.Domain, error)
+	// Create validates the hostname (ErrInvalidDomain), checks the optional
+	// group (ErrGroupNotFound) and stores the domain as pending with a fresh
+	// verification token; ErrDomainExists when it is already registered.
+	Create(ctx context.Context, userID uint64, input CreateDomainInput) (*model.Domain, error)
+	// Verify checks DNS (TXT _urlshortener.{domain} = verify={token}, or a
+	// CNAME to the redirect host) and records the outcome on the domain; a
+	// failed check is not an error, it sets status "error" and the reason.
+	Verify(ctx context.Context, userID, domainID uint64) (*model.Domain, error)
+	// Update changes the domain's settings (redirect URLs, group).
+	Update(ctx context.Context, userID, domainID uint64, input UpdateDomainInput) (*model.Domain, error)
+	// Delete removes the domain and returns it.
+	Delete(ctx context.Context, userID, domainID uint64) (*model.Domain, error)
 }
 
 //go:generate mockgen -destination=mocks/mock_token_service.go -package=mocks . TokenService

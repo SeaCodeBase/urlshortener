@@ -18,16 +18,23 @@ import (
 )
 
 func newTokenRouter(t *testing.T) (*gin.Engine, *mocks.MockTokenService) {
+	r, svc, activity := newTokenRouterWithActivity(t)
+	activity.EXPECT().Log(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	return r, svc
+}
+
+func newTokenRouterWithActivity(t *testing.T) (*gin.Engine, *mocks.MockTokenService, *mocks.MockActivityService) {
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)
 	svc := mocks.NewMockTokenService(ctrl)
-	h := NewTokenHandler(svc)
+	activity := mocks.NewMockActivityService(ctrl)
+	h := NewTokenHandler(svc, activity)
 	r := gin.New()
-	g := r.Group("/api/api-tokens", func(c *gin.Context) { c.Set("user_id", uint64(1)); c.Next() })
+	g := r.Group("/api/api-tokens", withGroup)
 	g.GET("", h.List)
 	g.POST("", h.Create)
 	g.DELETE("/:id", h.Revoke)
-	return r, svc
+	return r, svc, activity
 }
 
 func doJSON(r *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
@@ -112,4 +119,19 @@ func TestTokenHandler_RevokeInvalidID400(t *testing.T) {
 	r, _ := newTokenRouter(t)
 	w := doJSON(r, http.MethodDelete, "/api/api-tokens/abc", "")
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestTokenHandler_LogsActivity(t *testing.T) {
+	r, svc, activity := newTokenRouterWithActivity(t)
+	tok := &model.APIToken{ID: 4, UserID: 1, Name: "cli", TokenPrefix: "aaaaaaaa", CreatedAt: tokCreated}
+	svc.EXPECT().Create(gomock.Any(), uint64(1), "cli", "pw").Return("us_x", tok, nil)
+	activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionTokenCreate, service.EntityToken, uint64(4),
+		map[string]any{"name": "cli", "prefix": "aaaaaaaa"})
+	w := doJSON(r, http.MethodPost, "/api/api-tokens", `{"name":"cli","password":"pw"}`)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	svc.EXPECT().Revoke(gomock.Any(), uint64(1), uint64(4)).Return(nil)
+	activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionTokenRevoke, service.EntityToken, uint64(4), gomock.Nil())
+	w = doJSON(r, http.MethodDelete, "/api/api-tokens/4", "")
+	require.Equal(t, http.StatusNoContent, w.Code)
 }

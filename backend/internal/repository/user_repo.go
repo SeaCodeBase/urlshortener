@@ -201,6 +201,21 @@ func (r *UserRepositoryImpl) UpdateAccount(ctx context.Context, userID uint64, a
 	return r.requireUpdated(ctx, result, userID)
 }
 
+func (r *UserRepositoryImpl) UpdateEmail(ctx context.Context, userID uint64, email string) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE users SET email = ?, updated_at = NOW() WHERE id = ?`, email, userID)
+	if err != nil {
+		if strings.Contains(err.Error(), "Duplicate entry") {
+			return ErrEmailExists
+		}
+		logger.Error(ctx, "user-repo: failed to update email",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
+		return err
+	}
+	return r.requireUpdated(ctx, result, userID)
+}
+
 // requireUpdated maps "0 rows affected" to ErrUserNotFound. MariaDB reports
 // 0 affected rows when an UPDATE matches a row but changes nothing (e.g. the
 // same values within the same second), so existence is re-checked first.

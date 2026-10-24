@@ -11,7 +11,7 @@ import (
 func SetupTestDB(t *testing.T) *sqlx.DB {
 	dsn := os.Getenv("TEST_DATABASE_DSN")
 	if dsn == "" {
-		dsn = "urlshortener:password@tcp(localhost:3306)/urlshortener_test?parseTime=true&loc=UTC"
+		dsn = "urlshortener:password@tcp(localhost:3306)/urlshortener_test?parseTime=true&loc=UTC&time_zone=%27%2B00%3A00%27"
 	}
 	db, err := sqlx.Connect("mysql", dsn)
 	if err != nil {

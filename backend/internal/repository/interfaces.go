@@ -23,6 +23,9 @@ type UserRepository interface {
 	// UpdateAccount sets account_name and/or home_checklist_dismissed; a nil
 	// argument leaves that column unchanged.
 	UpdateAccount(ctx context.Context, userID uint64, accountName *string, dismissed *bool) error
+	// UpdateEmail changes the user's email; ErrEmailExists when another user
+	// already has it, ErrUserNotFound when the user is missing.
+	UpdateEmail(ctx context.Context, userID uint64, email string) error
 }
 
 //go:generate mockgen -destination=mocks/mock_group_repo.go -package=mocks . GroupRepository
@@ -70,8 +73,9 @@ type LinkRepository interface {
 	// total clicks (Tags left nil), plus the total match count. Links with
 	// source <> 'link' are excluded unless f.IncludeAllSources.
 	ListByGroup(ctx context.Context, groupID uint64, f LinkFilter, limit, offset int) ([]model.LinkWithStats, int64, error)
-	// CountByGroup counts the group's source='link' links.
-	CountByGroup(ctx context.Context, groupID uint64) (int64, error)
+	// CountByGroup counts the group's links matching f (source='link' only
+	// unless f.IncludeAllSources); used by global search.
+	CountByGroup(ctx context.Context, groupID uint64, f LinkFilter) (int64, error)
 	// SetArchived hides (true) or shows (false) the links; empty ids is a no-op.
 	SetArchived(ctx context.Context, ids []uint64, archived bool) error
 	// IncrementRedirectCount records a destination change; ErrLinkNotFound
@@ -93,10 +97,16 @@ type PasskeyRepository interface {
 
 //go:generate mockgen -destination=mocks/mock_domain_repo.go -package=mocks . DomainRepository
 type DomainRepository interface {
+	// Create inserts user_id, group_id, domain, verification_token and
+	// verification_status (empty means pending) and sets domain.ID.
 	Create(ctx context.Context, domain *model.Domain) error
 	GetByID(ctx context.Context, id uint64) (*model.Domain, error)
 	GetByDomain(ctx context.Context, domain string) (*model.Domain, error)
 	ListByUserID(ctx context.Context, userID uint64) ([]*model.Domain, error)
+	// Update writes group_id, verification_status, verification_error,
+	// verified_at, last_checked_at, root_redirect and not_found_redirect (nil
+	// clears); ErrDomainNotFound when the domain is missing.
+	Update(ctx context.Context, domain *model.Domain) error
 	Delete(ctx context.Context, id uint64) error
 }
 

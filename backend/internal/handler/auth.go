@@ -172,15 +172,14 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "password changed successfully"})
 }
 
-type UpdateMeRequest struct {
-	DisplayName string `json:"display_name"`
-}
-
+// UpdateMe applies a partial profile/account update
+// ({display_name, account_name, default_group_id, home_checklist_dismissed})
+// and returns the updated user.
 func (h *AuthHandler) UpdateMe(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := middleware.GetUserID(c)
-	var req UpdateMeRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	var input service.UpdateAccountInput
+	if err := c.ShouldBindJSON(&input); err != nil {
 		logger.Warn(ctx, "update-me: invalid request body",
 			zap.Uint64("user_id", userID),
 			zap.Error(err),
@@ -188,17 +187,68 @@ func (h *AuthHandler) UpdateMe(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
-	if err := h.authService.UpdateDisplayName(ctx, userID, req.DisplayName); err != nil {
-		logger.Error(ctx, "update-me: failed to update display name",
+	err := h.authService.UpdateAccount(ctx, userID, input)
+	switch {
+	case errors.Is(err, service.ErrGroupNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "group not found"})
+		return
+	case errors.Is(err, service.ErrInvalidAccountName):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	case err != nil:
+		logger.Error(ctx, "update-me: failed to update account",
 			zap.Uint64("user_id", userID),
 			zap.Error(err),
 		)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update profile"})
 		return
 	}
+	h.respondWithUser(c, "update-me")
+}
+
+type UpdateEmailRequest struct {
+	Password string `json:"password" binding:"required"`
+	NewEmail string `json:"new_email" binding:"required"`
+}
+
+// UpdateEmail changes the user's email after re-checking the password.
+func (h *AuthHandler) UpdateEmail(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID := middleware.GetUserID(c)
+	var req UpdateEmailRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "password and new_email are required"})
+		return
+	}
+	err := h.authService.UpdateEmail(ctx, userID, req.Password, req.NewEmail)
+	switch {
+	case errors.Is(err, service.ErrWrongPassword):
+		logger.Warn(ctx, "update-email: wrong password", zap.Uint64("user_id", userID))
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "password is incorrect"})
+		return
+	case errors.Is(err, service.ErrInvalidEmail):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	case errors.Is(err, service.ErrEmailTaken):
+		c.JSON(http.StatusConflict, gin.H{"error": "email already in use"})
+		return
+	case err != nil:
+		logger.Error(ctx, "update-email: failed",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update email"})
+		return
+	}
+	h.respondWithUser(c, "update-email")
+}
+
+func (h *AuthHandler) respondWithUser(c *gin.Context, op string) {
+	ctx := c.Request.Context()
+	userID := middleware.GetUserID(c)
 	user, err := h.authService.GetUserByID(ctx, userID)
 	if err != nil {
-		logger.Error(ctx, "update-me: failed to get user after update",
+		logger.Error(ctx, op+": failed to get user after update",
 			zap.Uint64("user_id", userID),
 			zap.Error(err),
 		)

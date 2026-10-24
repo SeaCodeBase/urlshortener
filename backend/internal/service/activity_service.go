@@ -22,12 +22,20 @@ const (
 	ActionLinkBackHalf = "link.back_half"
 	ActionTokenCreate  = "token.create"
 	ActionTokenRevoke  = "token.revoke"
+	ActionDomainCreate = "domain.create"
+	ActionDomainUpdate = "domain.update"
+	ActionDomainVerify = "domain.verify"
+	ActionDomainDelete = "domain.delete"
+	ActionGroupCreate  = "group.create"
+	ActionGroupUpdate  = "group.update"
 )
 
 // Activity log entity types.
 const (
-	EntityLink  = "link"
-	EntityToken = "token"
+	EntityLink   = "link"
+	EntityToken  = "token"
+	EntityDomain = "domain"
+	EntityGroup  = "group"
 )
 
 const (

@@ -116,6 +116,20 @@ func (mr *MockAuthServiceMockRecorder) Register(ctx, input any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Register", reflect.TypeOf((*MockAuthService)(nil).Register), ctx, input)
 }
 
+// UpdateAccount mocks base method.
+func (m *MockAuthService) UpdateAccount(ctx context.Context, userID uint64, input service.UpdateAccountInput) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateAccount", ctx, userID, input)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateAccount indicates an expected call of UpdateAccount.
+func (mr *MockAuthServiceMockRecorder) UpdateAccount(ctx, userID, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateAccount", reflect.TypeOf((*MockAuthService)(nil).UpdateAccount), ctx, userID, input)
+}
+
 // UpdateDisplayName mocks base method.
 func (m *MockAuthService) UpdateDisplayName(ctx context.Context, userID uint64, displayName string) error {
 	m.ctrl.T.Helper()
@@ -128,6 +142,20 @@ func (m *MockAuthService) UpdateDisplayName(ctx context.Context, userID uint64, 
 func (mr *MockAuthServiceMockRecorder) UpdateDisplayName(ctx, userID, displayName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateDisplayName", reflect.TypeOf((*MockAuthService)(nil).UpdateDisplayName), ctx, userID, displayName)
+}
+
+// UpdateEmail mocks base method.
+func (m *MockAuthService) UpdateEmail(ctx context.Context, userID uint64, password, newEmail string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateEmail", ctx, userID, password, newEmail)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateEmail indicates an expected call of UpdateEmail.
+func (mr *MockAuthServiceMockRecorder) UpdateEmail(ctx, userID, password, newEmail any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateEmail", reflect.TypeOf((*MockAuthService)(nil).UpdateEmail), ctx, userID, password, newEmail)
 }
 
 // ValidateToken mocks base method.
