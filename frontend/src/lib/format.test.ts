@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { formatDate, formatDateTime, formatNumber, formatShortUrl, pct } from "./format";
 
 describe("format", () => {
-  it("formatDate renders short month, day, year", () => {
+  it("formatDate renders short month, day, year (TZ=UTC in setup)", () => {
     expect(formatDate("2026-10-24T09:37:00Z")).toBe("Oct 24, 2026");
+    // Late UTC evening would be the next day east of UTC; pinned TZ keeps it stable.
+    expect(formatDate("2026-10-24T23:30:00Z")).toBe("Oct 24, 2026");
   });
 
   it("formatDateTime renders long date, time and short tz name", () => {

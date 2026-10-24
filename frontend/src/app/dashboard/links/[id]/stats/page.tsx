@@ -10,12 +10,12 @@ import { api } from '@/lib/api';
 import { DonutChart } from '@/components/charts/DonutChart';
 import { EngagementsChart } from '@/components/charts/EngagementsChart';
 import { LocationsChart } from '@/components/charts/LocationsChart';
-import type { LinkStats, Link as LinkType } from '@/types';
+import type { LinkStatsV2, Link as LinkType } from '@/types';
 
 export default function LinkStatsPage() {
   const params = useParams();
   const linkId = Number(params.id);
-  const [stats, setStats] = useState<LinkStats | null>(null);
+  const [stats, setStats] = useState<LinkStatsV2 | null>(null);
   const [link, setLink] = useState<LinkType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,22 +51,23 @@ export default function LinkStatsPage() {
   if (error) return <div className="p-8 text-red-500">{error}</div>;
   if (!stats || !link) return <div className="p-8">No data available</div>;
 
-  const deviceData = stats.device_stats.map(d => ({
-    name: d.device_type.charAt(0).toUpperCase() + d.device_type.slice(1),
-    value: d.count,
-    percentage: stats.total_clicks > 0 ? (d.count / stats.total_clicks) * 100 : 0,
+  // Interim adaptation to the v2 stats shape; this page is rewritten in Task 16.
+  const deviceData = stats.devices.map(d => ({
+    name: d.key.charAt(0).toUpperCase() + d.key.slice(1),
+    value: d.clicks,
+    percentage: d.percentage,
   }));
 
-  const browserData = stats.browser_stats.map(b => ({
-    name: b.browser,
-    value: b.count,
-    percentage: stats.total_clicks > 0 ? (b.count / stats.total_clicks) * 100 : 0,
+  const browserData = stats.browsers.map(b => ({
+    name: b.key,
+    value: b.clicks,
+    percentage: b.percentage,
   }));
 
-  const referrerData = stats.top_referrers.map(r => ({
+  const referrerData = stats.referrers.map(r => ({
     name: r.referrer,
-    value: r.count,
-    percentage: stats.total_clicks > 0 ? (r.count / stats.total_clicks) * 100 : 0,
+    value: r.clicks,
+    percentage: r.percentage,
   }));
 
   return (
@@ -99,10 +100,10 @@ export default function LinkStatsPage() {
               </p>
             </div>
             <div className="text-right">
-              <div className="text-3xl font-bold">{stats.total_clicks}</div>
+              <div className="text-3xl font-bold">{stats.total_all_time}</div>
               <div className="text-sm text-gray-500">Total Clicks</div>
-              <div className="text-lg font-medium text-gray-600 mt-2">{stats.unique_visitors}</div>
-              <div className="text-sm text-gray-500">Unique Visitors</div>
+              <div className="text-lg font-medium text-gray-600 mt-2">{stats.total_range}</div>
+              <div className="text-sm text-gray-500">Last 30 days</div>
             </div>
           </div>
         </CardContent>
@@ -114,7 +115,8 @@ export default function LinkStatsPage() {
           <CardTitle>Engagements over time</CardTitle>
         </CardHeader>
         <CardContent>
-          <EngagementsChart data={stats.daily_stats} />
+          {/* The chart expects newest-first data; series is chronological. */}
+          <EngagementsChart data={[...stats.series].reverse()} />
         </CardContent>
       </Card>
 
@@ -125,8 +127,8 @@ export default function LinkStatsPage() {
         </CardHeader>
         <CardContent>
           <LocationsChart
-            countries={stats.locations?.countries || []}
-            cities={stats.locations?.cities || []}
+            countries={stats.countries}
+            cities={stats.cities}
           />
         </CardContent>
       </Card>
