@@ -11,7 +11,9 @@ import (
 	"go.uber.org/zap"
 )
 
-func AuthMiddleware(authService service.AuthService) gin.HandlerFunc {
+// AuthMiddleware accepts either a JWT or a personal API token ("us_" prefix)
+// as the bearer token and stores the authenticated user under "user_id".
+func AuthMiddleware(authService service.AuthService, tokenSvc service.TokenService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		authHeader := c.GetHeader("Authorization")
@@ -27,7 +29,13 @@ func AuthMiddleware(authService service.AuthService) gin.HandlerFunc {
 		}
 
 		token := parts[1]
-		userID, err := authService.ValidateToken(token)
+		var userID uint64
+		var err error
+		if strings.HasPrefix(token, service.APITokenPrefix) {
+			userID, err = tokenSvc.Validate(ctx, token)
+		} else {
+			userID, err = authService.ValidateToken(token)
+		}
 		if err != nil {
 			logger.Warn(ctx, "auth: invalid or expired token",
 				zap.Error(err),

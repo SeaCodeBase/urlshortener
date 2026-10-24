@@ -78,6 +78,7 @@ func main() {
 	passkeyRepo := repository.NewPasskeyRepository(db)
 	domainRepo := repository.NewDomainRepository(db)
 	groupRepo := repository.NewGroupRepository(db)
+	apiTokenRepo := repository.NewAPITokenRepository(db)
 
 	// Start click flusher worker
 	clickFlusher := worker.NewClickFlusher(rdb, clickRepo)
@@ -86,6 +87,8 @@ func main() {
 
 	// Setup services
 	authService := service.NewAuthService(userRepo, groupRepo, cfg.JWT.Secret)
+	groupService := service.NewGroupService(groupRepo, userRepo, domainRepo)
+	tokenService := service.NewTokenService(apiTokenRepo, userRepo)
 	shortCodeSvc := service.NewShortCodeService(linkRepo)
 	linkService := service.NewLinkService(linkRepo, shortCodeSvc)
 	statsService := service.NewStatsService(clickRepo, linkRepo)
@@ -102,6 +105,7 @@ func main() {
 	passkeyHandler := handler.NewPasskeyHandler(passkeyService)
 	passkeyVerifyHandler := handler.NewPasskeyVerifyHandler(passkeyService, authService)
 	domainHandler := handler.NewDomainHandler(domainRepo)
+	tokenHandler := handler.NewTokenHandler(tokenService)
 
 	// Click service
 	clickService := service.NewClickService(rdb)
@@ -133,7 +137,8 @@ func main() {
 	// API Routes
 	api := apiRouter.Group("/api")
 	{
-		authMiddleware := middleware.AuthMiddleware(authService)
+		authMiddleware := middleware.AuthMiddleware(authService, tokenService)
+		groupMW := middleware.GroupMiddleware(groupService)
 		auth := api.Group("/auth")
 		{
 			auth.POST("/register", authHandler.Register)
@@ -156,7 +161,7 @@ func main() {
 
 		// Link routes (protected)
 		links := api.Group("/links")
-		links.Use(authMiddleware)
+		links.Use(authMiddleware, groupMW)
 		{
 			links.POST("", linkHandler.Create)
 			links.GET("", linkHandler.List)
@@ -166,9 +171,18 @@ func main() {
 			links.GET("/:id/stats", statsHandler.GetLinkStats)
 		}
 
+		// API token routes (protected, not group-scoped)
+		apiTokens := api.Group("/api-tokens")
+		apiTokens.Use(authMiddleware)
+		{
+			apiTokens.GET("", tokenHandler.List)
+			apiTokens.POST("", tokenHandler.Create)
+			apiTokens.DELETE("/:id", tokenHandler.Revoke)
+		}
+
 		// Domain routes (protected)
 		domains := api.Group("/domains")
-		domains.Use(authMiddleware)
+		domains.Use(authMiddleware, groupMW)
 		{
 			domains.GET("", domainHandler.List)
 			domains.POST("", domainHandler.Create)

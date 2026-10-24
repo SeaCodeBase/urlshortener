@@ -30,6 +30,18 @@ type GroupService interface {
 	ResolveActive(ctx context.Context, userID uint64, headerGroupID *uint64) (*model.Group, error)
 }
 
+//go:generate mockgen -destination=mocks/mock_token_service.go -package=mocks . TokenService
+type TokenService interface {
+	// Create issues a new API token after re-checking the user's password.
+	// The raw token is returned only here; only its hash is stored.
+	Create(ctx context.Context, userID uint64, name, password string) (string, *model.APIToken, error)
+	List(ctx context.Context, userID uint64) ([]model.APIToken, error)
+	Revoke(ctx context.Context, userID, id uint64) error
+	// Validate resolves a raw "us_" token to its user ID. Unknown or revoked
+	// tokens return ErrInvalidAPIToken.
+	Validate(ctx context.Context, raw string) (uint64, error)
+}
+
 //go:generate mockgen -destination=mocks/mock_link_service.go -package=mocks . LinkService
 type LinkService interface {
 	Create(ctx context.Context, userID uint64, input CreateLinkInput) (*model.Link, error)

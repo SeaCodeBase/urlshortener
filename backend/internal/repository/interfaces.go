@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
 )
@@ -33,6 +34,20 @@ type GroupRepository interface {
 	Update(ctx context.Context, group *model.Group) error
 	CountByUserID(ctx context.Context, userID uint64) (int, error)
 	Delete(ctx context.Context, id uint64) error
+}
+
+//go:generate mockgen -destination=mocks/mock_api_token_repo.go -package=mocks . APITokenRepository
+type APITokenRepository interface {
+	Create(ctx context.Context, token *model.APIToken) error
+	// GetByHash returns the token (revoked or not) with the given SHA-256 hex
+	// hash, or ErrAPITokenNotFound.
+	GetByHash(ctx context.Context, tokenHash string) (*model.APIToken, error)
+	// ListActiveByUserID returns the user's non-revoked tokens, newest first.
+	ListActiveByUserID(ctx context.Context, userID uint64) ([]model.APIToken, error)
+	// Revoke marks a non-revoked token owned by userID as revoked; it returns
+	// ErrAPITokenNotFound when no such token exists.
+	Revoke(ctx context.Context, userID, id uint64) error
+	UpdateLastUsedAt(ctx context.Context, id uint64, at time.Time) error
 }
 
 //go:generate mockgen -destination=mocks/mock_link_repo.go -package=mocks . LinkRepository
