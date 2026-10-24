@@ -93,13 +93,16 @@ Every configuration key is documented in `backend/config.example.yaml`.
   `{"type":"qr","ids":[...]}` (1–200 ids from the group, otherwise `400`).
   `links` counts clicks of those links except QR scans; `qr` counts the scans
   of the selected codes. Links owned by a QR code (`source='qr'`) count as QR
-  items, not as links.
+  items, not as links. Ids of links or QR codes deleted after the filter was
+  saved are dropped when the dashboard is read (the stored row is unchanged).
 - **Endpoints** (group-scoped, `/api/analytics`) — `GET /overview`,
   `GET/POST /dashboards`, `GET/PATCH/DELETE /dashboards/{id}`,
   `POST /dashboards/{id}/duplicate`, `GET /dashboards/{id}/data` and
   `GET /dashboards/{id}/export`. `/data` takes `from`, `to` and
-  `compare=previous|none`; the dashboard's stored filter is always used, and
-  without `from`/`to` a 30-day default window applies.
+  `compare=previous|none` (`/export` takes the same); the dashboard's stored
+  filter is always used, and without both `from` and `to` the window is the
+  dashboard's stored `date_range` in UTC days (`today` is today only,
+  `last_N_days` ends today).
   `GET /api/links/{id}/stats?compare_link={id}` adds the comparison link's
   series to the link stats (QR stats ignore it).
 - **Export** — `/export` returns a zip with `summary.csv`, `top.csv`,

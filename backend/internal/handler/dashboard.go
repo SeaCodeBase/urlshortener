@@ -159,15 +159,24 @@ func (h *DashboardHandler) load(c *gin.Context) (*service.DashboardView, bool) {
 
 // loadWithQuery parses the window query, then loads the dashboard. The
 // source param does not apply to dashboards (their filter scopes the data).
+// When neither from nor to is given, the window is the dashboard's stored
+// date range in UTC days instead of the 30-day default.
 func (h *DashboardHandler) loadWithQuery(c *gin.Context) (*service.DashboardView, service.StatsQuery, bool) {
-	q, err := parseStatsQuery(c, h.now())
+	now := h.now()
+	q, err := parseStatsQuery(c, now)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return nil, q, false
 	}
 	q.Source = ""
 	view, ok := h.load(c)
-	return view, q, ok
+	if !ok {
+		return nil, q, false
+	}
+	if c.Query("from") == "" && c.Query("to") == "" {
+		q.From, q.To = service.DashboardWindow(view.DateRange, now)
+	}
+	return view, q, true
 }
 
 func parseDashboardID(c *gin.Context) (uint64, bool) {

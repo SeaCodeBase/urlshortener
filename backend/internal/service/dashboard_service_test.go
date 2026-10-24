@@ -223,10 +223,11 @@ func TestDashboardService_Update_FilterValidation(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		f := newDashSvc(t)
 		expectGet(f)
+		// Validation, then the re-read's ghost-id pruning.
 		f.links.EXPECT().GetByIDs(gomock.Any(), []uint64{1, 2}).Return([]model.Link{
 			{ID: 1, GroupID: 7, Source: model.LinkSourceLink},
 			{ID: 2, GroupID: 7, Source: model.LinkSourceLink},
-		}, nil)
+		}, nil).Times(2)
 		f.repo.EXPECT().Update(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, d *model.Dashboard) error {
 			assert.Equal(t, uint64(5), d.ID)
 			assert.Equal(t, "Renamed", d.Name)
@@ -339,6 +340,9 @@ func TestDashboardService_Duplicate_NameAndFlags(t *testing.T) {
 		return nil
 	})
 	f.repo.EXPECT().CreatorNames(gomock.Any(), []uint64{2}).Return(map[uint64]string{2: "Bob"}, nil)
+	qr4 := repository.QRCodeRow{}
+	qr4.ID, qr4.GroupID = 4, 7
+	f.qrs.EXPECT().GetByIDs(gomock.Any(), []uint64{4}).Return([]repository.QRCodeRow{qr4}, nil)
 	f.activity.EXPECT().Log(gomock.Any(), uint64(2), uint64(7), service.ActionDashboardDuplicate, service.EntityDashboard, uint64(12), gomock.Any())
 	v, err := f.svc.Duplicate(ctx, 2, 7, 3)
 	require.NoError(t, err)
@@ -367,4 +371,75 @@ func TestDashboardService_Duplicate_NameAndFlags(t *testing.T) {
 		_, err := f.svc.Duplicate(ctx, 2, 7, 5)
 		assert.ErrorIs(t, err, repository.ErrDashboardNotFound)
 	})
+}
+
+func TestDashboardService_Get_PrunesDeletedFilterIDs(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("pruned link id", func(t *testing.T) {
+		f := newDashSvc(t)
+		d := sampleDashboard(5, 7, "Mine", false)
+		d.Filter = model.JSONMap{"type": "links", "ids": []any{float64(1), float64(12), float64(3)}}
+		f.repo.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(d, nil)
+		f.repo.EXPECT().CreatorNames(gomock.Any(), []uint64{1}).Return(map[uint64]string{1: "Ann"}, nil)
+		// 12 was deleted; 3 now belongs to another group.
+		f.links.EXPECT().GetByIDs(gomock.Any(), []uint64{1, 12, 3}).Return([]model.Link{
+			{ID: 1, GroupID: 7, Source: model.LinkSourceLink},
+			{ID: 3, GroupID: 8, Source: model.LinkSourceLink},
+		}, nil)
+		v, err := f.svc.Get(ctx, 7, 5)
+		require.NoError(t, err)
+		assert.Equal(t, service.DashboardFilter{Type: "links", IDs: []uint64{1}}, v.Filter)
+		// The stored row is not rewritten.
+		assert.Equal(t, []any{float64(1), float64(12), float64(3)}, d.Filter["ids"])
+	})
+
+	t.Run("all qr ids pruned", func(t *testing.T) {
+		f := newDashSvc(t)
+		d := sampleDashboard(5, 7, "Mine", false)
+		d.Filter = model.JSONMap{"type": "qr", "ids": []any{float64(4), float64(5)}}
+		f.repo.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(d, nil)
+		f.repo.EXPECT().CreatorNames(gomock.Any(), []uint64{1}).Return(map[uint64]string{}, nil)
+		f.qrs.EXPECT().GetByIDs(gomock.Any(), []uint64{4, 5}).Return(nil, nil)
+		v, err := f.svc.Get(ctx, 7, 5)
+		require.NoError(t, err)
+		assert.Equal(t, "qr", v.Filter.Type)
+		assert.Empty(t, v.Filter.IDs)
+	})
+
+	t.Run("list does one lookup per type", func(t *testing.T) {
+		f := newDashSvc(t)
+		a := sampleDashboard(1, 7, "A", true)
+		a.Filter = model.JSONMap{"type": "links", "ids": []any{float64(1), float64(2)}}
+		b := sampleDashboard(2, 7, "B", false)
+		b.Filter = model.JSONMap{"type": "links", "ids": []any{float64(2), float64(9)}}
+		c := sampleDashboard(3, 7, "C", false)
+		c.Filter = model.JSONMap{"type": "qr", "ids": []any{float64(4)}}
+		f.repo.EXPECT().EnsureDefault(gomock.Any(), uint64(7), uint64(1), gomock.Any()).Return(a, nil)
+		f.repo.EXPECT().ListByGroup(gomock.Any(), uint64(7), "created").Return([]model.Dashboard{*a, *b, *c}, nil)
+		f.repo.EXPECT().CreatorNames(gomock.Any(), []uint64{1}).Return(map[uint64]string{}, nil)
+		f.links.EXPECT().GetByIDs(gomock.Any(), []uint64{1, 2, 9}).Return([]model.Link{
+			{ID: 1, GroupID: 7, Source: model.LinkSourceLink},
+			{ID: 9, GroupID: 7, Source: model.LinkSourceLink},
+		}, nil)
+		f.qrs.EXPECT().GetByIDs(gomock.Any(), []uint64{4}).Return([]repository.QRCodeRow{{QRCode: model.QRCode{ID: 4, GroupID: 7}}}, nil)
+		views, err := f.svc.List(ctx, 1, 7, "")
+		require.NoError(t, err)
+		require.Len(t, views, 3)
+		assert.Equal(t, []uint64{1}, views[0].Filter.IDs)
+		assert.Equal(t, []uint64{9}, views[1].Filter.IDs)
+		assert.Equal(t, []uint64{4}, views[2].Filter.IDs)
+	})
+}
+
+func TestDashboardWindow(t *testing.T) {
+	now := time.Date(2026, 10, 25, 2, 0, 0, 0, time.FixedZone("JST", 9*3600)) // 2026-10-24 17:00 UTC
+	day := func(m time.Month, d int) time.Time { return time.Date(2026, m, d, 0, 0, 0, 0, time.UTC) }
+	for dr, from := range map[string]time.Time{
+		"today": day(10, 24), "last_7_days": day(10, 18), "last_90_days": day(7, 27), "bogus": day(10, 18),
+	} {
+		gotFrom, gotTo := service.DashboardWindow(dr, now)
+		assert.Equal(t, from, gotFrom, dr)
+		assert.Equal(t, day(10, 24), gotTo, dr)
+	}
 }

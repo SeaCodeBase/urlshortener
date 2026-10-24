@@ -197,3 +197,50 @@ func TestDashboardSlug(t *testing.T) {
 		assert.Equal(t, want, dashboardSlug(in), in)
 	}
 }
+
+func TestDashboardHandler_Data_DefaultsToStoredDateRange(t *testing.T) {
+	// dashNow is 2026-10-24 15:00 UTC; the window is in UTC days.
+	for dr, from := range map[string]time.Time{
+		"today":        d(2026, 10, 24),
+		"last_7_days":  d(2026, 10, 18),
+		"last_30_days": d(2026, 9, 25),
+		"last_60_days": d(2026, 8, 26),
+		"last_90_days": d(2026, 7, 27),
+	} {
+		t.Run(dr, func(t *testing.T) {
+			r, dash, an := newDashboardRouter(t)
+			v := dashView(2, "Q4")
+			v.DateRange = dr
+			dash.EXPECT().Get(gomock.Any(), uint64(7), uint64(2)).Return(v, nil)
+			wantQ := service.StatsQuery{From: from, To: d(2026, 10, 24), Unit: "day"}
+			an.EXPECT().DashboardData(gomock.Any(), uint64(7), v.Filter, wantQ).
+				Return(&service.DashboardData{Total: 1}, nil)
+			w := doJSON(r, http.MethodGet, "/api/analytics/dashboards/2/data", "")
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		})
+	}
+}
+
+func TestDashboardHandler_Data_OneBoundKeepsQuery(t *testing.T) {
+	// Only from given → the stored range is ignored (to defaults to today).
+	r, dash, an := newDashboardRouter(t)
+	v := dashView(2, "Q4")
+	v.DateRange = "today"
+	dash.EXPECT().Get(gomock.Any(), uint64(7), uint64(2)).Return(v, nil)
+	wantQ := service.StatsQuery{From: d(2026, 10, 20), To: d(2026, 10, 24), Unit: "day"}
+	an.EXPECT().DashboardData(gomock.Any(), uint64(7), v.Filter, wantQ).Return(&service.DashboardData{}, nil)
+	w := doJSON(r, http.MethodGet, "/api/analytics/dashboards/2/data?from=2026-10-20", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}
+
+func TestDashboardHandler_Export_DefaultsToStoredDateRange(t *testing.T) {
+	r, dash, an := newDashboardRouter(t)
+	v := dashView(2, "Q4")
+	v.DateRange = "last_7_days"
+	dash.EXPECT().Get(gomock.Any(), uint64(7), uint64(2)).Return(v, nil)
+	wantQ := service.StatsQuery{From: d(2026, 10, 18), To: d(2026, 10, 24), Unit: "day"}
+	an.EXPECT().ExportZip(gomock.Any(), uint64(7), v.Name, v.Filter, wantQ).Return([]byte("PK"), nil)
+	w := doJSON(r, http.MethodGet, "/api/analytics/dashboards/2/export", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, `attachment; filename="q4-2026-10-18-2026-10-24.zip"`, w.Header().Get("Content-Disposition"))
+}

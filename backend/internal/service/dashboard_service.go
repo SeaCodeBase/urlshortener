@@ -42,6 +42,23 @@ var DashboardDateRanges = map[string]bool{
 	"today": true, "last_7_days": true, "last_30_days": true, "last_60_days": true, "last_90_days": true,
 }
 
+// DashboardDateRangeDays is the length in UTC days of each date range preset.
+var DashboardDateRangeDays = map[string]int{
+	"today": 1, "last_7_days": 7, "last_30_days": 30, "last_60_days": 60, "last_90_days": 90,
+}
+
+// DashboardWindow returns the inclusive UTC-day window of a stored date range
+// preset ending today (UTC): today → from = to = today; last_N_days → from =
+// today−(N−1). An unknown preset reads as DefaultDashboardDateRange.
+func DashboardWindow(dateRange string, now time.Time) (from, to time.Time) {
+	n, ok := DashboardDateRangeDays[dateRange]
+	if !ok {
+		n = DashboardDateRangeDays[DefaultDashboardDateRange]
+	}
+	to = dateOnly(now)
+	return to.AddDate(0, 0, -(n - 1)), to
+}
+
 // dashboardSorts are the accepted List sort keys.
 var dashboardSorts = map[string]bool{"created": true, "modified": true, "name": true}
 
@@ -182,35 +199,92 @@ func (s *DashboardServiceImpl) validateFilter(ctx context.Context, groupID uint6
 		}
 		want[id] = true
 	}
-	valid := make(map[uint64]bool, len(f.IDs))
-	if f.Type == FilterTypeLinks {
-		links, err := s.links.GetByIDs(ctx, f.IDs)
-		if err != nil {
-			return err
-		}
-		for _, l := range links {
-			if l.GroupID == groupID && l.Source == model.LinkSourceLink {
-				valid[l.ID] = true
-			}
-		}
-	} else {
-		qrs, err := s.qrs.GetByIDs(ctx, f.IDs)
-		if err != nil {
-			return err
-		}
-		for _, q := range qrs {
-			if q.GroupID == groupID {
-				valid[q.ID] = true
-			}
-		}
+	owners, err := s.filterIDOwners(ctx, f.Type, f.IDs)
+	if err != nil {
+		return err
 	}
 	for _, id := range f.IDs {
-		if !valid[id] {
+		if g, ok := owners[id]; !ok || g != groupID {
 			if f.Type == FilterTypeLinks {
 				return invalid("link %d not found", id)
 			}
 			return invalid("QR code %d not found", id)
 		}
+	}
+	return nil
+}
+
+// filterIDOwners returns the group of each id of a links or qr filter that
+// exists; a links id must be a plain link (source 'link'), so QR-owned links
+// are absent.
+func (s *DashboardServiceImpl) filterIDOwners(ctx context.Context, typ string, ids []uint64) (map[uint64]uint64, error) {
+	owners := make(map[uint64]uint64, len(ids))
+	if len(ids) == 0 {
+		return owners, nil
+	}
+	if typ == FilterTypeLinks {
+		links, err := s.links.GetByIDs(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		for _, l := range links {
+			if l.Source == model.LinkSourceLink {
+				owners[l.ID] = l.GroupID
+			}
+		}
+		return owners, nil
+	}
+	qrs, err := s.qrs.GetByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, q := range qrs {
+		owners[q.ID] = q.GroupID
+	}
+	return owners, nil
+}
+
+// pruneFilters drops from each links/qr filter the ids that no longer exist
+// in the view's group (deleted after the filter was saved), with one lookup
+// per filter type. A filter whose ids are all gone keeps its type with no
+// ids. Only the views change; stored rows are not rewritten.
+func (s *DashboardServiceImpl) pruneFilters(ctx context.Context, views []DashboardView) error {
+	idsByType := map[string][]uint64{}
+	seen := map[string]map[uint64]bool{FilterTypeLinks: {}, FilterTypeQR: {}}
+	for _, v := range views {
+		if v.Filter.Type != FilterTypeLinks && v.Filter.Type != FilterTypeQR {
+			continue
+		}
+		for _, id := range v.Filter.IDs {
+			if !seen[v.Filter.Type][id] {
+				seen[v.Filter.Type][id] = true
+				idsByType[v.Filter.Type] = append(idsByType[v.Filter.Type], id)
+			}
+		}
+	}
+	owners := map[string]map[uint64]uint64{}
+	for _, typ := range []string{FilterTypeLinks, FilterTypeQR} {
+		if len(idsByType[typ]) == 0 {
+			continue
+		}
+		o, err := s.filterIDOwners(ctx, typ, idsByType[typ])
+		if err != nil {
+			return err
+		}
+		owners[typ] = o
+	}
+	for i := range views {
+		f := &views[i].Filter
+		if f.Type != FilterTypeLinks && f.Type != FilterTypeQR {
+			continue
+		}
+		kept := make([]uint64, 0, len(f.IDs))
+		for _, id := range f.IDs {
+			if g, ok := owners[f.Type][id]; ok && g == views[i].GroupID {
+				kept = append(kept, id)
+			}
+		}
+		f.IDs = kept
 	}
 	return nil
 }
@@ -397,6 +471,9 @@ func (s *DashboardServiceImpl) views(ctx context.Context, ds []model.Dashboard) 
 			CreatedAt: d.CreatedAt,
 			UpdatedAt: d.UpdatedAt,
 		})
+	}
+	if err := s.pruneFilters(ctx, out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
