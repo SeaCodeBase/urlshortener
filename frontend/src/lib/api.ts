@@ -456,9 +456,13 @@ class ApiClient {
     return this.request<PublishedPage>(`/api/public/pages/${encodeURIComponent(slug)}`);
   }
 
-  /** View beacon → 204 (404 when unpublished). */
-  async recordPageView(slug: string) {
-    return this.send<void>('POST', `/api/public/pages/${encodeURIComponent(slug)}/view`);
+  /** View beacon → 204 (404 when unpublished). `referrer` is the visitor's document.referrer. */
+  async recordPageView(slug: string, referrer?: string) {
+    return this.send<void>(
+      'POST',
+      `/api/public/pages/${encodeURIComponent(slug)}/view`,
+      referrer === undefined ? undefined : { referrer },
+    );
   }
 
   async getTags(type: TagType = 'link') {

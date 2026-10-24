@@ -42,7 +42,7 @@ describe("ViewBeacon", () => {
       </StrictMode>,
     );
     expect(beacon).toHaveBeenCalledTimes(1);
-    expect(beacon).toHaveBeenCalledWith("/api/public/pages/jose/view", "");
+    expect(beacon).toHaveBeenCalledWith("/api/public/pages/jose/view", JSON.stringify({ referrer: "" }));
     expect(recordPageView).not.toHaveBeenCalled();
     expect(container).toBeEmptyDOMElement();
   });
@@ -51,7 +51,17 @@ describe("ViewBeacon", () => {
     setBeacon(undefined);
     render(<ViewBeacon slug="jose" />);
     expect(recordPageView).toHaveBeenCalledTimes(1);
-    expect(recordPageView).toHaveBeenCalledWith("jose");
+    expect(recordPageView).toHaveBeenCalledWith("jose", "");
+  });
+
+  it("sends document.referrer in the beacon body and the fallback", () => {
+    const spy = vi.spyOn(document, "referrer", "get").mockReturnValue("https://instagram.com/");
+    const beacon = vi.fn(() => false);
+    setBeacon(beacon);
+    render(<ViewBeacon slug="jose" />);
+    expect(beacon).toHaveBeenCalledWith("/api/public/pages/jose/view", '{"referrer":"https://instagram.com/"}');
+    expect(recordPageView).toHaveBeenCalledWith("jose", "https://instagram.com/");
+    spy.mockRestore();
   });
 
   it("falls back to api.recordPageView when sendBeacon refuses the request", () => {
@@ -64,7 +74,7 @@ describe("ViewBeacon", () => {
     const beacon = vi.fn(() => true);
     setBeacon(beacon);
     render(<ViewBeacon slug="a b" />);
-    expect(beacon).toHaveBeenCalledWith("/api/public/pages/a%20b/view", "");
+    expect(beacon).toHaveBeenCalledWith("/api/public/pages/a%20b/view", JSON.stringify({ referrer: "" }));
   });
 
   it("swallows errors from sendBeacon and the API", async () => {

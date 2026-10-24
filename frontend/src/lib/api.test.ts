@@ -218,4 +218,23 @@ describe("ApiClient", () => {
 
     expect(lastCall().url).toBe("/api/qr-codes/3/stats?from=2026-01-01");
   });
+
+  it("recordPageView posts the visitor referrer as a JSON body", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+
+    await api.recordPageView("jose", "https://instagram.com/");
+
+    const { url, init } = lastCall();
+    expect(url).toBe("/api/public/pages/jose/view");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ referrer: "https://instagram.com/" });
+  });
+
+  it("recordPageView sends no body without a referrer", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+
+    await api.recordPageView("jose");
+
+    expect(lastCall().init.body).toBeUndefined();
+  });
 });
