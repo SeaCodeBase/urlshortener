@@ -214,9 +214,9 @@ func TestAnalyticsService_Items_SplitsQrScans(t *testing.T) {
 			sort.Slice(got, func(i, j int) bool { return got[i] < got[j] })
 			assert.Equal(t, []uint64{1, 2, 3, 9}, got)
 			return []model.Link{
-				{ID: 1, ShortCode: "one", Title: strPtr("Link one"), Source: model.LinkSourceLink},
-				{ID: 2, ShortCode: "two", Title: strPtr("Link two"), Source: model.LinkSourceLink, DomainID: &domainID},
-				{ID: 3, ShortCode: "thr", Title: strPtr("QR link"), Source: model.LinkSourceQR},
+				{ID: 1, ShortCode: "one", OriginalURL: "https://one.example", Title: strPtr("Link one"), Source: model.LinkSourceLink},
+				{ID: 2, ShortCode: "two", OriginalURL: "https://two.example", Title: strPtr("Link two"), Source: model.LinkSourceLink, DomainID: &domainID},
+				{ID: 3, ShortCode: "thr", OriginalURL: "https://thr.example", Title: strPtr("QR link"), Source: model.LinkSourceQR},
 			}, nil
 		})
 	f.qrs.EXPECT().QRCodeIDsForLinks(gomock.Any(), gomock.Any()).
@@ -237,10 +237,10 @@ func TestAnalyticsService_Items_SplitsQrScans(t *testing.T) {
 		service.StatsQuery{From: cur.from, To: cur.to, Compare: true})
 	require.NoError(t, err)
 	assert.Equal(t, []service.AnalyticsItem{
-		{Type: "link", ID: 2, LinkID: 2, Title: "Link two", ShortURL: "http://go.example/two", Clicks: 40, Percentage: 40, PrevClicks: 3},
-		{Type: "link", ID: 1, LinkID: 1, Title: "Link one", ShortURL: "http://localhost:8080/one", Clicks: 30, Percentage: 30, PrevClicks: 0},
-		{Type: "qr", ID: 11, LinkID: 1, Title: "Menu", ShortURL: "http://localhost:8080/one", Clicks: 20, Percentage: 20, PrevClicks: 8},
-		{Type: "qr", ID: 12, LinkID: 3, Title: "QR link", ShortURL: "http://localhost:8080/thr", Clicks: 10, Percentage: 10, PrevClicks: 0},
+		{Type: "link", ID: 2, LinkID: 2, Title: "Link two", ShortURL: "http://go.example/two", OriginalURL: "https://two.example", Clicks: 40, Percentage: 40, PrevClicks: 3},
+		{Type: "link", ID: 1, LinkID: 1, Title: "Link one", ShortURL: "http://localhost:8080/one", OriginalURL: "https://one.example", Clicks: 30, Percentage: 30, PrevClicks: 0},
+		{Type: "qr", ID: 11, LinkID: 1, Title: "Menu", ShortURL: "http://localhost:8080/one", OriginalURL: "https://one.example", Clicks: 20, Percentage: 20, PrevClicks: 8},
+		{Type: "qr", ID: 12, LinkID: 3, Title: "QR link", ShortURL: "http://localhost:8080/thr", OriginalURL: "https://thr.example", Clicks: 10, Percentage: 10, PrevClicks: 0},
 	}, d.Items)
 }
 
@@ -302,7 +302,7 @@ func TestAnalyticsService_Overview_Windows(t *testing.T) {
 	links := []model.Link{}
 	for i := uint64(1); i <= 6; i++ {
 		rows = append(rows, repository.ItemCount{LinkID: i, Source: "link", Count: int64(70 - i*10)})
-		links = append(links, model.Link{ID: i, ShortCode: "c" + string(rune('0'+i)), Source: model.LinkSourceLink})
+		links = append(links, model.Link{ID: i, ShortCode: "c" + string(rune('0'+i)), OriginalURL: "https://example.com/" + string(rune('0'+i)), Source: model.LinkSourceLink})
 	}
 	f.clicks.EXPECT().ItemsScope(gomock.Any(), scope, month.from, month.to, 1000).Return(rows, nil)
 	f.links.EXPECT().GetByIDs(gomock.Any(), gomock.Any()).Return(links, nil)
@@ -319,6 +319,7 @@ func TestAnalyticsService_Overview_Windows(t *testing.T) {
 	assert.InDelta(t, 12.5, *o.ChangePct, 0.001)
 	require.Len(t, o.TopPerforming, 5)
 	assert.Equal(t, uint64(1), o.TopPerforming[0].ID)
+	assert.Equal(t, "https://example.com/1", o.TopPerforming[0].OriginalURL)
 	assert.InDelta(t, 30.0, o.TopPerforming[0].Percentage, 0.001)
 	assert.Equal(t, uint64(5), o.TopPerforming[4].ID)
 }

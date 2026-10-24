@@ -118,6 +118,13 @@ func main() {
 		BaseURL:  cfg.URLs.BaseURL,
 	})
 	statsService := service.NewStatsService(clickRepo, linkRepo, domainRepo, cfg.URLs.BaseURL)
+	analyticsService := service.NewAnalyticsService(clickRepo, linkRepo, qrRepo, domainRepo, cfg.URLs.BaseURL)
+	dashboardService := service.NewDashboardService(service.DashboardServiceDeps{
+		Dashboards: repository.NewDashboardRepository(db),
+		Links:      linkRepo,
+		QRs:        qrRepo,
+		Activity:   activityService,
+	})
 	uploadService, err := service.NewUploadService(cfg.Uploads.Path)
 	if err != nil {
 		logger.Fatal(ctx, "upload directory setup failed", zap.Error(err))
@@ -164,7 +171,8 @@ func main() {
 	metaHandler := handler.NewMetaHandler(cfg)
 	tagHandler := handler.NewTagHandler(tagService)
 	activityHandler := handler.NewActivityHandler(activityService)
-	analyticsHandler := handler.NewAnalyticsHandler(statsService)
+	analyticsHandler := handler.NewAnalyticsHandler(statsService, analyticsService)
+	dashboardHandler := handler.NewDashboardHandler(dashboardService, analyticsService)
 
 	// Click service
 	clickService := service.NewClickService(rdb)
@@ -301,6 +309,15 @@ func main() {
 		analytics.Use(authMiddleware, groupMW)
 		{
 			analytics.GET("/today", analyticsHandler.Today)
+			analytics.GET("/overview", analyticsHandler.Overview)
+			analytics.GET("/dashboards", dashboardHandler.List)
+			analytics.POST("/dashboards", dashboardHandler.Create)
+			analytics.GET("/dashboards/:id", dashboardHandler.Get)
+			analytics.PATCH("/dashboards/:id", dashboardHandler.Update)
+			analytics.POST("/dashboards/:id/duplicate", dashboardHandler.Duplicate)
+			analytics.DELETE("/dashboards/:id", dashboardHandler.Delete)
+			analytics.GET("/dashboards/:id/data", dashboardHandler.Data)
+			analytics.GET("/dashboards/:id/export", dashboardHandler.Export)
 		}
 
 		// Domain routes (protected)

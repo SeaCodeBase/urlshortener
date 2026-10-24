@@ -13,12 +13,13 @@ import (
 
 // AnalyticsHandler serves group-level analytics.
 type AnalyticsHandler struct {
-	statsService service.StatsService
-	now          func() time.Time
+	statsService     service.StatsService
+	analyticsService service.AnalyticsService
+	now              func() time.Time
 }
 
-func NewAnalyticsHandler(statsService service.StatsService) *AnalyticsHandler {
-	return &AnalyticsHandler{statsService: statsService, now: time.Now}
+func NewAnalyticsHandler(statsService service.StatsService, analyticsService service.AnalyticsService) *AnalyticsHandler {
+	return &AnalyticsHandler{statsService: statsService, analyticsService: analyticsService, now: time.Now}
 }
 
 // todayRanges maps the range parameter to its length in days, ending today.
@@ -49,4 +50,20 @@ func (h *AnalyticsHandler) Today(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"engagements": count, "range": rng})
+}
+
+// Overview returns the analytics landing page data of the active group.
+func (h *AnalyticsHandler) Overview(c *gin.Context) {
+	ctx := c.Request.Context()
+	groupID := middleware.GetGroupID(c)
+	overview, err := h.analyticsService.Overview(ctx, groupID)
+	if err != nil {
+		logger.Error(ctx, "analytics: failed to get overview",
+			zap.Uint64("group_id", groupID),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get overview"})
+		return
+	}
+	c.JSON(http.StatusOK, overview)
 }

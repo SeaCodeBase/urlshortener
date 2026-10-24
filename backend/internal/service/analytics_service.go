@@ -46,14 +46,15 @@ type DashboardFilter struct {
 
 // AnalyticsItem is a link or QR code with its engagements in a window.
 type AnalyticsItem struct {
-	Type       string  `json:"type"`
-	ID         uint64  `json:"id"`
-	LinkID     uint64  `json:"link_id"`
-	Title      string  `json:"title"`
-	ShortURL   string  `json:"short_url"`
-	Clicks     int64   `json:"clicks"`
-	Percentage float64 `json:"percentage"`
-	PrevClicks int64   `json:"prev_clicks"`
+	Type        string  `json:"type"`
+	ID          uint64  `json:"id"`
+	LinkID      uint64  `json:"link_id"`
+	Title       string  `json:"title"`
+	ShortURL    string  `json:"short_url"`
+	OriginalURL string  `json:"original_url"`
+	Clicks      int64   `json:"clicks"`
+	Percentage  float64 `json:"percentage"`
+	PrevClicks  int64   `json:"prev_clicks"`
 }
 
 // TopDay is the series bucket with the most engagements.
@@ -423,6 +424,7 @@ func (s *AnalyticsServiceImpl) items(ctx context.Context, scope repository.Click
 			it.Title = *link.Title
 		}
 		it.ShortURL = ShortURL(s.baseURL, link, s.domainName(ctx, link, domains))
+		it.OriginalURL = link.OriginalURL
 		it.Percentage = percentOf(it.Clicks, total)
 		it.PrevClicks = prevClicks[itemKey{it.Type, it.ID}]
 	}
