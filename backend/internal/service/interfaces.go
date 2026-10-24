@@ -164,6 +164,30 @@ type AnalyticsService interface {
 	ExportZip(ctx context.Context, groupID uint64, name string, filter DashboardFilter, q StatsQuery) ([]byte, error)
 }
 
+//go:generate mockgen -destination=mocks/mock_dashboard_service.go -package=mocks . DashboardService
+type DashboardService interface {
+	// List returns the group's dashboards sorted by sort ("created", the
+	// default when empty, "modified" or "name"; else *ValidationError),
+	// creating the group's "Default" dashboard first when it has none.
+	List(ctx context.Context, userID, groupID uint64, sort string) ([]DashboardView, error)
+	// Get returns the dashboard; repository.ErrDashboardNotFound when it
+	// does not exist or belongs to another group.
+	Get(ctx context.Context, groupID, id uint64) (*DashboardView, error)
+	// Create adds a dashboard with the default date range, filter and
+	// layout; the name is trimmed and must be 1-255 characters
+	// (*ValidationError).
+	Create(ctx context.Context, userID, groupID uint64, name string) (*DashboardView, error)
+	// Update applies the non-nil patch fields after validating them
+	// (*ValidationError); ErrDashboardNotFound as Get.
+	Update(ctx context.Context, userID, groupID, id uint64, patch DashboardPatch) (*DashboardView, error)
+	// Duplicate copies the dashboard as "Copy of {name}" (never default);
+	// ErrDashboardNotFound as Get.
+	Duplicate(ctx context.Context, userID, groupID, id uint64) (*DashboardView, error)
+	// Delete removes the dashboard; ErrDashboardDefault for the group's
+	// default dashboard, ErrDashboardNotFound as Get.
+	Delete(ctx context.Context, userID, groupID, id uint64) error
+}
+
 //go:generate mockgen -destination=mocks/mock_shortcode_service.go -package=mocks . ShortCodeService
 type ShortCodeService interface {
 	// Generate creates a unique short code within the given domain.

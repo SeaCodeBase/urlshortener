@@ -33,15 +33,21 @@ const (
 	ActionQRHide       = "qr.hide"
 	ActionQRUnhide     = "qr.unhide"
 	ActionQRDelete     = "qr.delete"
+
+	ActionDashboardCreate    = "dashboard.create"
+	ActionDashboardUpdate    = "dashboard.update"
+	ActionDashboardDelete    = "dashboard.delete"
+	ActionDashboardDuplicate = "dashboard.duplicate"
 )
 
 // Activity log entity types.
 const (
-	EntityLink   = "link"
-	EntityToken  = "token"
-	EntityDomain = "domain"
-	EntityGroup  = "group"
-	EntityQRCode = "qr_code"
+	EntityLink      = "link"
+	EntityToken     = "token"
+	EntityDomain    = "domain"
+	EntityGroup     = "group"
+	EntityQRCode    = "qr_code"
+	EntityDashboard = "dashboard"
 )
 
 const (
