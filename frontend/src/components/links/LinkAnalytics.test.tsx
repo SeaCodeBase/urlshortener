@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type { LinkStatsQuery, LinkStatsV2 } from "@/types";
 import { LinkAnalytics } from "./LinkAnalytics";
 
@@ -129,5 +129,40 @@ describe("LinkAnalytics", () => {
     expect(screen.queryByRole("heading", { name: "Locations" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders scan analytics for a QR code from the QR stats endpoint", async () => {
+    const getQrStats = vi.spyOn(api, "getQrStats").mockResolvedValue(fixture);
+    useLinkStats.mockReturnValue({ data: undefined, isLoading: false });
+    wrap(<LinkAnalytics subject={{ kind: "qr", id: 5 }} destination="https://example.com/menu" />);
+
+    expect(await screen.findByText("Total scans")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Scan data" })).toBeInTheDocument();
+    expect(screen.getByText("Scans (Last 30 days)")).toBeInTheDocument();
+    for (const title of ["Scans over time", "Scans by location", "Scans by browser", "Scans by operating system"]) {
+      expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole("heading", { name: "Referrers" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Devices" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Referrers")).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Source" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Countries" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Cities" })).toBeInTheDocument();
+
+    expect(getQrStats).toHaveBeenCalledTimes(1);
+    const [id, query] = getQrStats.mock.calls[0];
+    expect(id).toBe(5);
+    expect(query).toMatchObject({ compare: "none", unit: "day" });
+    expect(query).not.toHaveProperty("source");
+    // The link stats query stays disabled (no id).
+    for (const [linkId] of useLinkStats.mock.calls) expect(linkId).toBeNull();
+    getQrStats.mockRestore();
+  });
+
+  it("still accepts the deprecated linkId prop and a link subject", () => {
+    useLinkStats.mockReturnValue({ data: fixture, isLoading: false });
+    wrap(<LinkAnalytics subject={{ kind: "link", id: 9 }} destination="https://example.com" />);
+    expect(screen.getByRole("heading", { name: "Link analytics - example.com" })).toBeInTheDocument();
+    expect(useLinkStats.mock.calls[0][0]).toBe(9);
   });
 });

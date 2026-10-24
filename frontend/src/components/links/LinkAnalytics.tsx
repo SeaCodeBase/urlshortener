@@ -17,7 +17,7 @@ import { ApiError } from '@/lib/api'
 import { buildStatsCsv } from '@/lib/csv'
 import { downloadBlob } from '@/lib/download'
 import { formatNumber } from '@/lib/format'
-import { useLinkStats } from '@/lib/hooks'
+import { useLinkStats, useQrStats } from '@/lib/hooks'
 import type { LinkStatsQuery, LinkStatsV2, StatsSource, StatsUnit } from '@/types'
 
 /** Backend limit on a stats range. */
@@ -119,8 +119,52 @@ function ModuleSkeleton({ height = 160 }: { height?: number }) {
 const keyRows = (rows: LinkStatsV2['browsers'], fmt: (k: string) => string = (k) => k || 'Unknown'): BreakdownRow[] =>
   rows.map((r) => ({ key: r.key || '(unknown)', label: fmt(r.key), clicks: r.clicks, percentage: r.percentage, prev_clicks: r.prev_clicks }))
 
-/** "Link analytics - {host}" section of the link details page (spec §5.4). */
-export function LinkAnalytics({ linkId, destination }: { linkId: number; destination: string }) {
+export type AnalyticsSubject = { kind: 'link'; id: number } | { kind: 'qr'; id: number }
+
+/** Labels and modules per subject: links show engagements, QR codes show scans (spec §5.6). */
+const SUBJECTS = {
+  link: {
+    title: (destination: string) => `Link analytics - ${hostOf(destination)}`,
+    noun: 'Engagements',
+    sourceSelect: true,
+    referrersAndDevices: true,
+    titles: {
+      overTime: 'Engagements over time',
+      locations: 'Locations',
+      browsers: 'Browsers',
+      os: 'Operating systems',
+    },
+    csvName: (id: number, range: { from: string; to: string }) => `link-${id}-analytics-${range.from}-${range.to}.csv`,
+  },
+  qr: {
+    title: () => 'Scan data',
+    noun: 'Scans',
+    sourceSelect: false,
+    referrersAndDevices: false,
+    titles: {
+      overTime: 'Scans over time',
+      locations: 'Scans by location',
+      browsers: 'Scans by browser',
+      os: 'Scans by operating system',
+    },
+    csvName: (id: number) => `qr-${id}-stats.csv`,
+  },
+} as const
+
+export type LinkAnalyticsProps = { destination: string } & (
+  | { subject: AnalyticsSubject; linkId?: never }
+  | {
+      /** @deprecated use `subject={{ kind: 'link', id }}`. */
+      linkId: number
+      subject?: never
+    }
+)
+
+/** Analytics section of the link details page (spec §5.4) and the QR Code details page ("Scan data"). */
+export function LinkAnalytics(props: LinkAnalyticsProps) {
+  const { destination } = props
+  const subject: AnalyticsSubject = props.subject ?? { kind: 'link', id: props.linkId }
+  const cfg = SUBJECTS[subject.kind]
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -131,8 +175,13 @@ export function LinkAnalytics({ linkId, destination }: { linkId: number; destina
   const unit = unitFor(range.from, range.to)
   const comparing = state.compare === 'previous'
   const label = rangeLabel(state)
-  const query: LinkStatsQuery = { ...range, unit, compare: state.compare, source: state.source }
-  const { data: stats, isLoading, isError, error, refetch, isFetching } = useLinkStats(linkId, query)
+  const query: LinkStatsQuery = cfg.sourceSelect
+    ? { ...range, unit, compare: state.compare, source: state.source }
+    : { ...range, unit, compare: state.compare }
+  // Both hooks run (rules of hooks); only the subject's query is enabled.
+  const linkStats = useLinkStats(subject.kind === 'link' ? subject.id : null, query)
+  const qrStats = useQrStats(subject.kind === 'qr' ? subject.id : null, query)
+  const { data: stats, isLoading, isError, error, refetch, isFetching } = subject.kind === 'qr' ? qrStats : linkStats
   const loading = isLoading && !stats
 
   function update(patch: Partial<AnalyticsUrlState>) {
@@ -174,10 +223,20 @@ export function LinkAnalytics({ linkId, destination }: { linkId: number; destina
     prev_clicks: r.prev_clicks,
   }))
 
+  const browsersModule = (
+    <Module title={cfg.titles.browsers}>
+      {loading ? (
+        <ModuleSkeleton />
+      ) : (
+        <BreakdownTable labelHeader="Browser" rows={keyRows(stats?.browsers ?? [])} compare={comparing} />
+      )}
+    </Module>
+  )
+
   return (
     <section aria-labelledby="link-analytics-heading" className="space-y-4">
       <h2 id="link-analytics-heading" className="truncate text-2xl font-semibold text-foreground">
-        Link analytics - {hostOf(destination)}
+        {cfg.title(destination)}
       </h2>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -195,18 +254,20 @@ export function LinkAnalytics({ linkId, destination }: { linkId: number; destina
             <SelectItem value="previous">Previous period</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={state.source} onValueChange={(v) => update({ source: v as StatsSource })}>
-          <SelectTrigger aria-label="Source" className="h-10 w-48 bg-white">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SOURCES.map((s) => (
-              <SelectItem key={s.value} value={s.value}>
-                {s.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {cfg.sourceSelect && (
+          <Select value={state.source} onValueChange={(v) => update({ source: v as StatsSource })}>
+            <SelectTrigger aria-label="Source" className="h-10 w-48 bg-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SOURCES.map((s) => (
+                <SelectItem key={s.value} value={s.value}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Button
           type="button"
           variant="secondary"
@@ -217,8 +278,11 @@ export function LinkAnalytics({ linkId, destination }: { linkId: number; destina
           onClick={() =>
             stats &&
             downloadBlob(
-              `link-${linkId}-analytics-${range.from}-${range.to}.csv`,
-              new Blob([buildStatsCsv(stats, { rangeLabel: label })], { type: 'text/csv;charset=utf-8' }),
+              cfg.csvName(subject.id, range),
+              new Blob(
+                [buildStatsCsv(stats, { rangeLabel: label, noun: cfg.noun, scansOnly: !cfg.referrersAndDevices })],
+                { type: 'text/csv;charset=utf-8' },
+              ),
             )
           }
         >
@@ -257,9 +321,9 @@ export function LinkAnalytics({ linkId, destination }: { linkId: number; destina
           </>
         ) : (
           <>
-            <StatCard label="Total engagements" value={formatNumber(stats?.total_all_time ?? 0)} />
+            <StatCard label={`Total ${cfg.noun.toLowerCase()}`} value={formatNumber(stats?.total_all_time ?? 0)} />
             <StatCard
-              label={`Engagements (${label})`}
+              label={`${cfg.noun} (${label})`}
               value={formatNumber(stats?.total_range ?? 0)}
               change={comparing ? { pct: stats?.change_pct ?? null, label: 'vs previous period' } : undefined}
               spark={stats?.series.map((p) => p.clicks)}
@@ -268,7 +332,7 @@ export function LinkAnalytics({ linkId, destination }: { linkId: number; destina
         )}
       </div>
 
-      <Module title="Engagements over time">
+      <Module title={cfg.titles.overTime}>
         {loading ? (
           <ModuleSkeleton height={280} />
         ) : (
@@ -277,12 +341,13 @@ export function LinkAnalytics({ linkId, destination }: { linkId: number; destina
             prevSeries={stats?.prev_series ?? []}
             unit={stats?.unit ?? unit}
             compare={comparing}
+            seriesName={cfg.noun}
           />
         )}
       </Module>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Module title="Locations">
+        <Module title={cfg.titles.locations}>
           {loading ? (
             <ModuleSkeleton />
           ) : (
@@ -300,25 +365,25 @@ export function LinkAnalytics({ linkId, destination }: { linkId: number; destina
             </Tabs>
           )}
         </Module>
-        <Module title="Referrers">
-          {loading ? <ModuleSkeleton /> : <BreakdownTable labelHeader="Referrer" rows={referrerRows} compare={comparing} />}
-        </Module>
+        {cfg.referrersAndDevices ? (
+          <Module title="Referrers">
+            {loading ? <ModuleSkeleton /> : <BreakdownTable labelHeader="Referrer" rows={referrerRows} compare={comparing} />}
+          </Module>
+        ) : (
+          browsersModule
+        )}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Module title="Devices">
-          {loading ? <ModuleSkeleton /> : <DeviceBarChart devices={stats?.devices ?? []} compare={comparing} />}
-        </Module>
-        <Module title="Browsers">
-          {loading ? (
-            <ModuleSkeleton />
-          ) : (
-            <BreakdownTable labelHeader="Browser" rows={keyRows(stats?.browsers ?? [])} compare={comparing} />
-          )}
-        </Module>
-      </div>
+      {cfg.referrersAndDevices && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Module title="Devices">
+            {loading ? <ModuleSkeleton /> : <DeviceBarChart devices={stats?.devices ?? []} compare={comparing} />}
+          </Module>
+          {browsersModule}
+        </div>
+      )}
 
-      <Module title="Operating systems">
+      <Module title={cfg.titles.os}>
         {loading ? (
           <ModuleSkeleton />
         ) : (

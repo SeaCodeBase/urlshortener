@@ -19,9 +19,9 @@ vi.mock("@/lib/hooks", () => ({
   useTags: () => ({ data: [] }),
 }));
 
-function Harness({ attachedLink }: { attachedLink?: Link }) {
+function Harness({ attachedLink, mode }: { attachedLink?: Link; mode?: "create" | "edit" }) {
   const [value, setValue] = useState<QrContentDraft>(emptyQrContentDraft());
-  return <QrContentForm value={value} onChange={setValue} attachedLink={attachedLink} errors={{}} />;
+  return <QrContentForm value={value} onChange={setValue} attachedLink={attachedLink} mode={mode} errors={{}} />;
 }
 
 const link = {
@@ -48,5 +48,15 @@ describe("QrContentForm", () => {
     expect(screen.getByText("https://example.com/menu")).toBeInTheDocument();
     expect(screen.queryByLabelText("Destination URL")).not.toBeInTheDocument();
     expect(screen.queryByRole("switch", { name: "Share as a short link" })).not.toBeInTheDocument();
+  });
+
+  it("in edit mode keeps the destination editable but hides domain, share and UTM controls", () => {
+    render(<Harness mode="edit" />);
+    expect(screen.getByLabelText("Destination URL")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Domain")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Share as a short link" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "UTM parameters" })).not.toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Code expiration" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Dynamic routing" })).toBeInTheDocument();
   });
 });

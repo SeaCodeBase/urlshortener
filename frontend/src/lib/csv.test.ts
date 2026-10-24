@@ -46,4 +46,14 @@ describe("buildStatsCsv", () => {
     expect(lines).toContain('"Washington, D.C.",US,1,20');
     expect(lines).toContain("Referrers");
   });
+
+  it("uses the scans noun and leaves out Referrers and Devices for QR stats", () => {
+    const lines = buildStatsCsv(stats, { rangeLabel: "Last 30 days", noun: "Scans", scansOnly: true }).split("\n");
+    expect(lines).toContain("Scans over time");
+    expect(lines).toContain("Date,Scans");
+    expect(lines.some((l) => l.startsWith("Total scans,"))).toBe(true);
+    expect(lines).not.toContain("Referrers");
+    expect(lines).not.toContain("Devices");
+    expect(lines).toContain("Browsers");
+  });
 });

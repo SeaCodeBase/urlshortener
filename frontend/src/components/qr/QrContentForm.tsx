@@ -68,12 +68,18 @@ export function QrContentForm({
   value,
   onChange,
   attachedLink,
+  mode = 'create',
   errors,
 }: {
   value: QrContentDraft
   onChange: (next: QrContentDraft) => void
   /** Set when the code attaches to an existing link (`?link=`): its destination is fixed. */
   attachedLink?: Link
+  /**
+   * "edit": the destination stays editable, but domain, short-link sharing and UTM are hidden
+   * (back-half/domain changes are link operations, done from the link pages).
+   */
+  mode?: 'create' | 'edit'
   errors: QrContentErrors
 }) {
   const id = useId()
@@ -86,6 +92,7 @@ export function QrContentForm({
   const domainId = value.domainChoice === undefined ? groupDefaultDomainId : value.domainChoice
 
   const set = (patch: Partial<QrContentDraft>) => onChange({ ...value, ...patch })
+  const creating = mode === 'create'
 
   return (
     <div className="space-y-4">
@@ -114,7 +121,7 @@ export function QrContentForm({
               />
               {errors.destination && <p className="text-sm text-destructive">{errors.destination}</p>}
             </div>
-            {!value.shareAsLink && (
+            {creating && !value.shareAsLink && (
               <div className="space-y-1.5 sm:w-56">
                 <Label htmlFor={`${id}-domain`}>Domain</Label>
                 <Select
@@ -135,12 +142,14 @@ export function QrContentForm({
                 </Select>
               </div>
             )}
-            <SwitchRow
-              label="Share as a short link"
-              checked={value.shareAsLink}
-              onCheckedChange={(shareAsLink) => set({ shareAsLink })}
-            />
-            {value.shareAsLink && (
+            {creating && (
+              <SwitchRow
+                label="Share as a short link"
+                checked={value.shareAsLink}
+                onCheckedChange={(shareAsLink) => set({ shareAsLink })}
+              />
+            )}
+            {creating && value.shareAsLink && (
               <ShortLinkField
                 domains={domains ?? []}
                 domainId={domainId}
@@ -164,8 +173,10 @@ export function QrContentForm({
 
       {!attachedLink && (
         <Section title="Advanced settings">
-          <SwitchRow label="UTM parameters" checked={value.utmOn} onCheckedChange={(utmOn) => set({ utmOn })} />
-          {value.utmOn && (
+          {creating && (
+            <SwitchRow label="UTM parameters" checked={value.utmOn} onCheckedChange={(utmOn) => set({ utmOn })} />
+          )}
+          {creating && value.utmOn && (
             <UtmBuilder
               value={value.utm}
               onChange={(utm) => set({ utm })}

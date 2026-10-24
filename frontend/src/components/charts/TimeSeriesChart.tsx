@@ -29,12 +29,15 @@ export function TimeSeriesChart({
   unit,
   compare = false,
   height = 280,
+  seriesName = 'Engagements',
 }: {
   series: SeriesPoint[]
   prevSeries?: SeriesPoint[]
   unit: StatsUnit
   compare?: boolean
   height?: number
+  /** Legend/tooltip name of the current period's line. */
+  seriesName?: string
 }) {
   if (!series.length) return <NoData style={{ height }} />
 
@@ -55,7 +58,7 @@ export function TimeSeriesChart({
         <Line
           type="monotone"
           dataKey="current"
-          name="Engagements"
+          name={seriesName}
           stroke={CURRENT_COLOR}
           strokeWidth={2}
           dot={false}

@@ -21,8 +21,18 @@ export function csvRow(cells: (string | number)[]): string {
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Unknown')
 const pct = (p: number) => Number(p.toFixed(1))
 
-/** CSV of loaded link stats: one titled section per module, separated by blank lines. */
-export function buildStatsCsv(stats: LinkStatsV2, opts: { rangeLabel: string }): string {
+/** CSV of loaded stats: one titled section per module, separated by blank lines. */
+export function buildStatsCsv(
+  stats: LinkStatsV2,
+  opts: {
+    rangeLabel: string
+    /** Plural noun of the metric (default "Engagements"; "Scans" for QR codes). */
+    noun?: string
+    /** Leave out the Referrers and Devices sections (QR scan stats). */
+    scansOnly?: boolean
+  },
+): string {
+  const n = opts.noun ?? 'Engagements'
   const lines: string[] = []
   const section = (title: string, header: string[], rows: (string | number)[][]) => {
     if (lines.length) lines.push('')
@@ -31,15 +41,17 @@ export function buildStatsCsv(stats: LinkStatsV2, opts: { rangeLabel: string }):
   }
   section('Summary', ['Metric', 'Value'], [
     ['Range', `${stats.from} to ${stats.to}`],
-    ['Total engagements', stats.total_all_time],
-    [`Engagements (${opts.rangeLabel})`, stats.total_range],
+    [`Total ${n.toLowerCase()}`, stats.total_all_time],
+    [`${n} (${opts.rangeLabel})`, stats.total_range],
   ])
-  section('Engagements over time', ['Date', 'Engagements'], stats.series.map((p) => [p.date, p.clicks]))
-  section('Countries', ['Country', 'Code', 'Engagements', '%'], stats.countries.map((c) => [c.name, c.code, c.clicks, pct(c.percentage)]))
-  section('Cities', ['City', 'Country', 'Engagements', '%'], stats.cities.map((c) => [c.name, c.country, c.clicks, pct(c.percentage)]))
-  section('Referrers', ['Referrer', 'Engagements', '%'], stats.referrers.map((r) => [r.referrer || 'Direct', r.clicks, pct(r.percentage)]))
-  section('Devices', ['Device', 'Engagements', '%'], stats.devices.map((d) => [cap(d.key), d.clicks, pct(d.percentage)]))
-  section('Browsers', ['Browser', 'Engagements', '%'], stats.browsers.map((d) => [d.key || 'Unknown', d.clicks, pct(d.percentage)]))
-  section('Operating systems', ['Operating system', 'Engagements', '%'], stats.os.map((d) => [d.key || 'Unknown', d.clicks, pct(d.percentage)]))
+  section(`${n} over time`, ['Date', n], stats.series.map((p) => [p.date, p.clicks]))
+  section('Countries', ['Country', 'Code', n, '%'], stats.countries.map((c) => [c.name, c.code, c.clicks, pct(c.percentage)]))
+  section('Cities', ['City', 'Country', n, '%'], stats.cities.map((c) => [c.name, c.country, c.clicks, pct(c.percentage)]))
+  if (!opts.scansOnly) {
+    section('Referrers', ['Referrer', n, '%'], stats.referrers.map((r) => [r.referrer || 'Direct', r.clicks, pct(r.percentage)]))
+    section('Devices', ['Device', n, '%'], stats.devices.map((d) => [cap(d.key), d.clicks, pct(d.percentage)]))
+  }
+  section('Browsers', ['Browser', n, '%'], stats.browsers.map((d) => [d.key || 'Unknown', d.clicks, pct(d.percentage)]))
+  section('Operating systems', ['Operating system', n, '%'], stats.os.map((d) => [d.key || 'Unknown', d.clicks, pct(d.percentage)]))
   return lines.join('\n') + '\n'
 }

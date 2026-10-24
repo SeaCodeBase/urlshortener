@@ -21,10 +21,12 @@ import type { QrCode } from '@/types'
 export function QrActionsMenu({
   qr,
   onDeleted,
+  triggerClassName = 'size-8',
 }: {
   qr: QrCode
   /** Called after a successful delete (e.g. to leave the details page). */
   onDeleted?: () => void
+  triggerClassName?: string
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const bulk = useBulkQrCodes()
@@ -59,7 +61,7 @@ export function QrActionsMenu({
     <>
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
-          <Button type="button" variant="secondary" size="icon-sm" aria-label="More" className="size-8">
+          <Button type="button" variant="secondary" size="icon-sm" aria-label="More" className={triggerClassName}>
             <MoreHorizontal className="size-4" />
           </Button>
         </DropdownMenuTrigger>
