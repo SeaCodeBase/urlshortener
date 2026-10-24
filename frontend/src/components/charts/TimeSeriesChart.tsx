@@ -36,6 +36,7 @@ export function TimeSeriesChart({
   compare = false,
   height = 280,
   seriesName = 'Engagements',
+  prevSeriesName = 'Previous period',
   extraSeries,
   variant = 'line',
 }: {
@@ -46,6 +47,8 @@ export function TimeSeriesChart({
   height?: number
   /** Legend/tooltip name of the current period's line. */
   seriesName?: string
+  /** Legend/tooltip name of the previous period's line. */
+  prevSeriesName?: string
   /** A third series aligned by bucket index (e.g. a compared link). */
   extraSeries?: { name: string; points: SeriesPoint[] }
   variant?: 'line' | 'bar'
@@ -75,7 +78,7 @@ export function TimeSeriesChart({
           {showLegend && <Legend verticalAlign="top" align="right" height={28} iconType="square" />}
           <Bar dataKey="current" name={seriesName} fill={CURRENT_COLOR} radius={[4, 4, 0, 0]} maxBarSize={32} isAnimationActive={false} />
           {compare && (
-            <Bar dataKey="previous" name="Previous period" fill={PREVIOUS_COLOR} radius={[4, 4, 0, 0]} maxBarSize={32} isAnimationActive={false} />
+            <Bar dataKey="previous" name={prevSeriesName} fill={PREVIOUS_COLOR} radius={[4, 4, 0, 0]} maxBarSize={32} isAnimationActive={false} />
           )}
           {extraSeries && (
             <Bar dataKey="extra" name={extraSeries.name} fill={EXTRA_COLOR} radius={[4, 4, 0, 0]} maxBarSize={32} isAnimationActive={false} />
@@ -104,7 +107,7 @@ export function TimeSeriesChart({
           <Line
             type="monotone"
             dataKey="previous"
-            name="Previous period"
+            name={prevSeriesName}
             stroke={PREVIOUS_COLOR}
             strokeWidth={2}
             strokeDasharray="5 4"
