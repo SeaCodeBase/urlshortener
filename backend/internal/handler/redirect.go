@@ -153,8 +153,8 @@ func (h *RedirectHandler) Redirect(c *gin.Context) {
 	c.Redirect(http.StatusFound, target)
 }
 
-// Root serves GET / : a custom domain with root_redirect gets a 302 there,
-// anything else the "Link not found" page.
+// Root serves GET / : a verified custom domain with root_redirect gets a 302
+// there, anything else the "Link not found" page.
 func (h *RedirectHandler) Root(c *gin.Context) {
 	host := c.Request.Host
 	if i := strings.LastIndex(host, ":"); i != -1 {
@@ -167,7 +167,8 @@ func (h *RedirectHandler) Root(c *gin.Context) {
 			zap.Error(err),
 		)
 	}
-	if err == nil && domain.RootRedirect != nil && *domain.RootRedirect != "" {
+	if err == nil && domain.VerificationStatus == model.DomainVerificationOK &&
+		domain.RootRedirect != nil && *domain.RootRedirect != "" {
 		c.Redirect(http.StatusFound, *domain.RootRedirect)
 		return
 	}

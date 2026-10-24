@@ -21,6 +21,8 @@ var (
 	ErrInvalidDomain      = errors.New("enter a valid domain name like links.example.com (no http:// or path)")
 	ErrDomainExists       = errors.New("domain already in use")
 	ErrInvalidRedirectURL = errors.New("redirect URLs must be valid http(s) URLs")
+	// ErrDomainReserved: the domain is one of the service's own hosts.
+	ErrDomainReserved = errors.New("this domain is reserved")
 )
 
 const (
@@ -65,17 +67,27 @@ type DomainServiceImpl struct {
 	groups       repository.GroupRepository
 	resolver     DNSResolver
 	redirectHost string
+	reserved     map[string]bool
 }
 
-// NewDomainService creates the domain service; redirectHost is the hostname
-// custom domains CNAME to (config urls.redirect_host).
-func NewDomainService(domains repository.DomainRepository, groups repository.GroupRepository, resolver DNSResolver, redirectHost string) *DomainServiceImpl {
-	return &DomainServiceImpl{
+// NewDomainService creates the domain service. redirectHost is the hostname
+// custom domains CNAME to (config urls.redirect_host); it and reservedHosts
+// (the service's own hosts, e.g. the base URL and frontend hosts; ports are
+// ignored) can never be added as custom domains.
+func NewDomainService(domains repository.DomainRepository, groups repository.GroupRepository, resolver DNSResolver, redirectHost string, reservedHosts ...string) *DomainServiceImpl {
+	s := &DomainServiceImpl{
 		domains:      domains,
 		groups:       groups,
 		resolver:     resolver,
 		redirectHost: normalizeHost(redirectHost),
+		reserved:     map[string]bool{},
 	}
+	for _, h := range append([]string{redirectHost}, reservedHosts...) {
+		if h = normalizeHost(stripPort(strings.TrimSpace(h))); h != "" {
+			s.reserved[h] = true
+		}
+	}
+	return s
 }
 
 func (s *DomainServiceImpl) List(ctx context.Context, userID uint64) ([]*model.Domain, error) {
@@ -93,6 +105,9 @@ func (s *DomainServiceImpl) Create(ctx context.Context, userID uint64, input Cre
 	name, ok := normalizeDomainName(input.Domain)
 	if !ok {
 		return nil, ErrInvalidDomain
+	}
+	if s.reserved[name] {
+		return nil, ErrDomainReserved
 	}
 	if input.GroupID != nil {
 		if err := s.checkGroup(ctx, userID, *input.GroupID); err != nil {
@@ -129,15 +144,21 @@ func (s *DomainServiceImpl) Verify(ctx context.Context, userID, domainID uint64)
 
 	lookupCtx, cancel := context.WithTimeout(ctx, dnsLookupTimeout)
 	defer cancel()
-	failure := s.checkDNS(lookupCtx, domain)
+	failure, transient := s.checkDNS(lookupCtx, domain)
 
 	now := model.NullTime{NullTime: sql.NullTime{Time: time.Now().UTC().Truncate(time.Second), Valid: true}}
 	domain.LastCheckedAt = now
-	if failure == "" {
+	switch {
+	case failure == "":
 		domain.VerificationStatus = model.DomainVerificationOK
 		domain.VerificationError = nil
 		domain.VerifiedAt = now
-	} else {
+	case transient != nil && domain.VerificationStatus == model.DomainVerificationOK:
+		// A lookup failed without a definite answer: keep the verified
+		// status rather than taking a working domain offline.
+		msg := "DNS lookup failed (" + transient.Error() + "); keeping previous verification"
+		domain.VerificationError = &msg
+	default:
 		domain.VerificationStatus = model.DomainVerificationError
 		domain.VerificationError = &failure
 	}
@@ -152,27 +173,46 @@ func (s *DomainServiceImpl) Verify(ctx context.Context, userID, domainID uint64)
 }
 
 // checkDNS returns "" when the domain proves ownership, otherwise a
-// human-readable reason.
-func (s *DomainServiceImpl) checkDNS(ctx context.Context, domain *model.Domain) string {
+// human-readable reason. transient is the first lookup error that was not a
+// definite "no such record" answer (timeouts, server failures).
+func (s *DomainServiceImpl) checkDNS(ctx context.Context, domain *model.Domain) (failure string, transient error) {
 	txtName := verifyTXTPrefix + domain.Domain
 	want := verifyValuePrefix + domain.VerificationToken
 	txtReason := "TXT record not found at " + txtName
-	if records, err := s.resolver.LookupTXT(ctx, txtName); err == nil && len(records) > 0 {
+	records, err := s.resolver.LookupTXT(ctx, txtName)
+	if err != nil && !isDefiniteNotFound(err) {
+		transient = err
+		txtReason = "TXT lookup of " + txtName + " failed"
+	}
+	if err == nil && len(records) > 0 {
 		for _, r := range records {
 			if strings.TrimSpace(r) == want {
-				return ""
+				return "", nil
 			}
 		}
 		txtReason = "TXT record at " + txtName + " does not contain " + want
 	}
 
-	if s.redirectHost != "" {
-		if cname, err := s.resolver.LookupCNAME(ctx, domain.Domain); err == nil && normalizeHost(cname) == s.redirectHost {
-			return ""
-		}
-		return txtReason + ", and no CNAME to " + s.redirectHost + " was found"
+	// The CNAME check only applies to other hosts: LookupCNAME of a name with
+	// no CNAME returns the name itself, so the redirect host would "match".
+	if s.redirectHost == "" || domain.Domain == s.redirectHost {
+		return txtReason, transient
 	}
-	return txtReason
+	cname, err := s.resolver.LookupCNAME(ctx, domain.Domain)
+	if err == nil && normalizeHost(cname) == s.redirectHost {
+		return "", nil
+	}
+	if err != nil && !isDefiniteNotFound(err) && transient == nil {
+		transient = err
+	}
+	return txtReason + ", and no CNAME to " + s.redirectHost + " was found", transient
+}
+
+// isDefiniteNotFound reports whether a resolver error is an authoritative
+// "no such host/record" answer rather than a lookup failure.
+func isDefiniteNotFound(err error) bool {
+	var dnsErr *net.DNSError
+	return errors.As(err, &dnsErr) && dnsErr.IsNotFound
 }
 
 func (s *DomainServiceImpl) Update(ctx context.Context, userID, domainID uint64, input UpdateDomainInput) (*model.Domain, error) {

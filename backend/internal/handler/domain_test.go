@@ -3,7 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"net"
 	"net/http"
 	"testing"
 
@@ -21,20 +21,28 @@ import (
 type fakeDNS struct {
 	txt   map[string][]string
 	cname map[string]string
+	// fail makes lookups of a name return this error (both TXT and CNAME).
+	fail map[string]error
 }
 
 func (f *fakeDNS) LookupTXT(_ context.Context, name string) ([]string, error) {
 	if v, ok := f.txt[name]; ok {
 		return v, nil
 	}
-	return nil, errors.New("no such host")
+	if err, ok := f.fail[name]; ok {
+		return nil, err
+	}
+	return nil, &net.DNSError{Err: "no such host", Name: name, IsNotFound: true}
 }
 
 func (f *fakeDNS) LookupCNAME(_ context.Context, name string) (string, error) {
 	if v, ok := f.cname[name]; ok {
 		return v, nil
 	}
-	return "", errors.New("no such host")
+	if err, ok := f.fail[name]; ok {
+		return "", err
+	}
+	return "", &net.DNSError{Err: "no such host", Name: name, IsNotFound: true}
 }
 
 type domainRouter struct {
@@ -52,9 +60,9 @@ func newDomainRouter(t *testing.T) *domainRouter {
 		domains:  repomocks.NewMockDomainRepository(ctrl),
 		groups:   repomocks.NewMockGroupRepository(ctrl),
 		activity: mocks.NewMockActivityService(ctrl),
-		dns:      &fakeDNS{txt: map[string][]string{}, cname: map[string]string{}},
+		dns:      &fakeDNS{txt: map[string][]string{}, cname: map[string]string{}, fail: map[string]error{}},
 	}
-	svc := service.NewDomainService(dr.domains, dr.groups, dr.dns, "sho.rt")
+	svc := service.NewDomainService(dr.domains, dr.groups, dr.dns, "sho.rt", "app.example.com")
 	h := NewDomainHandler(svc, dr.activity)
 	dr.r = gin.New()
 	g := dr.r.Group("/api/domains", withGroup)
@@ -174,6 +182,10 @@ func TestDomainHandler_Create_Errors(t *testing.T) {
 	dr.domains.EXPECT().Create(gomock.Any(), gomock.Any()).Return(repository.ErrDomainExists)
 	w = doJSON(dr.r, http.MethodPost, "/api/domains", `{"domain":"go.example.com"}`)
 	assert.Equal(t, http.StatusConflict, w.Code)
+
+	w = doJSON(dr.r, http.MethodPost, "/api/domains", `{"domain":"sho.rt"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.JSONEq(t, `{"error":"this domain is reserved"}`, w.Body.String())
 
 	dr.groups.EXPECT().GetByID(gomock.Any(), uint64(9)).Return(&model.Group{ID: 9, UserID: 2}, nil)
 	w = doJSON(dr.r, http.MethodPost, "/api/domains", `{"domain":"go.example.com","group_id":9}`)

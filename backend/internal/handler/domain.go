@@ -159,6 +159,8 @@ func writeDomainError(c *gin.Context, op string, err error) bool {
 		c.JSON(http.StatusNotFound, gin.H{"error": "group not found"})
 	case errors.Is(err, service.ErrDomainExists):
 		c.JSON(http.StatusConflict, gin.H{"error": "Domain already in use"})
+	case errors.Is(err, service.ErrDomainReserved):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "this domain is reserved"})
 	case errors.Is(err, service.ErrInvalidDomain), errors.Is(err, service.ErrInvalidRedirectURL):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:

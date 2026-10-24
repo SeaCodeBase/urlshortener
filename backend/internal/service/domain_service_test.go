@@ -3,7 +3,7 @@ package service_test
 import (
 	"context"
 	"database/sql"
-	"errors"
+	"net"
 	"regexp"
 	"strings"
 	"testing"
@@ -22,20 +22,28 @@ import (
 type fakeResolver struct {
 	txt   map[string][]string
 	cname map[string]string
+	// fail makes lookups of a name return this error (both TXT and CNAME).
+	fail map[string]error
 }
 
 func (f *fakeResolver) LookupTXT(_ context.Context, name string) ([]string, error) {
 	if v, ok := f.txt[name]; ok {
 		return v, nil
 	}
-	return nil, errors.New("no such host")
+	if err, ok := f.fail[name]; ok {
+		return nil, err
+	}
+	return nil, &net.DNSError{Err: "no such host", Name: name, IsNotFound: true}
 }
 
 func (f *fakeResolver) LookupCNAME(_ context.Context, name string) (string, error) {
 	if v, ok := f.cname[name]; ok {
 		return v, nil
 	}
-	return "", errors.New("no such host")
+	if err, ok := f.fail[name]; ok {
+		return "", err
+	}
+	return "", &net.DNSError{Err: "no such host", Name: name, IsNotFound: true}
 }
 
 type domainSvcDeps struct {
@@ -50,9 +58,9 @@ func newDomainService(t *testing.T) *domainSvcDeps {
 	d := &domainSvcDeps{
 		domains: mocks.NewMockDomainRepository(ctrl),
 		groups:  mocks.NewMockGroupRepository(ctrl),
-		dns:     &fakeResolver{txt: map[string][]string{}, cname: map[string]string{}},
+		dns:     &fakeResolver{txt: map[string][]string{}, cname: map[string]string{}, fail: map[string]error{}},
 	}
-	d.svc = service.NewDomainService(d.domains, d.groups, d.dns, "sho.rt")
+	d.svc = service.NewDomainService(d.domains, d.groups, d.dns, "sho.rt", "sho.rt", "app.example.com")
 	return d
 }
 
@@ -315,4 +323,74 @@ func TestDomainService_List(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, got)
 	assert.Empty(t, got)
+}
+
+func TestDomainService_Create_RejectsReservedHosts(t *testing.T) {
+	d := newDomainService(t)
+	// The redirect host is always reserved, even when not listed again.
+	svc := service.NewDomainService(d.domains, d.groups, d.dns, "r.sho.rt", "sho.rt:8080", "APP.example.com")
+	for _, in := range []string{"r.sho.rt", "R.Sho.RT.", "sho.rt", "app.example.com"} {
+		_, err := svc.Create(context.Background(), 1, service.CreateDomainInput{Domain: in})
+		assert.ErrorIs(t, err, service.ErrDomainReserved, in)
+	}
+}
+
+func TestDomainService_Verify_RedirectHostNeverMatchesCNAME(t *testing.T) {
+	d := newDomainService(t)
+	// A legacy row for the redirect host itself: LookupCNAME of a name with
+	// no CNAME returns the name, which must not count as verification.
+	dom := pendingDomain()
+	dom.Domain = "sho.rt"
+	d.domains.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(dom, nil)
+	d.dns.cname["sho.rt"] = "sho.rt."
+	expectVerifyUpdate(d)
+
+	got, err := d.svc.Verify(context.Background(), 1, 3)
+	require.NoError(t, err)
+	assert.Equal(t, model.DomainVerificationError, got.VerificationStatus)
+}
+
+func verifiedDomain() *model.Domain {
+	dom := pendingDomain()
+	dom.VerificationStatus = model.DomainVerificationOK
+	dom.VerifiedAt = model.NullTime{NullTime: sql.NullTime{Time: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Valid: true}}
+	return dom
+}
+
+func TestDomainService_Verify_TransientErrorKeepsOK(t *testing.T) {
+	d := newDomainService(t)
+	d.domains.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(verifiedDomain(), nil)
+	timeout := &net.DNSError{Err: "i/o timeout", IsTimeout: true}
+	d.dns.fail["_urlshortener.go.example.com"] = timeout
+	d.dns.fail["go.example.com"] = timeout
+	saved := expectVerifyUpdate(d)
+
+	got, err := d.svc.Verify(context.Background(), 1, 3)
+	require.NoError(t, err)
+	assert.Equal(t, model.DomainVerificationOK, got.VerificationStatus)
+	require.NotNil(t, got.VerificationError)
+	assert.Contains(t, *got.VerificationError, "DNS lookup failed")
+	assert.True(t, got.LastCheckedAt.Valid)
+	assert.Equal(t, model.DomainVerificationOK, saved.VerificationStatus)
+}
+
+func TestDomainService_Verify_DefiniteNegativeDemotesOK(t *testing.T) {
+	d := newDomainService(t)
+	d.domains.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(verifiedDomain(), nil)
+	expectVerifyUpdate(d)
+
+	got, err := d.svc.Verify(context.Background(), 1, 3)
+	require.NoError(t, err)
+	assert.Equal(t, model.DomainVerificationError, got.VerificationStatus)
+}
+
+func TestDomainService_Verify_TransientErrorOnPendingIsError(t *testing.T) {
+	d := newDomainService(t)
+	d.domains.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(pendingDomain(), nil)
+	d.dns.fail["_urlshortener.go.example.com"] = &net.DNSError{Err: "server misbehaving", IsTemporary: true}
+	expectVerifyUpdate(d)
+
+	got, err := d.svc.Verify(context.Background(), 1, 3)
+	require.NoError(t, err)
+	assert.Equal(t, model.DomainVerificationError, got.VerificationStatus)
 }

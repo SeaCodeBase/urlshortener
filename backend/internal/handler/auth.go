@@ -226,7 +226,7 @@ func (h *AuthHandler) UpdateEmail(c *gin.Context) {
 		logger.Warn(ctx, "update-email: wrong password", zap.Uint64("user_id", userID))
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "password is incorrect"})
 		return
-	case errors.Is(err, service.ErrInvalidEmail):
+	case errors.Is(err, service.ErrInvalidEmail), errors.Is(err, service.ErrSameEmail):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	case errors.Is(err, service.ErrEmailTaken):

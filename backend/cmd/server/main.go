@@ -107,7 +107,6 @@ func main() {
 		BaseURL:    cfg.URLs.BaseURL,
 	})
 	statsService := service.NewStatsService(clickRepo, linkRepo)
-	domainService := service.NewDomainService(domainRepo, groupRepo, service.NewNetResolver(), cfg.URLs.RedirectHost)
 	passkeyService, err := service.NewPasskeyService(passkeyRepo, userRepo, cfg.WebAuthn.RPID, cfg.WebAuthn.RPOrigin, "URL Shortener")
 	if err != nil {
 		logger.Fatal(ctx, "failed to create passkey service", zap.Error(err))
@@ -116,6 +115,13 @@ func main() {
 	if u, err := url.Parse(cfg.URLs.BaseURL); err == nil {
 		baseHost = u.Hostname()
 	}
+	frontendHost := ""
+	if u, err := url.Parse(cfg.URLs.FrontendURL); err == nil {
+		frontendHost = u.Hostname()
+	}
+	// The service's own hosts can never be claimed as custom domains.
+	domainService := service.NewDomainService(domainRepo, groupRepo, service.NewNetResolver(),
+		cfg.URLs.RedirectHost, baseHost, frontendHost)
 	redirectService := service.NewRedirectService(linkRepo, domainRepo, routingRuleRepo, rdb, baseHost)
 
 	// Setup handlers

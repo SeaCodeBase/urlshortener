@@ -274,3 +274,11 @@ func TestAuthHandler_UpdateEmail_Invalid400(t *testing.T) {
 	w = doJSON(r, http.MethodPut, "/api/auth/email", `{"new_email":"a@b.com"}`)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+func TestAuthHandler_UpdateEmail_SameEmail400(t *testing.T) {
+	r, svc := newAccountRouter(t)
+	svc.EXPECT().UpdateEmail(gomock.Any(), uint64(1), "pw", "Me@example.com").Return(service.ErrSameEmail)
+	w := doJSON(r, http.MethodPut, "/api/auth/email", `{"password":"pw","new_email":"Me@example.com"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.JSONEq(t, `{"error":"new email is the same as the current email"}`, w.Body.String())
+}

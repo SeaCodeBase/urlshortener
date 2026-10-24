@@ -39,7 +39,7 @@ func TestAuthService_UpdateEmail_WrongPassword(t *testing.T) {
 
 func TestAuthService_UpdateEmail_InvalidEmail(t *testing.T) {
 	svc, _, _ := newAuthSvc(t)
-	for _, bad := range []string{"", "not-an-email", "Name <a@b.com>", "a@"} {
+	for _, bad := range []string{"", "not-an-email", "Name <a@b.com>", "a@", "a@localhost", "a b@c.com", "@b.com"} {
 		err := svc.UpdateEmail(context.Background(), 1, "password123", bad)
 		assert.ErrorIs(t, err, service.ErrInvalidEmail, bad)
 	}
@@ -59,11 +59,12 @@ func TestAuthService_UpdateEmail_Taken(t *testing.T) {
 	assert.ErrorIs(t, err, service.ErrEmailTaken)
 }
 
-func TestAuthService_UpdateEmail_SameEmailIsNoop(t *testing.T) {
+func TestAuthService_UpdateEmail_SameEmailRejected(t *testing.T) {
 	svc, users, _ := newAuthSvc(t)
 	users.EXPECT().GetByID(gomock.Any(), uint64(1)).Return(userWithPassword(t, 1, "password123"), nil)
-	err := svc.UpdateEmail(context.Background(), 1, "password123", "u@example.com")
-	assert.NoError(t, err)
+	// Current email is u@example.com; comparison is case-insensitive.
+	err := svc.UpdateEmail(context.Background(), 1, "password123", "U@Example.COM")
+	assert.ErrorIs(t, err, service.ErrSameEmail)
 }
 
 func boolp(b bool) *bool { return &b }

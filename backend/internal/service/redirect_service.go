@@ -99,10 +99,16 @@ func (s *RedirectService) Resolve(ctx context.Context, host, code string) (*Reso
 	}
 
 	// Cache miss: map host to a custom domain (unknown host = default domain).
+	// Unverified domains count as unknown hosts: their links and redirects
+	// are not served, and nothing is cached under their host, so a domain
+	// that gets verified later has no stale entries.
 	var domainID *uint64
 	var notFoundRedirect string
+	cacheable := true
 	domain, err := s.domainRepo.GetByDomain(ctx, host)
 	switch {
+	case err == nil && domain.VerificationStatus != model.DomainVerificationOK:
+		cacheable = false
 	case err == nil:
 		domainID = &domain.ID
 		if domain.NotFoundRedirect != nil {
@@ -145,6 +151,9 @@ func (s *RedirectService) Resolve(ctx context.Context, host, code string) (*Reso
 		cl.ExpiresAt = &t
 	}
 
+	if !cacheable {
+		return validate(cl)
+	}
 	if data, err := json.Marshal(cl); err != nil {
 		logger.Warn(ctx, "failed to marshal cached link",
 			zap.Uint64("link_id", link.ID),

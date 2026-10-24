@@ -143,7 +143,7 @@ func TestRedirectHandler_ErrorPages(t *testing.T) {
 func TestRedirectHandler_RootRedirect(t *testing.T) {
 	r, domains := newRedirectTestRouter(t, &fakeResolver{}, newFakeClickRecorder())
 	root := "https://brand.example.com"
-	domains.EXPECT().GetByDomain(gomock.Any(), "go.brand.com").Return(&model.Domain{ID: 1, Domain: "go.brand.com", RootRedirect: &root}, nil)
+	domains.EXPECT().GetByDomain(gomock.Any(), "go.brand.com").Return(&model.Domain{ID: 1, Domain: "go.brand.com", RootRedirect: &root, VerificationStatus: model.DomainVerificationOK}, nil)
 	domains.EXPECT().GetByDomain(gomock.Any(), "sho.rt").Return(nil, repository.ErrDomainNotFound)
 
 	w := doGet(r, "go.brand.com:8080", "/", "")
@@ -153,4 +153,15 @@ func TestRedirectHandler_RootRedirect(t *testing.T) {
 	w = doGet(r, "sho.rt", "/", "")
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.Contains(t, w.Body.String(), "Link not found")
+}
+
+func TestRedirectHandler_Root_UnverifiedDomainIgnored(t *testing.T) {
+	r, domains := newRedirectTestRouter(t, &fakeResolver{}, newFakeClickRecorder())
+	root := "https://evil.example.com"
+	domains.EXPECT().GetByDomain(gomock.Any(), "go.brand.com").Return(&model.Domain{ID: 1, Domain: "go.brand.com",
+		RootRedirect: &root, VerificationStatus: model.DomainVerificationPending}, nil)
+
+	w := doGet(r, "go.brand.com", "/", "")
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Empty(t, w.Header().Get("Location"))
 }

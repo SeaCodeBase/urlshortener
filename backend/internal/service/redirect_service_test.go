@@ -174,7 +174,8 @@ func TestRedirectService_ExpiredUsesDomain404(t *testing.T) {
 
 	notFound := "https://brand.example.com/oops"
 	f.domains.EXPECT().GetByDomain(gomock.Any(), "go.brand.com").
-		Return(&model.Domain{ID: 3, Domain: "go.brand.com", NotFoundRedirect: &notFound}, nil).Times(1)
+		Return(&model.Domain{ID: 3, Domain: "go.brand.com", NotFoundRedirect: &notFound,
+			VerificationStatus: model.DomainVerificationOK}, nil).Times(1)
 	domainID := uint64(3)
 	f.links.EXPECT().GetByDomainAndShortCode(gomock.Any(), &domainID, "old").Return(&model.Link{
 		ID: 9, ShortCode: "old", OriginalURL: "https://example.com/old", IsActive: true, DomainID: &domainID,
@@ -242,5 +243,38 @@ func TestRedirectService_InvalidateLink(t *testing.T) {
 	}
 	if f.mr.Exists(linkCacheKeyPrefix + "sho.rt:abc") {
 		t.Error("expected default-domain key to be deleted")
+	}
+}
+
+func TestRedirectService_UnverifiedDomainNotResolved(t *testing.T) {
+	for _, status := range []string{model.DomainVerificationPending, model.DomainVerificationError} {
+		f := newRedirectFixture(t)
+		ctx := context.Background()
+
+		notFound := "https://evil.example.com/"
+		f.domains.EXPECT().GetByDomain(gomock.Any(), "go.brand.com").
+			Return(&model.Domain{ID: 3, Domain: "go.brand.com", NotFoundRedirect: &notFound, VerificationStatus: status}, nil).AnyTimes()
+		// The host is treated as unknown: lookups go to the default domain
+		// (nil), never to domain 3, and its not_found_redirect is ignored.
+		f.links.EXPECT().GetByDomainAndShortCode(gomock.Any(), nil, "nope").Return(nil, repository.ErrLinkNotFound)
+		res, err := f.svc.Resolve(ctx, "go.brand.com", "nope")
+		if !errors.Is(err, ErrLinkNotFound) {
+			t.Fatalf("%s: expected ErrLinkNotFound, got %v", status, err)
+		}
+		if res != nil && res.ExpiredRedirect != "" {
+			t.Fatalf("%s: unverified domain's not_found_redirect must not be used, got %+v", status, res)
+		}
+
+		// A default-domain code resolves but is never cached under the
+		// unverified host, so verifying the domain later has no stale entry.
+		f.links.EXPECT().GetByDomainAndShortCode(gomock.Any(), nil, "abc").
+			Return(&model.Link{ID: 7, ShortCode: "abc", OriginalURL: "https://example.com", IsActive: true}, nil)
+		f.rules.EXPECT().ListByLinkID(gomock.Any(), uint64(7)).Return(nil, nil)
+		if _, err := f.svc.Resolve(ctx, "go.brand.com", "abc"); err != nil {
+			t.Fatalf("%s: unexpected error %v", status, err)
+		}
+		if f.mr.Exists(linkCacheKeyPrefix + "go.brand.com:abc") {
+			t.Errorf("%s: nothing may be cached under an unverified domain host", status)
+		}
 	}
 }

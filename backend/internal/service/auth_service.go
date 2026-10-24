@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"errors"
-	"net/mail"
+	"regexp"
 	"strings"
 	"time"
 
@@ -21,7 +21,12 @@ var (
 	ErrWrongPassword      = errors.New("current password is incorrect")
 	ErrInvalidEmail       = errors.New("invalid email address")
 	ErrInvalidAccountName = errors.New("account name must not be empty")
+	ErrSameEmail          = errors.New("new email is the same as the current email")
 )
+
+// emailPattern is a deliberately simple local@domain.tld check, in the
+// spirit of the registration form's binding:"email".
+var emailPattern = regexp.MustCompile(`^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$`)
 
 // maxAccountNameLen matches users.account_name VARCHAR(255).
 const maxAccountNameLen = 255
@@ -225,8 +230,8 @@ func (s *AuthServiceImpl) UpdateEmail(ctx context.Context, userID uint64, passwo
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		return ErrWrongPassword
 	}
-	if newEmail == user.Email {
-		return nil
+	if strings.EqualFold(newEmail, user.Email) {
+		return ErrSameEmail
 	}
 	exists, err := s.userRepo.EmailExists(ctx, newEmail)
 	if err != nil {
@@ -252,13 +257,9 @@ func (s *AuthServiceImpl) UpdateEmail(ctx context.Context, userID uint64, passwo
 	return nil
 }
 
-// validEmail accepts a bare address (no display name) of at most 255 bytes.
+// validEmail accepts a bare local@domain.tld address of at most 255 bytes.
 func validEmail(email string) bool {
-	if email == "" || len(email) > 255 {
-		return false
-	}
-	addr, err := mail.ParseAddress(email)
-	return err == nil && addr.Address == email
+	return len(email) <= 255 && emailPattern.MatchString(email)
 }
 
 func (s *AuthServiceImpl) UpdateAccount(ctx context.Context, userID uint64, input UpdateAccountInput) error {
