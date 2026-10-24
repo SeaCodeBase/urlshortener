@@ -62,6 +62,12 @@ var LinkExportHeader = []string{"Link", "Custom Link", "Date created", "Title", 
 // Compile-time check: LinkServiceImpl implements LinkService
 var _ LinkService = (*LinkServiceImpl)(nil)
 
+// QRLookup maps link IDs to the IDs of their QR codes (links without one are
+// absent). repository.QRRepository satisfies it.
+type QRLookup interface {
+	QRCodeIDsForLinks(ctx context.Context, linkIDs []uint64) (map[uint64]uint64, error)
+}
+
 // LinkServiceDeps are the collaborators of LinkServiceImpl.
 type LinkServiceDeps struct {
 	Links      repository.LinkRepository
@@ -70,8 +76,10 @@ type LinkServiceDeps struct {
 	Rules      repository.RoutingRuleRepository
 	Domains    repository.DomainRepository
 	// Groups supplies the active group's default domain; nil disables it.
-	Groups   repository.GroupRepository
-	Clicks   repository.ClickRepository
+	Groups repository.GroupRepository
+	Clicks repository.ClickRepository
+	// QRs resolves the QR code of a link for GetDetails; nil disables it.
+	QRs      QRLookup
 	Activity ActivityService
 	// TitleFetcher fetches a destination's title when none is given;
 	// nil selects FetchTitle.
@@ -88,6 +96,7 @@ type LinkServiceImpl struct {
 	domainRepo   repository.DomainRepository
 	groupRepo    repository.GroupRepository
 	clickRepo    repository.ClickRepository
+	qrs          QRLookup
 	activity     ActivityService
 	titleFetcher TitleFetcher
 	baseURL      string
@@ -106,6 +115,7 @@ func NewLinkService(d LinkServiceDeps) *LinkServiceImpl {
 		domainRepo:   d.Domains,
 		groupRepo:    d.Groups,
 		clickRepo:    d.Clicks,
+		qrs:          d.QRs,
 		activity:     d.Activity,
 		titleFetcher: tf,
 		baseURL:      strings.TrimRight(d.BaseURL, "/"),
@@ -135,6 +145,9 @@ type CreateLinkInput struct {
 	RoutingRules []RoutingRuleInput `json:"routing_rules,omitempty"`
 	// GroupID is set by the handler from the active group, never from JSON.
 	GroupID uint64 `json:"-"`
+	// Source is the link's origin (model.LinkSource*); "" means "link".
+	// Only "link" links are logged as link.create. Never set from JSON.
+	Source string `json:"-"`
 }
 
 type UpdateLinkInput struct {
@@ -172,6 +185,8 @@ type LinkDetails struct {
 	// History is the chain of ancestor links (parent first) created by
 	// back-half edits.
 	History []model.Link
+	// QRCodeID is the link's QR code, if any.
+	QRCodeID *uint64
 }
 
 // hostOf returns the lowercased hostname of rawURL, or nil.
@@ -356,6 +371,10 @@ func (s *LinkServiceImpl) Create(ctx context.Context, userID uint64, input Creat
 	if !validDestination(dest) {
 		return nil, ErrInvalidURL
 	}
+	source := input.Source
+	if source == "" {
+		source = model.LinkSourceLink
+	}
 	rules, err := toRoutingRules(input.RoutingRules)
 	if err != nil {
 		return nil, err
@@ -413,7 +432,7 @@ func (s *LinkServiceImpl) Create(ctx context.Context, userID uint64, input Creat
 		LongURLHost:       hostOf(dest),
 		IsActive:          true,
 		HasCustomBackHalf: input.CustomCode != "",
-		Source:            model.LinkSourceLink,
+		Source:            source,
 		DomainID:          input.DomainID,
 	}
 	if title != "" {
@@ -448,8 +467,11 @@ func (s *LinkServiceImpl) Create(ctx context.Context, userID uint64, input Creat
 		return nil, err
 	}
 
-	s.activity.Log(detached(ctx), userID, link.GroupID, ActionLinkCreate, EntityLink, link.ID,
-		map[string]any{"short_code": link.ShortCode})
+	// Links owned by a QR code (or page) are logged by their owner.
+	if source == model.LinkSourceLink {
+		s.activity.Log(detached(ctx), userID, link.GroupID, ActionLinkCreate, EntityLink, link.ID,
+			map[string]any{"short_code": link.ShortCode})
+	}
 	return link, nil
 }
 
@@ -516,6 +538,15 @@ func (s *LinkServiceImpl) GetDetails(ctx context.Context, userID, linkID uint64)
 	}
 	if d.TotalClicks, err = s.clickRepo.GetTotalByLinkID(ctx, link.ID); err != nil {
 		return nil, err
+	}
+	if s.qrs != nil {
+		ids, err := s.qrs.QRCodeIDsForLinks(ctx, []uint64{link.ID})
+		if err != nil {
+			return nil, err
+		}
+		if id, ok := ids[link.ID]; ok {
+			d.QRCodeID = &id
+		}
 	}
 
 	parent := link.ParentLinkID

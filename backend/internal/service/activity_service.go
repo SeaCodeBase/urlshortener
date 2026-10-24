@@ -28,6 +28,11 @@ const (
 	ActionDomainDelete = "domain.delete"
 	ActionGroupCreate  = "group.create"
 	ActionGroupUpdate  = "group.update"
+	ActionQRCreate     = "qr.create"
+	ActionQRUpdate     = "qr.update"
+	ActionQRHide       = "qr.hide"
+	ActionQRUnhide     = "qr.unhide"
+	ActionQRDelete     = "qr.delete"
 )
 
 // Activity log entity types.
@@ -36,6 +41,7 @@ const (
 	EntityToken  = "token"
 	EntityDomain = "domain"
 	EntityGroup  = "group"
+	EntityQRCode = "qr_code"
 )
 
 const (

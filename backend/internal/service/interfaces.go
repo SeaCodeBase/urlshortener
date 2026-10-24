@@ -111,6 +111,34 @@ type LinkService interface {
 	Export(ctx context.Context, groupID uint64, f repository.LinkFilter) ([][]string, error)
 }
 
+//go:generate mockgen -destination=mocks/mock_qr_service.go -package=mocks . QRService
+type QRService interface {
+	// Create creates a QR code for input.LinkID (a Links-list link of the
+	// user in input.GroupID without a QR code: ErrLinkNotFound,
+	// ErrQRCodeExistsForLink) or for a new link to input.LongURL (source
+	// 'qr', or 'link' with ShareAsLink); ErrQRLinkRequired without either,
+	// ErrInvalidRenderCustomizations for an invalid design.
+	Create(ctx context.Context, userID uint64, input CreateQRCodeInput) (*QRCodeDetails, error)
+	// Get returns the user's QR code with routing rules; ErrQRCodeNotFound.
+	Get(ctx context.Context, userID, id uint64) (*QRCodeDetails, error)
+	// List pages through the group's QR codes matching params.Filter.
+	List(ctx context.Context, groupID uint64, params ListQRParams) (*ListQRResult, error)
+	// Update edits the QR code and its link; prevLink is the link before
+	// the update when its redirect may have changed, otherwise nil.
+	Update(ctx context.Context, userID, id uint64, input UpdateQRCodeInput) (details *QRCodeDetails, prevLink *model.Link, err error)
+	// Delete removes the QR code and, when the link is QR-owned (source
+	// 'qr'), the link too (linkDeleted).
+	Delete(ctx context.Context, userID, id uint64) (details *QRCodeDetails, linkDeleted bool, err error)
+	// SetArchived hides/shows QR codes and returns how many; every id must
+	// belong to groupID or ErrQRCodeNotFound is returned and nothing changes.
+	SetArchived(ctx context.Context, userID, groupID uint64, ids []uint64, archived bool) (int, error)
+	// BulkTags adds/removes QR tags; every id must belong to groupID or
+	// ErrQRCodeNotFound is returned and nothing changes.
+	BulkTags(ctx context.Context, groupID uint64, ids []uint64, add, remove []string) error
+	// Export returns CSV rows (see QRExportHeader) for QR codes matching f.
+	Export(ctx context.Context, groupID uint64, f repository.QRFilter) ([][]string, error)
+}
+
 //go:generate mockgen -destination=mocks/mock_stats_service.go -package=mocks . StatsService
 type StatsService interface {
 	// GetLinkStats returns the link's analytics for the query window; it

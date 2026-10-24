@@ -24,6 +24,7 @@ type linkSvcFixture struct {
 	domains  *mocks.MockDomainRepository
 	groups   *mocks.MockGroupRepository
 	clicks   *mocks.MockClickRepository
+	qrs      *mocks.MockQRRepository
 	codes    *svcmocks.MockShortCodeService
 	activity *svcmocks.MockActivityService
 	titles   []string // URLs passed to the title fetcher
@@ -40,6 +41,7 @@ func newLinkSvc(t *testing.T) *linkSvcFixture {
 		domains:  mocks.NewMockDomainRepository(ctrl),
 		groups:   mocks.NewMockGroupRepository(ctrl),
 		clicks:   mocks.NewMockClickRepository(ctrl),
+		qrs:      mocks.NewMockQRRepository(ctrl),
 		codes:    svcmocks.NewMockShortCodeService(ctrl),
 		activity: svcmocks.NewMockActivityService(ctrl),
 
@@ -57,6 +59,7 @@ func newLinkSvc(t *testing.T) *linkSvcFixture {
 		Domains:    f.domains,
 		Groups:     f.groups,
 		Clicks:     f.clicks,
+		QRs:        f.qrs,
 		Activity:   f.activity,
 		BaseURL:    "https://sho.rt",
 		TitleFetcher: func(_ context.Context, rawURL string) string {
@@ -376,10 +379,12 @@ func TestLinkService_GetDetails_History(t *testing.T) {
 	f.tags.EXPECT().GetLinkTags(gomock.Any(), uint64(30)).Return([]string{}, nil)
 	f.rules.EXPECT().ListByLinkID(gomock.Any(), uint64(30)).Return(nil, nil)
 	f.clicks.EXPECT().GetTotalByLinkID(gomock.Any(), uint64(30)).Return(int64(9), nil)
+	f.qrs.EXPECT().QRCodeIDsForLinks(gomock.Any(), []uint64{30}).Return(map[uint64]uint64{}, nil)
 
 	d, err := f.svc.GetDetails(context.Background(), 1, 30)
 	require.NoError(t, err)
 	assert.Equal(t, int64(9), d.TotalClicks)
+	assert.Nil(t, d.QRCodeID)
 	require.Len(t, d.History, 2)
 	assert.Equal(t, "b", d.History[0].ShortCode)
 	assert.Equal(t, "a", d.History[1].ShortCode)
@@ -669,4 +674,32 @@ func TestLinkService_Update_DomainZeroWhenAlreadyDefault(t *testing.T) {
 	link, _, err := f.svc.Update(context.Background(), 1, 3, service.UpdateLinkInput{DomainID: u64(0)})
 	require.NoError(t, err)
 	assert.Nil(t, link.DomainID)
+}
+
+func TestLinkService_Create_SourceQR_NoActivity(t *testing.T) {
+	f := newLinkSvc(t)
+	f.codes.EXPECT().Generate(gomock.Any(), (*uint64)(nil)).Return("Qr3dE5f", nil)
+	var created *model.Link
+	f.expectCreate(12, &created)
+	// No activity expectation: a link.create entry fails the test.
+
+	_, err := f.svc.Create(context.Background(), 1, service.CreateLinkInput{
+		OriginalURL: "https://example.com", Title: "T", GroupID: 7, Source: model.LinkSourceQR,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, model.LinkSourceQR, created.Source)
+}
+
+func TestLinkService_GetDetails_FillsQRCodeID(t *testing.T) {
+	f := newLinkSvc(t)
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(30)).Return(&model.Link{ID: 30, UserID: 1}, nil)
+	f.tags.EXPECT().GetLinkTags(gomock.Any(), uint64(30)).Return([]string{}, nil)
+	f.rules.EXPECT().ListByLinkID(gomock.Any(), uint64(30)).Return(nil, nil)
+	f.clicks.EXPECT().GetTotalByLinkID(gomock.Any(), uint64(30)).Return(int64(0), nil)
+	f.qrs.EXPECT().QRCodeIDsForLinks(gomock.Any(), []uint64{30}).Return(map[uint64]uint64{30: 5}, nil)
+
+	d, err := f.svc.GetDetails(context.Background(), 1, 30)
+	require.NoError(t, err)
+	require.NotNil(t, d.QRCodeID)
+	assert.Equal(t, uint64(5), *d.QRCodeID)
 }

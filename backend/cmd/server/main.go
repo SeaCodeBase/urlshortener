@@ -105,6 +105,7 @@ func main() {
 		Domains:    domainRepo,
 		Groups:     groupRepo,
 		Clicks:     clickRepo,
+		QRs:        qrRepo,
 		Activity:   activityService,
 		BaseURL:    cfg.URLs.BaseURL,
 	})
