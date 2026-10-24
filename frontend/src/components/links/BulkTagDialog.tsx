@@ -19,17 +19,25 @@ export interface BulkTagDialogProps {
   suggestions: string[]
   saving?: boolean
   onSave: (tags: string[]) => void
+  /** What is being tagged (default "links"). */
+  noun?: 'links' | 'codes'
 }
 
-/** "Tag links" dialog: pick or create tags to add to the selected links. */
-export function BulkTagDialog({ open, onOpenChange, count, suggestions, saving, onSave }: BulkTagDialogProps) {
+const NOUNS = {
+  links: { title: 'Tag links', one: 'link', many: 'links' },
+  codes: { title: 'Tag QR Codes', one: 'QR Code', many: 'QR Codes' },
+} as const
+
+/** "Tag links" dialog: pick or create tags to add to the selected links (or QR Codes). */
+export function BulkTagDialog({ open, onOpenChange, count, suggestions, saving, onSave, noun = 'links' }: BulkTagDialogProps) {
+  const words = NOUNS[noun]
   return (
     <Dialog open={open} onOpenChange={(o) => !saving && onOpenChange(o)}>
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
-          <DialogTitle className="text-xl font-semibold">Tag links</DialogTitle>
+          <DialogTitle className="text-xl font-semibold">{words.title}</DialogTitle>
           <DialogDescription>
-            Add tags to {count} selected {count === 1 ? 'link' : 'links'}.
+            Add tags to {count} selected {count === 1 ? words.one : words.many}.
           </DialogDescription>
         </DialogHeader>
         {/* Mounted only while open so the draft starts empty each time. */}

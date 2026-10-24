@@ -10,16 +10,16 @@ import { useTags } from '@/lib/hooks'
 import { countActiveFilters, DEFAULT_LINK_FILTERS, FiltersDialog, type LinkFilters } from './FiltersDialog'
 import type { LinksUrlState } from './linksUrlState'
 
-const API_DATE = 'yyyy-MM-dd'
+export const API_DATE = 'yyyy-MM-dd'
 
-function toRange(from: string | null, to: string | null): DateRange | null {
+export function toRange(from: string | null, to: string | null): DateRange | null {
   if (!from && !to) return null
   const f = parse(from ?? to!, API_DATE, new Date())
   const t = parse(to ?? from!, API_DATE, new Date())
   return { from: f, to: t }
 }
 
-function rangeLabel(r: DateRange): string {
+export function rangeLabel(r: DateRange): string {
   return `${format(r.from, 'MMM d, yyyy')} – ${format(r.to, 'MMM d, yyyy')}`
 }
 

@@ -23,8 +23,12 @@ export interface LinksToolbarProps {
   onTag: () => void
   show: LinksShow
   onShowChange: (show: LinksShow) => void
-  view: LinksView
-  onViewChange: (view: LinksView) => void
+  view?: LinksView
+  onViewChange?: (view: LinksView) => void
+  /** What the list holds, for accessible labels (default "links"). */
+  noun?: 'links' | 'codes'
+  /** Shows the Compact/Default/Grid toggle (default true). */
+  showViews?: boolean
 }
 
 const VIEWS: { value: LinksView; label: string; icon: typeof List }[] = [
@@ -33,7 +37,7 @@ const VIEWS: { value: LinksView; label: string; icon: typeof List }[] = [
   { value: 'grid', label: 'Grid view', icon: LayoutGrid },
 ]
 
-/** Second toolbar row of the links list: selection + bulk actions, view toggle, Show select. */
+/** Second toolbar row of the links (and QR Codes) list: selection + bulk actions, view toggle, Show select. */
 export function LinksToolbar({
   selectedCount,
   allSelected,
@@ -47,6 +51,8 @@ export function LinksToolbar({
   onShowChange,
   view,
   onViewChange,
+  noun = 'links',
+  showViews = true,
 }: LinksToolbarProps) {
   const none = selectedCount === 0
   return (
@@ -56,7 +62,7 @@ export function LinksToolbar({
           checked={allSelected}
           onCheckedChange={onToggleAll}
           disabled={selectAllDisabled}
-          aria-label="Select all links"
+          aria-label={`Select all ${noun}`}
         />
         <span className="text-sm text-foreground">{selectedCount} selected</span>
         <div className="flex items-center gap-1 border-l border-border pl-3">
@@ -73,28 +79,30 @@ export function LinksToolbar({
       </div>
 
       <div className="flex items-center gap-3">
-        <RadioGroupPrimitive.Root
-          value={view}
-          onValueChange={(v) => onViewChange(v as LinksView)}
-          orientation="horizontal"
-          aria-label="View"
-          className="flex items-center rounded border border-border bg-white p-0.5 dark:bg-card"
-        >
-          {VIEWS.map(({ value, label, icon: Icon }) => (
-            <RadioGroupPrimitive.Item
-              key={value}
-              value={value}
-              aria-label={label}
-              title={label}
-              className={cn(
-                'inline-flex size-8 items-center justify-center rounded text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50',
-                'data-[state=checked]:bg-accent data-[state=checked]:text-primary',
-              )}
-            >
-              <Icon className="size-4" />
-            </RadioGroupPrimitive.Item>
-          ))}
-        </RadioGroupPrimitive.Root>
+        {showViews && (
+          <RadioGroupPrimitive.Root
+            value={view}
+            onValueChange={(v) => onViewChange?.(v as LinksView)}
+            orientation="horizontal"
+            aria-label="View"
+            className="flex items-center rounded border border-border bg-white p-0.5 dark:bg-card"
+          >
+            {VIEWS.map(({ value, label, icon: Icon }) => (
+              <RadioGroupPrimitive.Item
+                key={value}
+                value={value}
+                aria-label={label}
+                title={label}
+                className={cn(
+                  'inline-flex size-8 items-center justify-center rounded text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50',
+                  'data-[state=checked]:bg-accent data-[state=checked]:text-primary',
+                )}
+              >
+                <Icon className="size-4" />
+              </RadioGroupPrimitive.Item>
+            ))}
+          </RadioGroupPrimitive.Root>
+        )}
 
         <Select value={show} onValueChange={(v) => onShowChange(v as LinksShow)}>
           <SelectTrigger aria-label="Show" className="w-auto min-w-36 bg-white dark:bg-card">

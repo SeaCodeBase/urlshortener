@@ -56,3 +56,24 @@ describe("LinksToolbar", () => {
     expect(props.onViewChange).toHaveBeenCalledWith("grid");
   });
 });
+
+describe("LinksToolbar for QR Codes", () => {
+  it("uses the codes noun and can hide the view toggle", () => {
+    render(
+      <LinksToolbar
+        noun="codes"
+        showViews={false}
+        selectedCount={0}
+        allSelected={false}
+        onToggleAll={vi.fn()}
+        onExport={vi.fn()}
+        onHide={vi.fn()}
+        onTag={vi.fn()}
+        show="active"
+        onShowChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "Select all codes" })).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "View" })).not.toBeInTheDocument();
+  });
+});
