@@ -122,7 +122,16 @@ func main() {
 	// The service's own hosts can never be claimed as custom domains.
 	domainService := service.NewDomainService(domainRepo, groupRepo, service.NewNetResolver(),
 		cfg.URLs.RedirectHost, baseHost, frontendHost)
-	redirectService := service.NewRedirectService(linkRepo, domainRepo, routingRuleRepo, rdb, baseHost)
+	redirectService := service.NewRedirectService(linkRepo, domainRepo, routingRuleRepo, rdb, baseHost,
+		cfg.URLs.RedirectHost, frontendHost)
+
+	// Legacy domain rows for the service's own hosts (backfilled as "ok" by
+	// migration 002) must not stay usable.
+	if n, err := domainService.DemoteReservedDomains(ctx); err != nil {
+		logger.Error(ctx, "failed to demote reserved-host domains", zap.Error(err))
+	} else if n > 0 {
+		logger.Warn(ctx, "demoted custom domains that use reserved hosts", zap.Int("count", n))
+	}
 
 	// Setup handlers
 	authHandler := handler.NewAuthHandler(authService, passkeyService, cfg)
@@ -143,7 +152,8 @@ func main() {
 	clickService := service.NewClickService(rdb)
 
 	// Redirect handler
-	redirectHandler := handler.NewRedirectHandler(redirectService, clickService, domainRepo, cfg.JWT.Secret, cfg.URLs.FrontendURL)
+	redirectHandler := handler.NewRedirectHandler(redirectService, clickService, domainRepo, cfg.JWT.Secret, cfg.URLs.FrontendURL,
+		baseHost, cfg.URLs.RedirectHost, frontendHost)
 
 	// Redirect Router (public, minimal - for URL redirects)
 	redirectRouter := gin.New()

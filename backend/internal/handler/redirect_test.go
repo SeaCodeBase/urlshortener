@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
-	"github.com/SeaCodeBase/urlshortener/internal/repository"
 	repomocks "github.com/SeaCodeBase/urlshortener/internal/repository/mocks"
 	"github.com/SeaCodeBase/urlshortener/internal/service"
 	"github.com/gin-gonic/gin"
@@ -53,7 +52,7 @@ func (f *fakeClickRecorder) next(t *testing.T) service.ClickEvent {
 func newRedirectTestRouter(t *testing.T, resolver LinkResolver, rec ClickRecorder) (*gin.Engine, *repomocks.MockDomainRepository) {
 	gin.SetMode(gin.TestMode)
 	domains := repomocks.NewMockDomainRepository(gomock.NewController(t))
-	h := NewRedirectHandler(resolver, rec, domains, "salt", "https://app.example.com")
+	h := NewRedirectHandler(resolver, rec, domains, "salt", "https://app.example.com", "sho.rt")
 	r := gin.New()
 	r.GET("/", h.Root)
 	r.GET("/:code", h.Redirect)
@@ -144,7 +143,7 @@ func TestRedirectHandler_RootRedirect(t *testing.T) {
 	r, domains := newRedirectTestRouter(t, &fakeResolver{}, newFakeClickRecorder())
 	root := "https://brand.example.com"
 	domains.EXPECT().GetByDomain(gomock.Any(), "go.brand.com").Return(&model.Domain{ID: 1, Domain: "go.brand.com", RootRedirect: &root, VerificationStatus: model.DomainVerificationOK}, nil)
-	domains.EXPECT().GetByDomain(gomock.Any(), "sho.rt").Return(nil, repository.ErrDomainNotFound)
+	// sho.rt is reserved: no domain lookup.
 
 	w := doGet(r, "go.brand.com:8080", "/", "")
 	require.Equal(t, http.StatusFound, w.Code)
@@ -164,4 +163,19 @@ func TestRedirectHandler_Root_UnverifiedDomainIgnored(t *testing.T) {
 	w := doGet(r, "go.brand.com", "/", "")
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.Empty(t, w.Header().Get("Location"))
+}
+
+func TestRedirectHandler_Root_ReservedHostNoRedirect(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	// No GetByDomain expectation: reserved hosts are never looked up, so a
+	// legacy "ok" row for them cannot hijack the root redirect.
+	domains := repomocks.NewMockDomainRepository(gomock.NewController(t))
+	h := NewRedirectHandler(&fakeResolver{}, newFakeClickRecorder(), domains, "salt", "https://App.Example.com:3000", "sho.rt", "r.sho.rt")
+	r := gin.New()
+	r.GET("/", h.Root)
+	for _, host := range []string{"sho.rt", "R.SHO.RT:8080", "app.example.com"} {
+		w := doGet(r, host, "/", "")
+		assert.Equal(t, http.StatusNotFound, w.Code, host)
+		assert.Empty(t, w.Header().Get("Location"), host)
+	}
 }

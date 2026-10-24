@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -45,10 +46,18 @@ type RedirectHandler struct {
 	routing     *service.RoutingService
 	ipSalt      string
 	frontendURL string
+	reserved    map[string]bool
 }
 
-func NewRedirectHandler(resolver LinkResolver, clicks ClickRecorder, domainRepo repository.DomainRepository, ipSalt, frontendURL string) *RedirectHandler {
+// NewRedirectHandler builds the handler. reservedHosts (and the frontend
+// URL's host) are the service's own hosts: Root never applies a domain's
+// root_redirect for them.
+func NewRedirectHandler(resolver LinkResolver, clicks ClickRecorder, domainRepo repository.DomainRepository, ipSalt, frontendURL string, reservedHosts ...string) *RedirectHandler {
+	if u, err := url.Parse(frontendURL); err == nil && u.Host != "" {
+		reservedHosts = append(reservedHosts, u.Host)
+	}
 	return &RedirectHandler{
+		reserved:    service.ReservedHostSet(reservedHosts...),
 		resolver:    resolver,
 		clicks:      clicks,
 		domainRepo:  domainRepo,
@@ -159,6 +168,10 @@ func (h *RedirectHandler) Root(c *gin.Context) {
 	host := c.Request.Host
 	if i := strings.LastIndex(host, ":"); i != -1 {
 		host = host[:i]
+	}
+	if h.reserved[strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")] {
+		renderErrorPage(c, http.StatusNotFound, titleNotFound, messageNotFound, h.frontendURL)
+		return
 	}
 	domain, err := h.domainRepo.GetByDomain(c.Request.Context(), host)
 	if err != nil && !errors.Is(err, repository.ErrDomainNotFound) {

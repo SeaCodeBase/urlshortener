@@ -44,19 +44,23 @@ type RedirectService struct {
 	ruleRepo   repository.RoutingRuleRepository
 	rdb        *redis.Client
 	baseHost   string
+	reserved   map[string]bool
 }
 
 // NewRedirectService builds the service. baseHost is the default short domain
 // host (from urls.base_url, without port) used to invalidate default-domain
-// links.
+// links. baseHost and reservedHosts (redirect host, frontend host) are always
+// served as the default domain: no domain row is consulted for them, so a
+// legacy row for one of the service's own hosts cannot hijack it.
 func NewRedirectService(linkRepo repository.LinkRepository, domainRepo repository.DomainRepository,
-	ruleRepo repository.RoutingRuleRepository, rdb *redis.Client, baseHost string) *RedirectService {
+	ruleRepo repository.RoutingRuleRepository, rdb *redis.Client, baseHost string, reservedHosts ...string) *RedirectService {
 	return &RedirectService{
 		linkRepo:   linkRepo,
 		domainRepo: domainRepo,
 		ruleRepo:   ruleRepo,
 		rdb:        rdb,
 		baseHost:   stripPort(baseHost),
+		reserved:   ReservedHostSet(append([]string{baseHost}, reservedHosts...)...),
 	}
 }
 
@@ -105,7 +109,11 @@ func (s *RedirectService) Resolve(ctx context.Context, host, code string) (*Reso
 	var domainID *uint64
 	var notFoundRedirect string
 	cacheable := true
-	domain, err := s.domainRepo.GetByDomain(ctx, host)
+	var domain *model.Domain
+	err := repository.ErrDomainNotFound
+	if !s.reserved[normalizeHost(host)] {
+		domain, err = s.domainRepo.GetByDomain(ctx, host)
+	}
 	switch {
 	case err == nil && domain.VerificationStatus != model.DomainVerificationOK:
 		cacheable = false

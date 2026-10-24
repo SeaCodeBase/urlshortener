@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -80,14 +81,57 @@ func NewDomainService(domains repository.DomainRepository, groups repository.Gro
 		groups:       groups,
 		resolver:     resolver,
 		redirectHost: normalizeHost(redirectHost),
-		reserved:     map[string]bool{},
-	}
-	for _, h := range append([]string{redirectHost}, reservedHosts...) {
-		if h = normalizeHost(stripPort(strings.TrimSpace(h))); h != "" {
-			s.reserved[h] = true
-		}
+		reserved:     ReservedHostSet(append([]string{redirectHost}, reservedHosts...)...),
 	}
 	return s
+}
+
+// ReservedHostSet normalises hosts (trimmed, lowercased, port and trailing
+// dot removed) into a set; empty entries are dropped.
+func ReservedHostSet(hosts ...string) map[string]bool {
+	set := map[string]bool{}
+	for _, h := range hosts {
+		if h = normalizeHost(stripPort(strings.TrimSpace(h))); h != "" {
+			set[h] = true
+		}
+	}
+	return set
+}
+
+// reservedHostError is stored on legacy domain rows for reserved hosts.
+const reservedHostError = "reserved host"
+
+// DemoteReservedDomains marks existing domain rows whose host is reserved
+// (e.g. backfilled as "ok" by migration 002) as status "error" with
+// verification_error "reserved host", and returns how many rows changed.
+func (s *DomainServiceImpl) DemoteReservedDomains(ctx context.Context) (int, error) {
+	hosts := make([]string, 0, len(s.reserved))
+	for h := range s.reserved {
+		hosts = append(hosts, h)
+	}
+	sort.Strings(hosts)
+	n := 0
+	for _, h := range hosts {
+		domain, err := s.domains.GetByDomain(ctx, h)
+		if errors.Is(err, repository.ErrDomainNotFound) {
+			continue
+		}
+		if err != nil {
+			return n, err
+		}
+		if domain.VerificationStatus == model.DomainVerificationError &&
+			domain.VerificationError != nil && *domain.VerificationError == reservedHostError {
+			continue
+		}
+		msg := reservedHostError
+		domain.VerificationStatus = model.DomainVerificationError
+		domain.VerificationError = &msg
+		if err := s.domains.Update(ctx, domain); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
 }
 
 func (s *DomainServiceImpl) List(ctx context.Context, userID uint64) ([]*model.Domain, error) {

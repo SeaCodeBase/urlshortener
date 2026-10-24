@@ -56,6 +56,9 @@ type DomainService interface {
 	Update(ctx context.Context, userID, domainID uint64, input UpdateDomainInput) (*model.Domain, error)
 	// Delete removes the domain and returns it.
 	Delete(ctx context.Context, userID, domainID uint64) (*model.Domain, error)
+	// DemoteReservedDomains sets status "error" ("reserved host") on existing
+	// rows for the service's own hosts; it returns the number changed.
+	DemoteReservedDomains(ctx context.Context) (int, error)
 }
 
 //go:generate mockgen -destination=mocks/mock_token_service.go -package=mocks . TokenService

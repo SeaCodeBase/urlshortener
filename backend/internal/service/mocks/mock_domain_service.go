@@ -72,6 +72,21 @@ func (mr *MockDomainServiceMockRecorder) Delete(ctx, userID, domainID any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockDomainService)(nil).Delete), ctx, userID, domainID)
 }
 
+// DemoteReservedDomains mocks base method.
+func (m *MockDomainService) DemoteReservedDomains(ctx context.Context) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DemoteReservedDomains", ctx)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DemoteReservedDomains indicates an expected call of DemoteReservedDomains.
+func (mr *MockDomainServiceMockRecorder) DemoteReservedDomains(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DemoteReservedDomains", reflect.TypeOf((*MockDomainService)(nil).DemoteReservedDomains), ctx)
+}
+
 // List mocks base method.
 func (m *MockDomainService) List(ctx context.Context, userID uint64) ([]*model.Domain, error) {
 	m.ctrl.T.Helper()

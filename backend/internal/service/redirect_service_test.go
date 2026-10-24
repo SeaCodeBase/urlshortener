@@ -137,7 +137,7 @@ func TestRedirectService_ArchivedStillRedirects(t *testing.T) {
 	ctx := context.Background()
 
 	rule := model.RoutingRule{ID: 1, LinkID: 7, LongURL: "https://ios.example.com", OSMatch: model.StringList{"ios"}}
-	f.domains.EXPECT().GetByDomain(gomock.Any(), "sho.rt").Return(nil, repository.ErrDomainNotFound).Times(1)
+	// sho.rt is the base host: reserved, so no domain lookup happens.
 	f.links.EXPECT().GetByDomainAndShortCode(gomock.Any(), nil, "abc").Return(&model.Link{
 		ID: 7, ShortCode: "abc", OriginalURL: "https://example.com/archived", IsActive: true, Archived: true,
 	}, nil).Times(1)
@@ -276,5 +276,41 @@ func TestRedirectService_UnverifiedDomainNotResolved(t *testing.T) {
 		if f.mr.Exists(linkCacheKeyPrefix + "go.brand.com:abc") {
 			t.Errorf("%s: nothing may be cached under an unverified domain host", status)
 		}
+	}
+}
+
+func TestRedirectService_ReservedHostIsDefaultDomain(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(mr.Close)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	ctrl := gomock.NewController(t)
+	links := mocks.NewMockLinkRepository(ctrl)
+	// No GetByDomain expectation: a reserved host must never be looked up,
+	// even if a (legacy, "ok") domain row exists for it.
+	domains := mocks.NewMockDomainRepository(ctrl)
+	rules := mocks.NewMockRoutingRuleRepository(ctrl)
+	svc := NewRedirectService(links, domains, rules, rdb, "sho.rt", "R.Sho.RT.", "app.example.com:3000")
+
+	for _, host := range []string{"sho.rt:8080", "r.sho.rt", "APP.example.com"} {
+		links.EXPECT().GetByDomainAndShortCode(gomock.Any(), nil, "nope").Return(nil, repository.ErrLinkNotFound)
+		res, err := svc.Resolve(context.Background(), host, "nope")
+		if !errors.Is(err, ErrLinkNotFound) {
+			t.Fatalf("%s: expected ErrLinkNotFound, got %v", host, err)
+		}
+		if res != nil && res.ExpiredRedirect != "" {
+			t.Fatalf("%s: reserved host must not use a domain's not_found_redirect: %+v", host, res)
+		}
+	}
+
+	links.EXPECT().GetByDomainAndShortCode(gomock.Any(), nil, "abc").
+		Return(&model.Link{ID: 7, ShortCode: "abc", OriginalURL: "https://example.com", IsActive: true}, nil)
+	rules.EXPECT().ListByLinkID(gomock.Any(), uint64(7)).Return(nil, nil)
+	res, err := svc.Resolve(context.Background(), "r.sho.rt", "abc")
+	if err != nil || res.LinkID != 7 || res.DomainID != nil {
+		t.Fatalf("reserved host resolves default-domain links: %+v %v", res, err)
 	}
 }
