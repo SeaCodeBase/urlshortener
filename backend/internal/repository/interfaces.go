@@ -64,6 +64,19 @@ type LinkRepository interface {
 	// ShortCodeExistsInDomain checks if a short code exists within a specific domain.
 	// domainID nil means the default domain (domain_id IS NULL)
 	ShortCodeExistsInDomain(ctx context.Context, domainID *uint64, shortCode string) (bool, error)
+	// GetByIDs returns the existing links among ids; missing ids are absent.
+	GetByIDs(ctx context.Context, ids []uint64) ([]model.Link, error)
+	// ListByGroup pages through the group's links matching f with their
+	// total clicks (Tags left nil), plus the total match count. Links with
+	// source <> 'link' are excluded unless f.IncludeAllSources.
+	ListByGroup(ctx context.Context, groupID uint64, f LinkFilter, limit, offset int) ([]model.LinkWithStats, int64, error)
+	// CountByGroup counts the group's source='link' links.
+	CountByGroup(ctx context.Context, groupID uint64) (int64, error)
+	// SetArchived hides (true) or shows (false) the links; empty ids is a no-op.
+	SetArchived(ctx context.Context, ids []uint64, archived bool) error
+	// IncrementRedirectCount records a destination change; ErrLinkNotFound
+	// when the link does not exist.
+	IncrementRedirectCount(ctx context.Context, id uint64) error
 }
 
 //go:generate mockgen -destination=mocks/mock_passkey_repo.go -package=mocks . PasskeyRepository

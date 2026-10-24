@@ -13,13 +13,15 @@ import (
 // Activity log actions (spec §5.11). Other features add their own
 // "<entity>.<verb>" actions as they land.
 const (
-	ActionLinkCreate  = "link.create"
-	ActionLinkUpdate  = "link.update"
-	ActionLinkHide    = "link.hide"
-	ActionLinkUnhide  = "link.unhide"
-	ActionLinkDelete  = "link.delete"
-	ActionTokenCreate = "token.create"
-	ActionTokenRevoke = "token.revoke"
+	ActionLinkCreate = "link.create"
+	ActionLinkUpdate = "link.update"
+	ActionLinkHide   = "link.hide"
+	ActionLinkUnhide = "link.unhide"
+	ActionLinkDelete = "link.delete"
+	// ActionLinkBackHalf: a back-half edit created a new link.
+	ActionLinkBackHalf = "link.back_half"
+	ActionTokenCreate  = "token.create"
+	ActionTokenRevoke  = "token.revoke"
 )
 
 // Activity log entity types.

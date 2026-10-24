@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/SeaCodeBase/urlshortener/internal/service"
@@ -39,13 +40,15 @@ func TestShortCodeService_IsValid(t *testing.T) {
 	}{
 		{"valid 6 chars", "abc123", true},
 		{"valid mixed case", "Ab3XyZ", true},
-		{"valid max length 16 chars", "abcdefgh12345678", true},
-		{"valid min length 3 chars", "ab1", true},
-		{"valid 4 chars", "ab12", true},
-		{"too short 2 chars", "ab", false},
-		{"too long 17 chars", "abcdefgh123456789", false},
-		{"invalid char underscore", "abc_123", false},
-		{"invalid char hyphen", "abc-123", false},
+		{"valid single char", "a", true},
+		{"valid underscore", "abc_123", true},
+		{"valid hyphen", "abc-123", true},
+		{"valid max length 255 chars", strings.Repeat("a", 255), true},
+		{"too long 256 chars", strings.Repeat("a", 256), false},
+		{"invalid char space", "abc 123", false},
+		{"invalid char slash", "abc/123", false},
+		{"invalid char dot", "abc.123", false},
+		{"invalid non-ascii", "abcé", false},
 		{"empty string", "", false},
 	}
 

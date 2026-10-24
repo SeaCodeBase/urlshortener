@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
+	"github.com/SeaCodeBase/urlshortener/internal/repository"
 	"github.com/go-webauthn/webauthn/protocol"
 )
 
@@ -45,11 +46,34 @@ type TokenService interface {
 
 //go:generate mockgen -destination=mocks/mock_link_service.go -package=mocks . LinkService
 type LinkService interface {
+	// Create creates a link in input.GroupID; when input.Title is empty the
+	// destination's title is fetched.
 	Create(ctx context.Context, userID uint64, input CreateLinkInput) (*model.Link, error)
 	GetByID(ctx context.Context, userID, linkID uint64) (*model.Link, error)
-	List(ctx context.Context, userID uint64, params ListLinksParams) (*ListLinksResult, error)
+	// GetDetails returns the link with tags, clicks, routing rules and its
+	// back-half history.
+	GetDetails(ctx context.Context, userID, linkID uint64) (*LinkDetails, error)
+	// List pages through the group's links matching params.Filter.
+	List(ctx context.Context, groupID uint64, params ListLinksParams) (*ListLinksResult, error)
+	// Update edits the link in place; a destination change increments
+	// redirect_count.
 	Update(ctx context.Context, userID, linkID uint64, input UpdateLinkInput) (*model.Link, error)
-	Delete(ctx context.Context, userID, linkID uint64) error
+	// SetTags replaces the link's tags and returns the normalized set.
+	SetTags(ctx context.Context, userID, linkID uint64, tags []string) ([]string, error)
+	// SetArchived hides/shows links; every id must belong to groupID or
+	// ErrLinkNotFound is returned and nothing changes.
+	SetArchived(ctx context.Context, userID, groupID uint64, ids []uint64, archived bool) ([]model.Link, error)
+	// BulkTags adds/removes tags; every id must belong to groupID or
+	// ErrLinkNotFound is returned and nothing changes.
+	BulkTags(ctx context.Context, groupID uint64, ids []uint64, add, remove []string) error
+	// EditBackHalf creates a new link with the back-half, copying the old
+	// one; domainID nil keeps the old domain, 0 means the default domain.
+	EditBackHalf(ctx context.Context, userID, linkID uint64, domainID *uint64, backHalf string) (*model.Link, error)
+	// Delete removes the link and returns it; ErrLinkNotDeletable when it was
+	// redirected or has a custom back-half.
+	Delete(ctx context.Context, userID, linkID uint64) (*model.Link, error)
+	// Export returns CSV rows (see LinkExportHeader) for links matching f.
+	Export(ctx context.Context, groupID uint64, f repository.LinkFilter) ([][]string, error)
 }
 
 //go:generate mockgen -destination=mocks/mock_stats_service.go -package=mocks . StatsService

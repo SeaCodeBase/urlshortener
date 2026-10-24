@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 
 	model "github.com/SeaCodeBase/urlshortener/internal/model"
+	repository "github.com/SeaCodeBase/urlshortener/internal/repository"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -39,6 +40,21 @@ func NewMockLinkRepository(ctrl *gomock.Controller) *MockLinkRepository {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockLinkRepository) EXPECT() *MockLinkRepositoryMockRecorder {
 	return m.recorder
+}
+
+// CountByGroup mocks base method.
+func (m *MockLinkRepository) CountByGroup(ctx context.Context, groupID uint64) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountByGroup", ctx, groupID)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountByGroup indicates an expected call of CountByGroup.
+func (mr *MockLinkRepositoryMockRecorder) CountByGroup(ctx, groupID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountByGroup", reflect.TypeOf((*MockLinkRepository)(nil).CountByGroup), ctx, groupID)
 }
 
 // CountByUserID mocks base method.
@@ -114,6 +130,51 @@ func (mr *MockLinkRepositoryMockRecorder) GetByID(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MockLinkRepository)(nil).GetByID), ctx, id)
 }
 
+// GetByIDs mocks base method.
+func (m *MockLinkRepository) GetByIDs(ctx context.Context, ids []uint64) ([]model.Link, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetByIDs", ctx, ids)
+	ret0, _ := ret[0].([]model.Link)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetByIDs indicates an expected call of GetByIDs.
+func (mr *MockLinkRepositoryMockRecorder) GetByIDs(ctx, ids any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByIDs", reflect.TypeOf((*MockLinkRepository)(nil).GetByIDs), ctx, ids)
+}
+
+// IncrementRedirectCount mocks base method.
+func (m *MockLinkRepository) IncrementRedirectCount(ctx context.Context, id uint64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IncrementRedirectCount", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// IncrementRedirectCount indicates an expected call of IncrementRedirectCount.
+func (mr *MockLinkRepositoryMockRecorder) IncrementRedirectCount(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementRedirectCount", reflect.TypeOf((*MockLinkRepository)(nil).IncrementRedirectCount), ctx, id)
+}
+
+// ListByGroup mocks base method.
+func (m *MockLinkRepository) ListByGroup(ctx context.Context, groupID uint64, f repository.LinkFilter, limit, offset int) ([]model.LinkWithStats, int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListByGroup", ctx, groupID, f, limit, offset)
+	ret0, _ := ret[0].([]model.LinkWithStats)
+	ret1, _ := ret[1].(int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ListByGroup indicates an expected call of ListByGroup.
+func (mr *MockLinkRepositoryMockRecorder) ListByGroup(ctx, groupID, f, limit, offset any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListByGroup", reflect.TypeOf((*MockLinkRepository)(nil).ListByGroup), ctx, groupID, f, limit, offset)
+}
+
 // ListByUserID mocks base method.
 func (m *MockLinkRepository) ListByUserID(ctx context.Context, userID uint64, limit, offset int) ([]model.Link, error) {
 	m.ctrl.T.Helper()
@@ -127,6 +188,20 @@ func (m *MockLinkRepository) ListByUserID(ctx context.Context, userID uint64, li
 func (mr *MockLinkRepositoryMockRecorder) ListByUserID(ctx, userID, limit, offset any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListByUserID", reflect.TypeOf((*MockLinkRepository)(nil).ListByUserID), ctx, userID, limit, offset)
+}
+
+// SetArchived mocks base method.
+func (m *MockLinkRepository) SetArchived(ctx context.Context, ids []uint64, archived bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetArchived", ctx, ids, archived)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetArchived indicates an expected call of SetArchived.
+func (mr *MockLinkRepositoryMockRecorder) SetArchived(ctx, ids, archived any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetArchived", reflect.TypeOf((*MockLinkRepository)(nil).SetArchived), ctx, ids, archived)
 }
 
 // ShortCodeExistsInDomain mocks base method.

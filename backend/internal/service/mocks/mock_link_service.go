@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 
 	model "github.com/SeaCodeBase/urlshortener/internal/model"
+	repository "github.com/SeaCodeBase/urlshortener/internal/repository"
 	service "github.com/SeaCodeBase/urlshortener/internal/service"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -42,6 +43,20 @@ func (m *MockLinkService) EXPECT() *MockLinkServiceMockRecorder {
 	return m.recorder
 }
 
+// BulkTags mocks base method.
+func (m *MockLinkService) BulkTags(ctx context.Context, groupID uint64, ids []uint64, add, remove []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BulkTags", ctx, groupID, ids, add, remove)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// BulkTags indicates an expected call of BulkTags.
+func (mr *MockLinkServiceMockRecorder) BulkTags(ctx, groupID, ids, add, remove any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BulkTags", reflect.TypeOf((*MockLinkService)(nil).BulkTags), ctx, groupID, ids, add, remove)
+}
+
 // Create mocks base method.
 func (m *MockLinkService) Create(ctx context.Context, userID uint64, input service.CreateLinkInput) (*model.Link, error) {
 	m.ctrl.T.Helper()
@@ -58,17 +73,48 @@ func (mr *MockLinkServiceMockRecorder) Create(ctx, userID, input any) *gomock.Ca
 }
 
 // Delete mocks base method.
-func (m *MockLinkService) Delete(ctx context.Context, userID, linkID uint64) error {
+func (m *MockLinkService) Delete(ctx context.Context, userID, linkID uint64) (*model.Link, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Delete", ctx, userID, linkID)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(*model.Link)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // Delete indicates an expected call of Delete.
 func (mr *MockLinkServiceMockRecorder) Delete(ctx, userID, linkID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockLinkService)(nil).Delete), ctx, userID, linkID)
+}
+
+// EditBackHalf mocks base method.
+func (m *MockLinkService) EditBackHalf(ctx context.Context, userID, linkID uint64, domainID *uint64, backHalf string) (*model.Link, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EditBackHalf", ctx, userID, linkID, domainID, backHalf)
+	ret0, _ := ret[0].(*model.Link)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// EditBackHalf indicates an expected call of EditBackHalf.
+func (mr *MockLinkServiceMockRecorder) EditBackHalf(ctx, userID, linkID, domainID, backHalf any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EditBackHalf", reflect.TypeOf((*MockLinkService)(nil).EditBackHalf), ctx, userID, linkID, domainID, backHalf)
+}
+
+// Export mocks base method.
+func (m *MockLinkService) Export(ctx context.Context, groupID uint64, f repository.LinkFilter) ([][]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Export", ctx, groupID, f)
+	ret0, _ := ret[0].([][]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Export indicates an expected call of Export.
+func (mr *MockLinkServiceMockRecorder) Export(ctx, groupID, f any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Export", reflect.TypeOf((*MockLinkService)(nil).Export), ctx, groupID, f)
 }
 
 // GetByID mocks base method.
@@ -86,19 +132,64 @@ func (mr *MockLinkServiceMockRecorder) GetByID(ctx, userID, linkID any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MockLinkService)(nil).GetByID), ctx, userID, linkID)
 }
 
-// List mocks base method.
-func (m *MockLinkService) List(ctx context.Context, userID uint64, params service.ListLinksParams) (*service.ListLinksResult, error) {
+// GetDetails mocks base method.
+func (m *MockLinkService) GetDetails(ctx context.Context, userID, linkID uint64) (*service.LinkDetails, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "List", ctx, userID, params)
+	ret := m.ctrl.Call(m, "GetDetails", ctx, userID, linkID)
+	ret0, _ := ret[0].(*service.LinkDetails)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetDetails indicates an expected call of GetDetails.
+func (mr *MockLinkServiceMockRecorder) GetDetails(ctx, userID, linkID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDetails", reflect.TypeOf((*MockLinkService)(nil).GetDetails), ctx, userID, linkID)
+}
+
+// List mocks base method.
+func (m *MockLinkService) List(ctx context.Context, groupID uint64, params service.ListLinksParams) (*service.ListLinksResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "List", ctx, groupID, params)
 	ret0, _ := ret[0].(*service.ListLinksResult)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // List indicates an expected call of List.
-func (mr *MockLinkServiceMockRecorder) List(ctx, userID, params any) *gomock.Call {
+func (mr *MockLinkServiceMockRecorder) List(ctx, groupID, params any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockLinkService)(nil).List), ctx, userID, params)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockLinkService)(nil).List), ctx, groupID, params)
+}
+
+// SetArchived mocks base method.
+func (m *MockLinkService) SetArchived(ctx context.Context, userID, groupID uint64, ids []uint64, archived bool) ([]model.Link, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetArchived", ctx, userID, groupID, ids, archived)
+	ret0, _ := ret[0].([]model.Link)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetArchived indicates an expected call of SetArchived.
+func (mr *MockLinkServiceMockRecorder) SetArchived(ctx, userID, groupID, ids, archived any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetArchived", reflect.TypeOf((*MockLinkService)(nil).SetArchived), ctx, userID, groupID, ids, archived)
+}
+
+// SetTags mocks base method.
+func (m *MockLinkService) SetTags(ctx context.Context, userID, linkID uint64, tags []string) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetTags", ctx, userID, linkID, tags)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetTags indicates an expected call of SetTags.
+func (mr *MockLinkServiceMockRecorder) SetTags(ctx, userID, linkID, tags any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetTags", reflect.TypeOf((*MockLinkService)(nil).SetTags), ctx, userID, linkID, tags)
 }
 
 // Update mocks base method.

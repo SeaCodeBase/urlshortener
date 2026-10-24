@@ -13,6 +13,8 @@ const (
 	// Base62 alphabet for short codes
 	alphabet            = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 	defaultLen          = 7
+	minCodeLen          = 1
+	maxCodeLen          = 255
 	maxGenerateAttempts = 10
 )
 
@@ -63,12 +65,14 @@ func (s *ShortCodeServiceImpl) generateWithLength(ctx context.Context, domainID 
 	return s.generateWithLength(ctx, domainID, length+1)
 }
 
+// IsValid reports whether code is a valid back-half: 1-255 characters from
+// [A-Za-z0-9_-] (case-sensitive, spec §5.3).
 func (s *ShortCodeServiceImpl) IsValid(code string) bool {
-	if len(code) < 3 || len(code) > 16 {
+	if len(code) < minCodeLen || len(code) > maxCodeLen {
 		return false
 	}
 	for _, c := range code {
-		if !isAlphanumeric(c) {
+		if !isAlphanumeric(c) && c != '-' && c != '_' {
 			return false
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
@@ -26,11 +27,22 @@ func NewLinkRepository(db *sqlx.DB) *LinkRepositoryImpl {
 	return &LinkRepositoryImpl{db: db}
 }
 
+// linkColumns is the full column list of a model.Link, qualified with the
+// "l" alias so it can be used in joins.
+const linkColumns = `l.id, l.user_id, l.group_id, l.short_code, l.original_url, l.long_url_host, l.title,
+	l.expires_at, l.is_active, l.archived, l.has_custom_back_half, l.redirect_count, l.parent_link_id,
+	l.source, l.domain_id, l.created_at, l.updated_at`
+
 func (r *LinkRepositoryImpl) Create(ctx context.Context, link *model.Link) error {
-	query := `INSERT INTO links (user_id, group_id, short_code, original_url, title, expires_at, is_active, domain_id)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	if link.Source == "" {
+		link.Source = model.LinkSourceLink
+	}
+	query := `INSERT INTO links (user_id, group_id, short_code, original_url, long_url_host, title, expires_at,
+			  is_active, archived, has_custom_back_half, parent_link_id, source, domain_id)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	result, err := r.db.ExecContext(ctx, query,
-		link.UserID, link.GroupID, link.ShortCode, link.OriginalURL, link.Title, link.ExpiresAt, link.IsActive, link.DomainID)
+		link.UserID, link.GroupID, link.ShortCode, link.OriginalURL, link.LongURLHost, link.Title, link.ExpiresAt,
+		link.IsActive, link.Archived, link.HasCustomBackHalf, link.ParentLinkID, link.Source, link.DomainID)
 	if err != nil {
 		if strings.Contains(err.Error(), "Duplicate entry") {
 			return ErrShortCodeExists
@@ -63,8 +75,7 @@ func (r *LinkRepositoryImpl) Create(ctx context.Context, link *model.Link) error
 
 func (r *LinkRepositoryImpl) GetByID(ctx context.Context, id uint64) (*model.Link, error) {
 	var link model.Link
-	query := `SELECT id, user_id, group_id, short_code, original_url, title, expires_at, is_active, domain_id, created_at, updated_at
-			  FROM links WHERE id = ?`
+	query := `SELECT ` + linkColumns + ` FROM links l WHERE l.id = ?`
 	err := r.db.GetContext(ctx, &link, query, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrLinkNotFound
@@ -95,9 +106,10 @@ func (r *LinkRepositoryImpl) ListByUserID(ctx context.Context, userID uint64, li
 }
 
 func (r *LinkRepositoryImpl) Update(ctx context.Context, link *model.Link) error {
-	query := `UPDATE links SET original_url = ?, title = ?, expires_at = ?, is_active = ?, domain_id = ?, updated_at = NOW()
-			  WHERE id = ?`
-	result, err := r.db.ExecContext(ctx, query, link.OriginalURL, link.Title, link.ExpiresAt, link.IsActive, link.DomainID, link.ID)
+	query := `UPDATE links SET original_url = ?, long_url_host = ?, title = ?, expires_at = ?, is_active = ?, domain_id = ?,
+			  updated_at = NOW() WHERE id = ?`
+	result, err := r.db.ExecContext(ctx, query, link.OriginalURL, link.LongURLHost, link.Title, link.ExpiresAt,
+		link.IsActive, link.DomainID, link.ID)
 	if err != nil {
 		logger.Error(ctx, "link-repo: failed to update link",
 			zap.Uint64("link_id", link.ID),
@@ -114,7 +126,16 @@ func (r *LinkRepositoryImpl) Update(ctx context.Context, link *model.Link) error
 		return err
 	}
 	if rows == 0 {
-		return ErrLinkNotFound
+		// MariaDB reports 0 affected rows when nothing changed (e.g. an
+		// update within the same second as the previous one), so only a
+		// missing row is "not found".
+		var exists int
+		if err := r.db.GetContext(ctx, &exists, `SELECT COUNT(*) FROM links WHERE id = ?`, link.ID); err != nil {
+			return err
+		}
+		if exists == 0 {
+			return ErrLinkNotFound
+		}
 	}
 	return nil
 }
@@ -206,4 +227,199 @@ func (r *LinkRepositoryImpl) CountByUserID(ctx context.Context, userID uint64) (
 		return 0, err
 	}
 	return count, nil
+}
+
+// LinkFilter narrows ListByGroup. Zero values apply no filter.
+type LinkFilter struct {
+	// Query matches title, destination URL, short code or a tag (substring,
+	// LIKE wildcards are matched literally).
+	Query string
+	// Tags keeps links having any of the tags.
+	Tags []string
+	// Archived keeps hidden (true) or active (false) links; nil keeps both.
+	Archived *bool
+	// CustomBackHalf keeps links with (true) or without (false) a custom back-half.
+	CustomBackHalf *bool
+	// Expiration is "expired", "expiring" (has a future expiry), "none" or "".
+	Expiration string
+	// HasQR keeps links with (true) or without (false) an attached QR code.
+	// No QR codes exist yet, so true matches nothing and false everything.
+	HasQR *bool
+	// CampaignID is accepted for API compatibility and ignored for now.
+	CampaignID *uint64
+	// CreatedAfter is inclusive, CreatedBefore exclusive.
+	CreatedAfter, CreatedBefore *time.Time
+	// Sort is "created" (newest first, default) or "clicks" (most first).
+	Sort string
+	// IncludeAllSources also returns links owned by QR codes and pages
+	// (source <> 'link'), which are hidden from the Links list (spec §11.3).
+	IncludeAllSources bool
+}
+
+// Expiration filter values.
+const (
+	ExpirationExpired  = "expired"
+	ExpirationExpiring = "expiring"
+	ExpirationNone     = "none"
+)
+
+// SortClicks orders ListByGroup by total clicks.
+const SortClicks = "clicks"
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// where builds the WHERE clause (without the keyword) and its arguments.
+func (f LinkFilter) where(groupID uint64) (string, []any) {
+	conds := []string{"l.group_id = ?"}
+	args := []any{groupID}
+	if !f.IncludeAllSources {
+		conds = append(conds, "l.source = 'link'")
+	}
+	if q := strings.TrimSpace(f.Query); q != "" {
+		like := "%" + likeEscaper.Replace(q) + "%"
+		conds = append(conds, `(l.title LIKE ? OR l.original_url LIKE ? OR l.short_code LIKE ?
+			OR EXISTS (SELECT 1 FROM link_tags qt WHERE qt.link_id = l.id AND qt.tag LIKE ?))`)
+		args = append(args, like, like, like, like)
+	}
+	if tags := NormalizeTags(f.Tags); len(tags) > 0 {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(tags)), ",")
+		conds = append(conds, "EXISTS (SELECT 1 FROM link_tags ft WHERE ft.link_id = l.id AND ft.tag IN ("+placeholders+"))")
+		for _, t := range tags {
+			args = append(args, t)
+		}
+	}
+	if f.Archived != nil {
+		conds = append(conds, "l.archived = ?")
+		args = append(args, *f.Archived)
+	}
+	if f.CustomBackHalf != nil {
+		conds = append(conds, "l.has_custom_back_half = ?")
+		args = append(args, *f.CustomBackHalf)
+	}
+	switch f.Expiration {
+	case ExpirationExpired:
+		conds = append(conds, "l.expires_at IS NOT NULL AND l.expires_at <= NOW()")
+	case ExpirationExpiring:
+		conds = append(conds, "l.expires_at > NOW()")
+	case ExpirationNone:
+		conds = append(conds, "l.expires_at IS NULL")
+	}
+	if f.HasQR != nil && *f.HasQR {
+		conds = append(conds, "1 = 0")
+	}
+	if f.CreatedAfter != nil {
+		conds = append(conds, "l.created_at >= ?")
+		args = append(args, *f.CreatedAfter)
+	}
+	if f.CreatedBefore != nil {
+		conds = append(conds, "l.created_at < ?")
+		args = append(args, *f.CreatedBefore)
+	}
+	return strings.Join(conds, " AND "), args
+}
+
+func (r *LinkRepositoryImpl) ListByGroup(ctx context.Context, groupID uint64, f LinkFilter, limit, offset int) ([]model.LinkWithStats, int64, error) {
+	where, args := f.where(groupID)
+
+	var total int64
+	if err := r.db.GetContext(ctx, &total, `SELECT COUNT(*) FROM links l WHERE `+where, args...); err != nil {
+		logger.Error(ctx, "link-repo: failed to count links by group",
+			zap.Uint64("group_id", groupID),
+			zap.Error(err),
+		)
+		return nil, 0, err
+	}
+
+	order := "l.created_at DESC, l.id DESC"
+	if f.Sort == SortClicks {
+		order = "total_clicks DESC, l.created_at DESC, l.id DESC"
+	}
+	query := `SELECT ` + linkColumns + `,
+			  (SELECT COUNT(*) FROM clicks c WHERE c.link_id = l.id) AS total_clicks
+			  FROM links l WHERE ` + where + ` ORDER BY ` + order + ` LIMIT ? OFFSET ?`
+	rows := []model.LinkWithStats{}
+	if err := r.db.SelectContext(ctx, &rows, query, append(args, limit, offset)...); err != nil {
+		logger.Error(ctx, "link-repo: failed to list links by group",
+			zap.Uint64("group_id", groupID),
+			zap.Error(err),
+		)
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+// CountByGroup counts the group's links shown in the Links list
+// (source = 'link', hidden ones included).
+func (r *LinkRepositoryImpl) CountByGroup(ctx context.Context, groupID uint64) (int64, error) {
+	var count int64
+	err := r.db.GetContext(ctx, &count, `SELECT COUNT(*) FROM links WHERE group_id = ? AND source = 'link'`, groupID)
+	if err != nil {
+		logger.Error(ctx, "link-repo: failed to count links by group",
+			zap.Uint64("group_id", groupID),
+			zap.Error(err),
+		)
+		return 0, err
+	}
+	return count, nil
+}
+
+// GetByIDs returns the existing links among ids (any order; missing ids are
+// simply absent).
+func (r *LinkRepositoryImpl) GetByIDs(ctx context.Context, ids []uint64) ([]model.Link, error) {
+	links := []model.Link{}
+	if len(ids) == 0 {
+		return links, nil
+	}
+	query, args, err := sqlx.In(`SELECT `+linkColumns+` FROM links l WHERE l.id IN (?)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.db.SelectContext(ctx, &links, r.db.Rebind(query), args...); err != nil {
+		logger.Error(ctx, "link-repo: failed to get links by IDs",
+			zap.Int("count", len(ids)),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+	return links, nil
+}
+
+// SetArchived hides (archived=true) or shows the links. Empty ids is a no-op.
+func (r *LinkRepositoryImpl) SetArchived(ctx context.Context, ids []uint64, archived bool) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	query, args, err := sqlx.In(`UPDATE links SET archived = ?, updated_at = NOW() WHERE id IN (?)`, archived, ids)
+	if err != nil {
+		return err
+	}
+	if _, err := r.db.ExecContext(ctx, r.db.Rebind(query), args...); err != nil {
+		logger.Error(ctx, "link-repo: failed to set archived",
+			zap.Int("count", len(ids)),
+			zap.Bool("archived", archived),
+			zap.Error(err),
+		)
+		return err
+	}
+	return nil
+}
+
+// IncrementRedirectCount records a destination change ("redirect").
+func (r *LinkRepositoryImpl) IncrementRedirectCount(ctx context.Context, id uint64) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE links SET redirect_count = redirect_count + 1 WHERE id = ?`, id)
+	if err != nil {
+		logger.Error(ctx, "link-repo: failed to increment redirect count",
+			zap.Uint64("link_id", id),
+			zap.Error(err),
+		)
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrLinkNotFound
+	}
+	return nil
 }

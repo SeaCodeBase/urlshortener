@@ -96,7 +96,16 @@ func main() {
 	tagService := service.NewTagService(tagRepo)
 	activityService := service.NewActivityService(activityRepo)
 	shortCodeSvc := service.NewShortCodeService(linkRepo)
-	linkService := service.NewLinkService(linkRepo, shortCodeSvc)
+	linkService := service.NewLinkService(service.LinkServiceDeps{
+		Links:      linkRepo,
+		ShortCodes: shortCodeSvc,
+		Tags:       tagRepo,
+		Rules:      routingRuleRepo,
+		Domains:    domainRepo,
+		Clicks:     clickRepo,
+		Activity:   activityService,
+		BaseURL:    cfg.URLs.BaseURL,
+	})
 	statsService := service.NewStatsService(clickRepo, linkRepo)
 	passkeyService, err := service.NewPasskeyService(passkeyRepo, userRepo, cfg.WebAuthn.RPID, cfg.WebAuthn.RPOrigin, "URL Shortener")
 	if err != nil {
@@ -178,9 +187,13 @@ func main() {
 		{
 			links.POST("", linkHandler.Create)
 			links.GET("", linkHandler.List)
+			links.GET("/export", linkHandler.Export)
+			links.PATCH("/bulk", linkHandler.Bulk)
 			links.GET("/:id", linkHandler.Get)
 			links.PUT("/:id", linkHandler.Update)
 			links.DELETE("/:id", linkHandler.Delete)
+			links.POST("/:id/back-half", linkHandler.EditBackHalf)
+			links.PUT("/:id/tags", linkHandler.SetTags)
 			links.GET("/:id/stats", statsHandler.GetLinkStats)
 		}
 

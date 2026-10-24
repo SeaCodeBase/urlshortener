@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
@@ -17,31 +20,102 @@ var (
 	ErrNotLinkOwner     = errors.New("not the owner of this link")
 	ErrInvalidShortCode = errors.New("invalid short code")
 	ErrShortCodeTaken   = errors.New("short code already taken")
+	// ErrLinkNotDeletable: the link was redirected or has a custom back-half
+	// (spec §5.2); it can only be hidden.
+	ErrLinkNotDeletable = errors.New("link can't be deleted")
+	// ErrGroupRequired: links must belong to a group.
+	ErrGroupRequired = errors.New("group is required")
+	// ErrDomainNotFound: the domain does not exist or belongs to another user.
+	ErrDomainNotFound = errors.New("domain not found")
+	// ErrInvalidRoutingRule: a routing rule has no valid http(s) destination.
+	ErrInvalidRoutingRule = errors.New("invalid routing rule")
 )
 
-const maxPageSize = 100
+const (
+	maxPageSize = 100
+	// maxURLLength bounds destination URLs (spec §5.3).
+	maxURLLength = 2048
+	// maxHistoryDepth bounds the back-half history walk.
+	maxHistoryDepth = 20
+	// exportPageSize is the batch size used while exporting.
+	exportPageSize = 500
+	// maxExportRows caps one export.
+	maxExportRows = 100000
+)
+
+// LinkExportHeader is the CSV header of GET /links/export (spec §5.2).
+var LinkExportHeader = []string{"Link", "Custom Link", "Date created", "Title", "Destination URL", "Engagements", "Status"}
 
 // Compile-time check: LinkServiceImpl implements LinkService
 var _ LinkService = (*LinkServiceImpl)(nil)
 
-type LinkServiceImpl struct {
-	linkRepo  repository.LinkRepository
-	shortCode ShortCodeService
+// LinkServiceDeps are the collaborators of LinkServiceImpl.
+type LinkServiceDeps struct {
+	Links      repository.LinkRepository
+	ShortCodes ShortCodeService
+	Tags       repository.TagRepository
+	Rules      repository.RoutingRuleRepository
+	Domains    repository.DomainRepository
+	Clicks     repository.ClickRepository
+	Activity   ActivityService
+	// TitleFetcher fetches a destination's title when none is given;
+	// nil selects FetchTitle.
+	TitleFetcher TitleFetcher
+	// BaseURL is the default short domain (urls.base_url), used by Export.
+	BaseURL string
 }
 
-func NewLinkService(linkRepo repository.LinkRepository, shortCode ShortCodeService) *LinkServiceImpl {
+type LinkServiceImpl struct {
+	linkRepo     repository.LinkRepository
+	shortCode    ShortCodeService
+	tagRepo      repository.TagRepository
+	ruleRepo     repository.RoutingRuleRepository
+	domainRepo   repository.DomainRepository
+	clickRepo    repository.ClickRepository
+	activity     ActivityService
+	titleFetcher TitleFetcher
+	baseURL      string
+}
+
+func NewLinkService(d LinkServiceDeps) *LinkServiceImpl {
+	tf := d.TitleFetcher
+	if tf == nil {
+		tf = FetchTitle
+	}
 	return &LinkServiceImpl{
-		linkRepo:  linkRepo,
-		shortCode: shortCode,
+		linkRepo:     d.Links,
+		shortCode:    d.ShortCodes,
+		tagRepo:      d.Tags,
+		ruleRepo:     d.Rules,
+		domainRepo:   d.Domains,
+		clickRepo:    d.Clicks,
+		activity:     d.Activity,
+		titleFetcher: tf,
+		baseURL:      strings.TrimRight(d.BaseURL, "/"),
 	}
 }
 
+// RoutingRuleInput is a dynamic routing rule as sent by the client. Empty
+// match lists match everything.
+type RoutingRuleInput struct {
+	LongURL        string   `json:"long_url"`
+	DeviceMatch    []string `json:"device_match"`
+	OSMatch        []string `json:"os_match"`
+	CountryMatch   []string `json:"country_match"`
+	CountryExclude []string `json:"country_exclude"`
+}
+
 type CreateLinkInput struct {
-	OriginalURL string     `json:"original_url" binding:"required,url"`
-	CustomCode  string     `json:"custom_code,omitempty"`
-	Title       string     `json:"title,omitempty"`
-	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
-	DomainID    *uint64    `json:"domain_id,omitempty"`
+	OriginalURL  string             `json:"original_url" binding:"required,url"`
+	CustomCode   string             `json:"custom_code,omitempty"`
+	Title        string             `json:"title,omitempty"`
+	ExpiresAt    *time.Time         `json:"expires_at,omitempty"`
+	DomainID     *uint64            `json:"domain_id,omitempty"`
+	Tags         []string           `json:"tags,omitempty"`
+	UTM          *UTMParams         `json:"utm,omitempty"`
+	RoutingRules []RoutingRuleInput `json:"routing_rules,omitempty"`
+	// GroupID is set by the handler from the active group, never from JSON.
+	GroupID uint64 `json:"-"`
 }
 
 type UpdateLinkInput struct {
@@ -50,39 +124,154 @@ type UpdateLinkInput struct {
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 	IsActive    *bool      `json:"is_active,omitempty"`
 	DomainID    *uint64    `json:"domain_id,omitempty"`
+	// Tags replaces the link's tags when non-nil.
+	Tags *[]string `json:"tags,omitempty"`
 }
 
 type ListLinksParams struct {
-	Page  int
-	Limit int
+	Filter repository.LinkFilter
+	Page   int
+	Limit  int
 }
 
 type ListLinksResult struct {
-	Links      []model.Link `json:"links"`
-	Total      int64        `json:"total"`
-	Page       int          `json:"page"`
-	TotalPages int          `json:"total_pages"`
+	Links      []model.LinkWithStats `json:"links"`
+	Total      int64                 `json:"total"`
+	Page       int                   `json:"page"`
+	TotalPages int                   `json:"total_pages"`
+}
+
+// LinkDetails is a link with everything the details page shows.
+type LinkDetails struct {
+	model.Link
+	Tags         []string
+	TotalClicks  int64
+	RoutingRules []model.RoutingRule
+	// History is the chain of ancestor links (parent first) created by
+	// back-half edits.
+	History []model.Link
+}
+
+// hostOf returns the lowercased hostname of rawURL, or nil.
+func hostOf(rawURL string) *string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Hostname() == "" {
+		return nil
+	}
+	h := strings.ToLower(u.Hostname())
+	return &h
+}
+
+// validDestination reports whether rawURL is an absolute http(s) URL.
+func validDestination(rawURL string) bool {
+	if len(rawURL) > maxURLLength {
+		return false
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return u.Scheme == "http" || u.Scheme == "https"
+}
+
+func toStringList(v []string) model.StringList {
+	if v == nil {
+		return model.StringList{}
+	}
+	return model.StringList(v)
+}
+
+func toRoutingRules(in []RoutingRuleInput) ([]model.RoutingRule, error) {
+	rules := make([]model.RoutingRule, 0, len(in))
+	for _, r := range in {
+		dest := strings.TrimSpace(r.LongURL)
+		if !validDestination(dest) {
+			return nil, ErrInvalidRoutingRule
+		}
+		rules = append(rules, model.RoutingRule{
+			LongURL:        dest,
+			DeviceMatch:    toStringList(r.DeviceMatch),
+			OSMatch:        toStringList(r.OSMatch),
+			CountryMatch:   toStringList(r.CountryMatch),
+			CountryExclude: toStringList(r.CountryExclude),
+		})
+	}
+	return rules, nil
+}
+
+// detached returns a context that outlives request cancellation, so that
+// activity entries are not dropped when the client disconnects.
+func detached(ctx context.Context) context.Context {
+	return context.WithoutCancel(ctx)
+}
+
+// checkDomain verifies that domainID (when set) belongs to userID.
+func (s *LinkServiceImpl) checkDomain(ctx context.Context, userID uint64, domainID *uint64) error {
+	if domainID == nil {
+		return nil
+	}
+	d, err := s.domainRepo.GetByID(ctx, *domainID)
+	if errors.Is(err, repository.ErrDomainNotFound) {
+		return ErrDomainNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if d.UserID != userID {
+		return ErrDomainNotFound
+	}
+	return nil
+}
+
+// claimBackHalf validates code and checks it is free on the domain.
+func (s *LinkServiceImpl) claimBackHalf(ctx context.Context, domainID *uint64, code string) error {
+	if !s.shortCode.IsValid(code) {
+		return ErrInvalidShortCode
+	}
+	available, err := s.shortCode.IsAvailable(ctx, domainID, code)
+	if err != nil {
+		return err
+	}
+	if !available {
+		return ErrShortCodeTaken
+	}
+	return nil
 }
 
 func (s *LinkServiceImpl) Create(ctx context.Context, userID uint64, input CreateLinkInput) (*model.Link, error) {
-	var shortCode string
-	var err error
-
-	if input.CustomCode != "" {
-		if !s.shortCode.IsValid(input.CustomCode) {
-			return nil, ErrInvalidShortCode
-		}
-		available, err := s.shortCode.IsAvailable(ctx, input.DomainID, input.CustomCode)
+	if input.GroupID == 0 {
+		return nil, ErrGroupRequired
+	}
+	dest := strings.TrimSpace(input.OriginalURL)
+	if input.UTM != nil {
+		withUTM, err := ApplyUTM(dest, *input.UTM)
 		if err != nil {
-			logger.Error(ctx, "link-service: failed to check code availability",
-				zap.Uint64("user_id", userID),
-				zap.String("custom_code", input.CustomCode),
-				zap.Error(err),
-			)
 			return nil, err
 		}
-		if !available {
-			return nil, ErrShortCodeTaken
+		dest = withUTM
+	}
+	if !validDestination(dest) {
+		return nil, ErrInvalidURL
+	}
+	rules, err := toRoutingRules(input.RoutingRules)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkDomain(ctx, userID, input.DomainID); err != nil {
+		return nil, err
+	}
+
+	var shortCode string
+	if input.CustomCode != "" {
+		if err := s.claimBackHalf(ctx, input.DomainID, input.CustomCode); err != nil {
+			if !errors.Is(err, ErrInvalidShortCode) && !errors.Is(err, ErrShortCodeTaken) {
+				logger.Error(ctx, "link-service: failed to check code availability",
+					zap.Uint64("user_id", userID),
+					zap.String("custom_code", input.CustomCode),
+					zap.Error(err),
+				)
+			}
+			return nil, err
 		}
 		shortCode = input.CustomCode
 	} else {
@@ -96,18 +285,25 @@ func (s *LinkServiceImpl) Create(ctx context.Context, userID uint64, input Creat
 		}
 	}
 
+	title := strings.TrimSpace(input.Title)
+	if title == "" {
+		title = s.titleFetcher(ctx, dest)
+	}
+
 	link := &model.Link{
-		UserID:      userID,
-		ShortCode:   shortCode,
-		OriginalURL: input.OriginalURL,
-		IsActive:    true,
-		DomainID:    input.DomainID,
+		UserID:            userID,
+		GroupID:           input.GroupID,
+		ShortCode:         shortCode,
+		OriginalURL:       dest,
+		LongURLHost:       hostOf(dest),
+		IsActive:          true,
+		HasCustomBackHalf: input.CustomCode != "",
+		Source:            model.LinkSourceLink,
+		DomainID:          input.DomainID,
 	}
-
-	if input.Title != "" {
-		link.Title = &input.Title
+	if title != "" {
+		link.Title = &title
 	}
-
 	if input.ExpiresAt != nil {
 		link.ExpiresAt = model.NullTime{NullTime: sql.NullTime{Time: *input.ExpiresAt, Valid: true}}
 	}
@@ -123,7 +319,42 @@ func (s *LinkServiceImpl) Create(ctx context.Context, userID uint64, input Creat
 		return nil, err
 	}
 
+	if err := s.saveExtras(ctx, link.ID, repository.NormalizeTags(input.Tags), rules); err != nil {
+		logger.Error(ctx, "link-service: failed to save tags/routing rules; removing link",
+			zap.Uint64("link_id", link.ID),
+			zap.Error(err),
+		)
+		if delErr := s.linkRepo.Delete(detached(ctx), link.ID); delErr != nil {
+			logger.Error(ctx, "link-service: failed to remove partially created link",
+				zap.Uint64("link_id", link.ID),
+				zap.Error(delErr),
+			)
+		}
+		return nil, err
+	}
+
+	s.activity.Log(detached(ctx), userID, link.GroupID, ActionLinkCreate, EntityLink, link.ID,
+		map[string]any{"short_code": link.ShortCode})
 	return link, nil
+}
+
+// saveExtras stores tags and routing rules of a freshly created link.
+func (s *LinkServiceImpl) saveExtras(ctx context.Context, linkID uint64, tags []string, rules []model.RoutingRule) error {
+	if len(tags) > 0 {
+		if err := s.tagRepo.SetLinkTags(ctx, linkID, tags); err != nil {
+			return err
+		}
+	}
+	if len(rules) > 0 {
+		for i := range rules {
+			rules[i].ID = 0
+			rules[i].LinkID = linkID
+		}
+		if err := s.ruleRepo.ReplaceForLink(ctx, linkID, rules); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *LinkServiceImpl) GetByID(ctx context.Context, userID, linkID uint64) (*model.Link, error) {
@@ -147,47 +378,113 @@ func (s *LinkServiceImpl) GetByID(ctx context.Context, userID, linkID uint64) (*
 	return link, nil
 }
 
-func (s *LinkServiceImpl) List(ctx context.Context, userID uint64, params ListLinksParams) (*ListLinksResult, error) {
-	if params.Limit <= 0 {
-		params.Limit = 20
-	} else if params.Limit > maxPageSize {
-		params.Limit = maxPageSize
+// GetDetails returns the link with tags, total clicks, routing rules and its
+// back-half history.
+func (s *LinkServiceImpl) GetDetails(ctx context.Context, userID, linkID uint64) (*LinkDetails, error) {
+	link, err := s.GetByID(ctx, userID, linkID)
+	if err != nil {
+		return nil, err
 	}
-	if params.Page <= 0 {
-		params.Page = 1
+	d := &LinkDetails{Link: *link, History: []model.Link{}}
+
+	if d.Tags, err = s.tagRepo.GetLinkTags(ctx, link.ID); err != nil {
+		return nil, err
+	}
+	if d.Tags == nil {
+		d.Tags = []string{}
+	}
+	if d.RoutingRules, err = s.ruleRepo.ListByLinkID(ctx, link.ID); err != nil {
+		return nil, err
+	}
+	if d.RoutingRules == nil {
+		d.RoutingRules = []model.RoutingRule{}
+	}
+	if d.TotalClicks, err = s.clickRepo.GetTotalByLinkID(ctx, link.ID); err != nil {
+		return nil, err
 	}
 
-	offset := (params.Page - 1) * params.Limit
+	parent := link.ParentLinkID
+	for i := 0; parent != nil && i < maxHistoryDepth; i++ {
+		p, err := s.linkRepo.GetByID(ctx, *parent)
+		if errors.Is(err, repository.ErrLinkNotFound) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		d.History = append(d.History, *p)
+		parent = p.ParentLinkID
+	}
+	return d, nil
+}
 
-	links, err := s.linkRepo.ListByUserID(ctx, userID, params.Limit, offset)
+func normalizePaging(page, limit int) (int, int) {
+	if limit <= 0 {
+		limit = 20
+	} else if limit > maxPageSize {
+		limit = maxPageSize
+	}
+	if page <= 0 {
+		page = 1
+	}
+	return page, limit
+}
+
+// List pages through the group's links matching params.Filter, with tags.
+func (s *LinkServiceImpl) List(ctx context.Context, groupID uint64, params ListLinksParams) (*ListLinksResult, error) {
+	page, limit := normalizePaging(params.Page, params.Limit)
+	offset := (page - 1) * limit
+
+	links, total, err := s.linkRepo.ListByGroup(ctx, groupID, params.Filter, limit, offset)
 	if err != nil {
 		logger.Error(ctx, "link-service: failed to list links",
-			zap.Uint64("user_id", userID),
+			zap.Uint64("group_id", groupID),
 			zap.Error(err),
 		)
 		return nil, err
 	}
-
-	total, err := s.linkRepo.CountByUserID(ctx, userID)
-	if err != nil {
-		logger.Error(ctx, "link-service: failed to count links",
-			zap.Uint64("user_id", userID),
-			zap.Error(err),
-		)
+	if err := s.attachTags(ctx, links); err != nil {
 		return nil, err
 	}
 
-	totalPages := int(total) / params.Limit
-	if int(total)%params.Limit > 0 {
+	totalPages := int(total) / limit
+	if int(total)%limit > 0 {
 		totalPages++
 	}
 
 	return &ListLinksResult{
 		Links:      links,
 		Total:      total,
-		Page:       params.Page,
+		Page:       page,
 		TotalPages: totalPages,
 	}, nil
+}
+
+// attachTags fills Tags (never nil) on every link.
+func (s *LinkServiceImpl) attachTags(ctx context.Context, links []model.LinkWithStats) error {
+	if len(links) == 0 {
+		return nil
+	}
+	ids := make([]uint64, len(links))
+	for i := range links {
+		ids[i] = links[i].ID
+	}
+	byLink, err := s.tagRepo.GetTagsForLinks(ctx, ids)
+	if err != nil {
+		logger.Error(ctx, "link-service: failed to load tags",
+			zap.Int("links", len(ids)),
+			zap.Error(err),
+		)
+		return err
+	}
+	for i := range links {
+		if tags, ok := byLink[links[i].ID]; ok {
+			links[i].Tags = tags
+		} else {
+			links[i].Tags = []string{}
+		}
+	}
+	return nil
 }
 
 func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, input UpdateLinkInput) (*model.Link, error) {
@@ -196,23 +493,51 @@ func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, inp
 		return nil, err
 	}
 
-	if input.OriginalURL != "" {
-		link.OriginalURL = input.OriginalURL
+	changed := []string{}
+	redirected := false
+	if dest := strings.TrimSpace(input.OriginalURL); dest != "" && dest != link.OriginalURL {
+		if !validDestination(dest) {
+			return nil, ErrInvalidURL
+		}
+		link.OriginalURL = dest
+		link.LongURLHost = hostOf(dest)
+		redirected = true
+		changed = append(changed, "original_url")
 	}
 	if input.Title != "" {
 		link.Title = &input.Title
+		changed = append(changed, "title")
 	}
 	if input.ExpiresAt != nil {
 		link.ExpiresAt = model.NullTime{NullTime: sql.NullTime{Time: *input.ExpiresAt, Valid: true}}
+		changed = append(changed, "expires_at")
 	}
 	if input.IsActive != nil {
 		link.IsActive = *input.IsActive
+		changed = append(changed, "is_active")
 	}
-	if input.DomainID != nil {
+	if input.DomainID != nil && (link.DomainID == nil || *link.DomainID != *input.DomainID) {
+		if err := s.checkDomain(ctx, userID, input.DomainID); err != nil {
+			return nil, err
+		}
+		available, err := s.shortCode.IsAvailable(ctx, input.DomainID, link.ShortCode)
+		if err != nil {
+			return nil, err
+		}
+		if !available {
+			return nil, ErrShortCodeTaken
+		}
 		link.DomainID = input.DomainID
+		changed = append(changed, "domain_id")
 	}
 
 	if err := s.linkRepo.Update(ctx, link); err != nil {
+		if errors.Is(err, repository.ErrLinkNotFound) {
+			return nil, ErrLinkNotFound
+		}
+		if errors.Is(err, repository.ErrShortCodeExists) {
+			return nil, ErrShortCodeTaken
+		}
 		logger.Error(ctx, "link-service: failed to update link",
 			zap.Uint64("link_id", linkID),
 			zap.Uint64("user_id", userID),
@@ -220,23 +545,284 @@ func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, inp
 		)
 		return nil, err
 	}
+	if input.Tags != nil {
+		if err := s.tagRepo.SetLinkTags(ctx, link.ID, repository.NormalizeTags(*input.Tags)); err != nil {
+			return nil, err
+		}
+		changed = append(changed, "tags")
+	}
+	if redirected {
+		if err := s.linkRepo.IncrementRedirectCount(ctx, link.ID); err != nil {
+			logger.Error(ctx, "link-service: failed to increment redirect count",
+				zap.Uint64("link_id", link.ID),
+				zap.Error(err),
+			)
+			return nil, err
+		}
+		link.RedirectCount++
+	}
 
+	s.activity.Log(detached(ctx), userID, link.GroupID, ActionLinkUpdate, EntityLink, link.ID,
+		map[string]any{"short_code": link.ShortCode, "fields": changed})
 	return link, nil
 }
 
-func (s *LinkServiceImpl) Delete(ctx context.Context, userID, linkID uint64) error {
+// SetTags replaces a link's tags and returns the normalized set.
+func (s *LinkServiceImpl) SetTags(ctx context.Context, userID, linkID uint64, tags []string) ([]string, error) {
 	link, err := s.GetByID(ctx, userID, linkID)
+	if err != nil {
+		return nil, err
+	}
+	normalized := repository.NormalizeTags(tags)
+	if err := s.tagRepo.SetLinkTags(ctx, link.ID, normalized); err != nil {
+		return nil, err
+	}
+	s.activity.Log(detached(ctx), userID, link.GroupID, ActionLinkUpdate, EntityLink, link.ID,
+		map[string]any{"short_code": link.ShortCode, "fields": []string{"tags"}})
+	return normalized, nil
+}
+
+// groupLinks loads the distinct ids and fails with ErrLinkNotFound unless
+// every one exists and belongs to groupID.
+func (s *LinkServiceImpl) groupLinks(ctx context.Context, groupID uint64, ids []uint64) ([]uint64, []model.Link, error) {
+	seen := make(map[uint64]bool, len(ids))
+	unique := make([]uint64, 0, len(ids))
+	for _, id := range ids {
+		if !seen[id] {
+			seen[id] = true
+			unique = append(unique, id)
+		}
+	}
+	if len(unique) == 0 {
+		return nil, nil, ErrLinkNotFound
+	}
+	links, err := s.linkRepo.GetByIDs(ctx, unique)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(links) != len(unique) {
+		return nil, nil, ErrLinkNotFound
+	}
+	for _, l := range links {
+		if l.GroupID != groupID {
+			return nil, nil, ErrLinkNotFound
+		}
+	}
+	return unique, links, nil
+}
+
+// SetArchived hides or shows the links (all must belong to groupID) and
+// returns them with the new state.
+func (s *LinkServiceImpl) SetArchived(ctx context.Context, userID, groupID uint64, ids []uint64, archived bool) ([]model.Link, error) {
+	unique, links, err := s.groupLinks(ctx, groupID, ids)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.linkRepo.SetArchived(ctx, unique, archived); err != nil {
+		logger.Error(ctx, "link-service: failed to set archived",
+			zap.Uint64("group_id", groupID),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+	action := ActionLinkUnhide
+	if archived {
+		action = ActionLinkHide
+	}
+	for i := range links {
+		links[i].Archived = archived
+		s.activity.Log(detached(ctx), userID, groupID, action, EntityLink, links[i].ID,
+			map[string]any{"short_code": links[i].ShortCode})
+	}
+	return links, nil
+}
+
+// BulkTags adds and removes tags on links that must all belong to groupID.
+func (s *LinkServiceImpl) BulkTags(ctx context.Context, groupID uint64, ids []uint64, add, remove []string) error {
+	unique, _, err := s.groupLinks(ctx, groupID, ids)
 	if err != nil {
 		return err
 	}
+	if add = repository.NormalizeTags(add); len(add) > 0 {
+		if err := s.tagRepo.AddTagsToLinks(ctx, unique, add); err != nil {
+			return err
+		}
+	}
+	if remove = repository.NormalizeTags(remove); len(remove) > 0 {
+		if err := s.tagRepo.RemoveTagsFromLinks(ctx, unique, remove); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// EditBackHalf creates a new link with backHalf on the domain, copying the
+// old link's destination, title, tags, expiration and routing rules, with
+// ParentLinkID pointing at the old link (which is left untouched).
+// domainID nil keeps the old link's domain; 0 selects the default domain.
+func (s *LinkServiceImpl) EditBackHalf(ctx context.Context, userID, linkID uint64, domainID *uint64, backHalf string) (*model.Link, error) {
+	old, err := s.GetByID(ctx, userID, linkID)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case domainID == nil:
+		domainID = old.DomainID
+	case *domainID == 0:
+		domainID = nil
+	default:
+		if err := s.checkDomain(ctx, userID, domainID); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.claimBackHalf(ctx, domainID, backHalf); err != nil {
+		return nil, err
+	}
+
+	tags, err := s.tagRepo.GetLinkTags(ctx, old.ID)
+	if err != nil {
+		return nil, err
+	}
+	rules, err := s.ruleRepo.ListByLinkID(ctx, old.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	parentID := old.ID
+	link := &model.Link{
+		UserID:            old.UserID,
+		GroupID:           old.GroupID,
+		ShortCode:         backHalf,
+		OriginalURL:       old.OriginalURL,
+		LongURLHost:       old.LongURLHost,
+		Title:             old.Title,
+		ExpiresAt:         old.ExpiresAt,
+		IsActive:          true,
+		HasCustomBackHalf: true,
+		ParentLinkID:      &parentID,
+		Source:            old.Source,
+		DomainID:          domainID,
+	}
+	if link.Source == "" {
+		link.Source = model.LinkSourceLink
+	}
+	if err := s.linkRepo.Create(ctx, link); err != nil {
+		if errors.Is(err, repository.ErrShortCodeExists) {
+			return nil, ErrShortCodeTaken
+		}
+		logger.Error(ctx, "link-service: failed to create back-half link",
+			zap.Uint64("parent_link_id", old.ID),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+	if err := s.saveExtras(ctx, link.ID, tags, rules); err != nil {
+		logger.Error(ctx, "link-service: failed to copy tags/routing rules; removing link",
+			zap.Uint64("link_id", link.ID),
+			zap.Error(err),
+		)
+		if delErr := s.linkRepo.Delete(detached(ctx), link.ID); delErr != nil {
+			logger.Error(ctx, "link-service: failed to remove partially created link",
+				zap.Uint64("link_id", link.ID),
+				zap.Error(delErr),
+			)
+		}
+		return nil, err
+	}
+
+	s.activity.Log(detached(ctx), userID, link.GroupID, ActionLinkBackHalf, EntityLink, link.ID,
+		map[string]any{"short_code": link.ShortCode, "parent_link_id": old.ID, "parent_short_code": old.ShortCode})
+	return link, nil
+}
+
+// Delete removes a deletable link and returns it (for cache invalidation).
+func (s *LinkServiceImpl) Delete(ctx context.Context, userID, linkID uint64) (*model.Link, error) {
+	link, err := s.GetByID(ctx, userID, linkID)
+	if err != nil {
+		return nil, err
+	}
+	if link.RedirectCount > 0 || link.HasCustomBackHalf {
+		return nil, ErrLinkNotDeletable
+	}
 
 	if err := s.linkRepo.Delete(ctx, link.ID); err != nil {
+		if errors.Is(err, repository.ErrLinkNotFound) {
+			return nil, ErrLinkNotFound
+		}
 		logger.Error(ctx, "link-service: failed to delete link",
 			zap.Uint64("link_id", linkID),
 			zap.Uint64("user_id", userID),
 			zap.Error(err),
 		)
-		return err
+		return nil, err
 	}
-	return nil
+	s.activity.Log(detached(ctx), userID, link.GroupID, ActionLinkDelete, EntityLink, link.ID,
+		map[string]any{"short_code": link.ShortCode})
+	return link, nil
+}
+
+// ShortURL builds a link's public short URL: the custom domain (with the
+// base URL's scheme) when domainName is set, otherwise baseURL.
+func ShortURL(baseURL string, link *model.Link, domainName string) string {
+	baseURL = strings.TrimRight(baseURL, "/")
+	if link.DomainID != nil && domainName != "" {
+		scheme := "https"
+		if u, err := url.Parse(baseURL); err == nil && u.Scheme != "" {
+			scheme = u.Scheme
+		}
+		return scheme + "://" + domainName + "/" + link.ShortCode
+	}
+	return baseURL + "/" + link.ShortCode
+}
+
+// Export returns one CSV row per link matching f (columns per
+// LinkExportHeader, header not included), newest first by default.
+func (s *LinkServiceImpl) Export(ctx context.Context, groupID uint64, f repository.LinkFilter) ([][]string, error) {
+	rows := [][]string{}
+	domains := map[uint64]string{}
+	for offset := 0; offset < maxExportRows; offset += exportPageSize {
+		links, _, err := s.linkRepo.ListByGroup(ctx, groupID, f, exportPageSize, offset)
+		if err != nil {
+			logger.Error(ctx, "link-service: failed to export links",
+				zap.Uint64("group_id", groupID),
+				zap.Error(err),
+			)
+			return nil, err
+		}
+		for i := range links {
+			l := &links[i]
+			domainName := ""
+			if l.DomainID != nil {
+				name, ok := domains[*l.DomainID]
+				if !ok {
+					if d, err := s.domainRepo.GetByID(ctx, *l.DomainID); err == nil {
+						name = d.Domain
+					}
+					domains[*l.DomainID] = name
+				}
+				domainName = name
+			}
+			short := ShortURL(s.baseURL, &l.Link, domainName)
+			custom := ""
+			if l.HasCustomBackHalf {
+				custom = short
+			}
+			title := ""
+			if l.Title != nil {
+				title = *l.Title
+			}
+			status := "active"
+			if l.Archived {
+				status = "hidden"
+			}
+			rows = append(rows, []string{
+				short, custom, l.CreatedAt.UTC().Format(time.RFC3339), title, l.OriginalURL,
+				strconv.FormatInt(l.TotalClicks, 10), status,
+			})
+		}
+		if len(links) < exportPageSize {
+			break
+		}
+	}
+	return rows, nil
 }
