@@ -200,44 +200,40 @@ export function DesignTab({ page, onDesignChange }: DesignTabProps) {
   const [profileErrors, setProfileErrors] = useState<{ title?: string; bio?: string; avatar?: string }>({})
 
   // Latest values for the unmount flush.
-  const latest = useRef({ update, pageId: page.id, onDesignChange })
+  const latest = useRef({ update, pageId: page.id, onDesignChange, serverDesign: page.design })
   useEffect(() => {
-    latest.current = { update, pageId: page.id, onDesignChange }
+    latest.current = { update, pageId: page.id, onDesignChange, serverDesign: page.design }
   })
 
-  function save(next: PageDesign) {
+  /**
+   * Sends one design save. Failure handling hangs off the `mutateAsync` promise, not
+   * per-`mutate` callbacks: TanStack skips those once this tab has unmounted (the
+   * unmount flush below), but the promise still settles, and `onDesignChange` is the
+   * editor page's setter, which outlives the tab — so a failed save always toasts and
+   * drops the preview override.
+   */
+  function send(next: PageDesign, revertLocal: boolean) {
     pending.current = null
     const seq = ++saveSeq.current
-    update.mutate(
-      { id: page.id, patch: { design: next } },
-      {
-        onError: (err) => {
-          if (seq !== saveSeq.current) return
-          toast.error(err instanceof Error ? err.message : "Couldn't save the design")
-          setDesign(page.design)
-          setTexts(hexTexts(page.design))
-          onDesignChange?.(null)
-        },
-      },
-    )
+    const { update: u, pageId, onDesignChange: notify, serverDesign } = latest.current
+    u.mutateAsync({ id: pageId, patch: { design: next } }).catch((err: unknown) => {
+      if (seq !== saveSeq.current) return
+      toast.error(err instanceof Error ? err.message : "Couldn't save the design")
+      notify?.(null)
+      if (revertLocal) {
+        setDesign(serverDesign)
+        setTexts(hexTexts(serverDesign))
+      }
+    })
   }
+
+  const save = (next: PageDesign) => send(next, true)
 
   // Leaving the tab with an edit still waiting: save it now rather than drop it.
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current)
-      const next = pending.current
-      if (!next) return
-      const { update: u, pageId, onDesignChange: notify } = latest.current
-      u.mutate(
-        { id: pageId, patch: { design: next } },
-        {
-          onError: (err) => {
-            toast.error(err instanceof Error ? err.message : "Couldn't save the design")
-            notify?.(null)
-          },
-        },
-      )
+      if (pending.current) send(pending.current, false)
     },
     [],
   )
@@ -272,15 +268,10 @@ export function DesignTab({ page, onDesignChange }: DesignTabProps) {
   }
 
   function saveProfile(patch: { title?: string; description?: string; avatar_url?: string }, revert: () => void) {
-    update.mutate(
-      { id: page.id, patch },
-      {
-        onError: (err) => {
-          toast.error(err instanceof Error ? err.message : "Couldn't save the profile")
-          revert()
-        },
-      },
-    )
+    update.mutateAsync({ id: page.id, patch }).catch((err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Couldn't save the profile")
+      revert()
+    })
   }
 
   function blurTitle() {

@@ -1,16 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useState } from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import type { Page } from '@/types'
+import type { Page, PageDesign } from '@/types'
 import { DESIGN_PRESETS } from './designPresets'
 import { DesignTab } from './DesignTab'
 
-const update = { mutate: vi.fn(), isPending: false }
+const update = { mutateAsync: vi.fn(), isPending: false }
 const upload = { mutateAsync: vi.fn(), isPending: false }
 vi.mock('@/lib/hooks', () => ({
   usePageMutations: () => ({ update }),
   useUploadImage: () => upload,
 }))
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+const toastError = vi.fn()
+vi.mock('sonner', () => ({ toast: { error: (m: string) => toastError(m), success: vi.fn() } }))
 
 const page: Page = {
   id: 3,
@@ -34,7 +36,9 @@ const page: Page = {
 describe('DesignTab', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    update.mutate.mockReset()
+    update.mutateAsync.mockReset()
+    update.mutateAsync.mockResolvedValue(page)
+    toastError.mockReset()
     upload.mutateAsync.mockReset()
   })
   afterEach(() => vi.useRealTimers())
@@ -43,8 +47,8 @@ describe('DesignTab', () => {
     const onDesignChange = vi.fn()
     render(<DesignTab page={page} onDesignChange={onDesignChange} />)
     fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
-    expect(update.mutate).toHaveBeenCalledTimes(1)
-    expect(update.mutate.mock.calls[0][0]).toEqual({ id: 3, patch: { design: DESIGN_PRESETS.bold } })
+    expect(update.mutateAsync).toHaveBeenCalledTimes(1)
+    expect(update.mutateAsync.mock.calls[0][0]).toEqual({ id: 3, patch: { design: DESIGN_PRESETS.bold } })
     expect(onDesignChange).toHaveBeenCalledWith(DESIGN_PRESETS.bold)
     expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'true')
   })
@@ -56,7 +60,7 @@ describe('DesignTab', () => {
     act(() => {
       vi.advanceTimersByTime(1000)
     })
-    expect(update.mutate).not.toHaveBeenCalled()
+    expect(update.mutateAsync).not.toHaveBeenCalled()
   })
 
   it('debounces a valid colour edit and sends the full design', () => {
@@ -70,12 +74,12 @@ describe('DesignTab', () => {
     act(() => {
       vi.advanceTimersByTime(399)
     })
-    expect(update.mutate).not.toHaveBeenCalled()
+    expect(update.mutateAsync).not.toHaveBeenCalled()
     act(() => {
       vi.advanceTimersByTime(1)
     })
-    expect(update.mutate).toHaveBeenCalledTimes(1)
-    expect(update.mutate.mock.calls[0][0]).toEqual({ id: 3, patch: { design: expected } })
+    expect(update.mutateAsync).toHaveBeenCalledTimes(1)
+    expect(update.mutateAsync.mock.calls[0][0]).toEqual({ id: 3, patch: { design: expected } })
   })
 
   it('switches the button style and font', () => {
@@ -85,8 +89,8 @@ describe('DesignTab', () => {
     act(() => {
       vi.advanceTimersByTime(400)
     })
-    expect(update.mutate).toHaveBeenCalledTimes(1)
-    expect(update.mutate.mock.calls[0][0].patch.design).toEqual({
+    expect(update.mutateAsync).toHaveBeenCalledTimes(1)
+    expect(update.mutateAsync.mock.calls[0][0].patch.design).toEqual({
       ...DESIGN_PRESETS.classic,
       button: { ...DESIGN_PRESETS.classic.button, style: 'outline' },
       font: 'mono',
@@ -98,12 +102,64 @@ describe('DesignTab', () => {
     const name = screen.getByLabelText('Display name')
     fireEvent.change(name, { target: { value: 'José' } })
     fireEvent.blur(name)
-    expect(update.mutate.mock.calls[0][0]).toEqual({ id: 3, patch: { title: 'José' } })
+    expect(update.mutateAsync.mock.calls[0][0]).toEqual({ id: 3, patch: { title: 'José' } })
     const bio = screen.getByLabelText('Bio')
     fireEvent.blur(bio)
-    expect(update.mutate).toHaveBeenCalledTimes(1)
+    expect(update.mutateAsync).toHaveBeenCalledTimes(1)
     fireEvent.change(bio, { target: { value: 'New bio' } })
     fireEvent.blur(bio)
-    expect(update.mutate.mock.calls[1][0]).toEqual({ id: 3, patch: { description: 'New bio' } })
+    expect(update.mutateAsync.mock.calls[1][0]).toEqual({ id: 3, patch: { description: 'New bio' } })
+  })
+
+  it('a pending edit flushed on unmount that fails clears the override and toasts', async () => {
+    let rejectSave: (e: Error) => void = () => {}
+    update.mutateAsync.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          rejectSave = reject
+        }),
+    )
+    // Mirrors the editor page: it owns the override and outlives the tab.
+    function Editor() {
+      const [override, setOverride] = useState<PageDesign | null>(null)
+      const [tab, setTab] = useState<'design' | 'build'>('design')
+      return (
+        <>
+          <button type="button" onClick={() => setTab('build')}>
+            Build tab
+          </button>
+          <output data-testid="preview">{(override ?? page.design).text_color}</output>
+          {tab === 'design' && <DesignTab page={page} onDesignChange={setOverride} />}
+        </>
+      )
+    }
+    render(<Editor />)
+    fireEvent.change(screen.getByLabelText('Text colour'), { target: { value: '#111111' } })
+    expect(screen.getByTestId('preview')).toHaveTextContent('#111111')
+    fireEvent.click(screen.getByRole('button', { name: 'Build tab' }))
+    expect(screen.queryByLabelText('Text colour')).not.toBeInTheDocument()
+    expect(update.mutateAsync).toHaveBeenCalledTimes(1)
+    expect(update.mutateAsync.mock.calls[0][0]).toEqual({
+      id: 3,
+      patch: { design: { ...DESIGN_PRESETS.classic, text_color: '#111111' } },
+    })
+    await act(async () => {
+      rejectSave(new Error('Server said no'))
+    })
+    expect(toastError).toHaveBeenCalledWith('Server said no')
+    expect(screen.getByTestId('preview')).toHaveTextContent(DESIGN_PRESETS.classic.text_color)
+  })
+
+  it('a failed debounced save while mounted reverts the draft and clears the override', async () => {
+    update.mutateAsync.mockRejectedValue(new Error('nope'))
+    const onDesignChange = vi.fn()
+    render(<DesignTab page={page} onDesignChange={onDesignChange} />)
+    fireEvent.change(screen.getByLabelText('Text colour'), { target: { value: '#111111' } })
+    await act(async () => {
+      vi.advanceTimersByTime(400)
+    })
+    expect(toastError).toHaveBeenCalledWith('nope')
+    expect(onDesignChange).toHaveBeenLastCalledWith(null)
+    expect(screen.getByLabelText('Text colour')).toHaveValue(DESIGN_PRESETS.classic.text_color)
   })
 })
