@@ -648,19 +648,29 @@ func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, inp
 		link.IsActive = *input.IsActive
 		changed = append(changed, "is_active")
 	}
-	if input.DomainID != nil && (link.DomainID == nil || *link.DomainID != *input.DomainID) {
-		if err := s.checkDomain(ctx, userID, link.GroupID, input.DomainID); err != nil {
-			return nil, nil, err
+	if input.DomainID != nil {
+		// 0 selects the default domain (stored as NULL); it needs no
+		// checkDomain because every group may use the default domain.
+		target := input.DomainID
+		if *target == 0 {
+			target = nil
 		}
-		available, err := s.shortCode.IsAvailable(ctx, input.DomainID, link.ShortCode)
-		if err != nil {
-			return nil, nil, err
+		if !sameDomain(link.DomainID, target) {
+			if target != nil {
+				if err := s.checkDomain(ctx, userID, link.GroupID, target); err != nil {
+					return nil, nil, err
+				}
+			}
+			available, err := s.shortCode.IsAvailable(ctx, target, link.ShortCode)
+			if err != nil {
+				return nil, nil, err
+			}
+			if !available {
+				return nil, nil, ErrShortCodeTaken
+			}
+			link.DomainID = target
+			changed = append(changed, "domain_id")
 		}
-		if !available {
-			return nil, nil, ErrShortCodeTaken
-		}
-		link.DomainID = input.DomainID
-		changed = append(changed, "domain_id")
 	}
 
 	if err := s.linkRepo.Update(ctx, link); err != nil {
@@ -697,6 +707,14 @@ func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, inp
 	s.activity.Log(detached(ctx), userID, link.GroupID, ActionLinkUpdate, EntityLink, link.ID,
 		map[string]any{"short_code": link.ShortCode, "fields": changed})
 	return link, &prev, nil
+}
+
+// sameDomain reports whether two domain ids (nil = default domain) are equal.
+func sameDomain(a, b *uint64) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }
 
 // SetTags replaces a link's tags and returns the normalized set.

@@ -20,6 +20,8 @@ func SetupTestDB(t *testing.T) *sqlx.DB {
 
 	// Clean tables before each test, children before parents (FK order).
 	for _, table := range []string{
+		"qr_tags",
+		"qr_codes",
 		"clicks",
 		"link_tags",
 		"dynamic_routing_rules",

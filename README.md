@@ -64,6 +64,14 @@ Every configuration key is documented in `backend/config.example.yaml`.
   (`VARCHAR(255)`, `utf8mb4_bin`). MariaDB does this with a table-copy
   `ALTER`, so large `links` tables are briefly locked. **Short codes become
   case-sensitive** (`AbC` and `abc` are different links).
+- `004_links_domain_key.sql` fails with MariaDB error 1062
+  (`Duplicate entry ... for key 'uq_links_domain_key_code'`) when the
+  database already holds two default-domain links with the same short code.
+  Find them with
+  `SELECT short_code, COUNT(*) FROM links WHERE domain_id IS NULL GROUP BY short_code HAVING COUNT(*) > 1;`,
+  delete or re-code the duplicates, then restart the backend (the runner
+  re-applies the pending file).
+- `005_qr_codes.sql` creates the `qr_codes` and `qr_tags` tables in place.
 - With Docker, MariaDB only loads `001_init.sql` on first boot; later
   migrations always come from the backend image (`/app/migrations`).
 

@@ -636,3 +636,37 @@ func TestLinkService_Update_UnchangedExpirationNotRevalidated(t *testing.T) {
 	_, _, err := f.svc.Update(context.Background(), 1, 10, service.UpdateLinkInput{Title: &title, ExpiresAt: &past})
 	require.NoError(t, err)
 }
+
+func TestLinkService_Update_DomainZeroMovesToDefault(t *testing.T) {
+	f := newLinkSvc(t)
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(&model.Link{ID: 3, UserID: 1, GroupID: 7, ShortCode: "abc", OriginalURL: "https://e.com", DomainID: u64(7)}, nil)
+	f.codes.EXPECT().IsAvailable(gomock.Any(), (*uint64)(nil), "abc").Return(true, nil)
+	f.links.EXPECT().Update(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, l *model.Link) error {
+		assert.Nil(t, l.DomainID)
+		return nil
+	})
+	f.activity.EXPECT().Log(gomock.Any(), gomock.Any(), gomock.Any(), service.ActionLinkUpdate, gomock.Any(), gomock.Any(), gomock.Any())
+	link, prev, err := f.svc.Update(context.Background(), 1, 3, service.UpdateLinkInput{DomainID: u64(0)})
+	require.NoError(t, err)
+	assert.Nil(t, link.DomainID)
+	require.NotNil(t, prev.DomainID)
+	assert.Equal(t, uint64(7), *prev.DomainID)
+}
+
+func TestLinkService_Update_DomainZeroTaken(t *testing.T) {
+	f := newLinkSvc(t)
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(&model.Link{ID: 3, UserID: 1, GroupID: 7, ShortCode: "abc", OriginalURL: "https://e.com", DomainID: u64(7)}, nil)
+	f.codes.EXPECT().IsAvailable(gomock.Any(), (*uint64)(nil), "abc").Return(false, nil)
+	_, _, err := f.svc.Update(context.Background(), 1, 3, service.UpdateLinkInput{DomainID: u64(0)})
+	assert.ErrorIs(t, err, service.ErrShortCodeTaken)
+}
+
+func TestLinkService_Update_DomainZeroWhenAlreadyDefault(t *testing.T) {
+	f := newLinkSvc(t)
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(&model.Link{ID: 3, UserID: 1, GroupID: 7, ShortCode: "abc", OriginalURL: "https://e.com"}, nil)
+	f.links.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil)
+	f.activity.EXPECT().Log(gomock.Any(), gomock.Any(), gomock.Any(), service.ActionLinkUpdate, gomock.Any(), gomock.Any(), gomock.Any())
+	link, _, err := f.svc.Update(context.Background(), 1, 3, service.UpdateLinkInput{DomainID: u64(0)})
+	require.NoError(t, err)
+	assert.Nil(t, link.DomainID)
+}

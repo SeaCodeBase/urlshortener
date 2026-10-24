@@ -207,3 +207,74 @@ func TestMigration004_DomainKeyUnique(t *testing.T) {
 		t.Error("idx_domain_short_code should have been dropped")
 	}
 }
+
+// TestMigration005_QRTables assumes 005_qr_codes.sql has been applied. It
+// re-runs the idempotent file, checks that qr_tags accepts a row for an
+// existing QR code and that deleting the owned link cascades to qr_codes and
+// qr_tags.
+func TestMigration005_QRTables(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	raw, err := os.ReadFile("../../migrations/005_qr_codes.sql")
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	for _, stmt := range database.SplitStatements(string(raw)) {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("re-run %q: %v", stmt, err)
+		}
+	}
+
+	res, err := db.ExecContext(ctx, "INSERT INTO users (email, password_hash) VALUES ('mig005@example.com', 'x')")
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	userID, _ := res.LastInsertId()
+	res, err = db.ExecContext(ctx, "INSERT INTO `groups` (user_id, name) VALUES (?, 'g')", userID)
+	if err != nil {
+		t.Fatalf("insert group: %v", err)
+	}
+	groupID, _ := res.LastInsertId()
+	res, err = db.ExecContext(ctx,
+		"INSERT INTO links (user_id, group_id, short_code, original_url, source) VALUES (?, ?, 'qr005', 'https://example.com', 'qr')",
+		userID, groupID)
+	if err != nil {
+		t.Fatalf("insert link: %v", err)
+	}
+	linkID, _ := res.LastInsertId()
+	res, err = db.ExecContext(ctx,
+		"INSERT INTO qr_codes (user_id, group_id, link_id, render_customizations) VALUES (?, ?, ?, '{}')",
+		userID, groupID, linkID)
+	if err != nil {
+		t.Fatalf("insert qr code: %v", err)
+	}
+	qrID, _ := res.LastInsertId()
+
+	if _, err := db.ExecContext(ctx, "INSERT INTO qr_tags (qr_code_id, tag) VALUES (?, 'promo')", qrID); err != nil {
+		t.Fatalf("insert qr tag: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO qr_codes (user_id, group_id, link_id, render_customizations) VALUES (?, ?, ?, '{}')",
+		userID, groupID, linkID); err == nil {
+		t.Error("second QR code for the same link was accepted")
+	}
+
+	if _, err := db.ExecContext(ctx, "DELETE FROM links WHERE id = ?", linkID); err != nil {
+		t.Fatalf("delete link: %v", err)
+	}
+	var qrCount, tagCount int
+	if err := db.GetContext(ctx, &qrCount, "SELECT COUNT(*) FROM qr_codes"); err != nil {
+		t.Fatalf("count qr codes: %v", err)
+	}
+	if qrCount != 0 {
+		t.Errorf("qr_codes rows after link delete = %d, want 0", qrCount)
+	}
+	if err := db.GetContext(ctx, &tagCount, "SELECT COUNT(*) FROM qr_tags"); err != nil {
+		t.Fatalf("count qr tags: %v", err)
+	}
+	if tagCount != 0 {
+		t.Errorf("qr_tags rows after link delete = %d, want 0", tagCount)
+	}
+}
