@@ -119,11 +119,14 @@ type CreateLinkInput struct {
 }
 
 type UpdateLinkInput struct {
-	OriginalURL string     `json:"original_url,omitempty"`
-	Title       string     `json:"title,omitempty"`
-	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
-	IsActive    *bool      `json:"is_active,omitempty"`
-	DomainID    *uint64    `json:"domain_id,omitempty"`
+	OriginalURL string `json:"original_url,omitempty"`
+	// Title nil keeps the title; "" clears it.
+	Title     *string    `json:"title,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// ClearExpiration removes the expiration (takes precedence over ExpiresAt).
+	ClearExpiration bool    `json:"clear_expiration,omitempty"`
+	IsActive        *bool   `json:"is_active,omitempty"`
+	DomainID        *uint64 `json:"domain_id,omitempty"`
 	// Tags replaces the link's tags when non-nil.
 	Tags *[]string `json:"tags,omitempty"`
 }
@@ -219,6 +222,9 @@ func (s *LinkServiceImpl) checkDomain(ctx context.Context, userID uint64, domain
 	}
 	if d.UserID != userID {
 		return ErrDomainNotFound
+	}
+	if d.VerificationStatus != model.DomainVerificationOK {
+		return ErrDomainNotVerified
 	}
 	return nil
 }
@@ -487,28 +493,38 @@ func (s *LinkServiceImpl) attachTags(ctx context.Context, links []model.LinkWith
 	return nil
 }
 
-func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, input UpdateLinkInput) (*model.Link, error) {
+// Update edits the link in place and returns it together with a snapshot of
+// the link before the update (so callers can invalidate the old cache keys).
+func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, input UpdateLinkInput) (*model.Link, *model.Link, error) {
 	link, err := s.GetByID(ctx, userID, linkID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	prev := *link
 
 	changed := []string{}
 	redirected := false
 	if dest := strings.TrimSpace(input.OriginalURL); dest != "" && dest != link.OriginalURL {
 		if !validDestination(dest) {
-			return nil, ErrInvalidURL
+			return nil, nil, ErrInvalidURL
 		}
 		link.OriginalURL = dest
 		link.LongURLHost = hostOf(dest)
 		redirected = true
 		changed = append(changed, "original_url")
 	}
-	if input.Title != "" {
-		link.Title = &input.Title
+	if input.Title != nil {
+		if title := strings.TrimSpace(*input.Title); title == "" {
+			link.Title = nil
+		} else {
+			link.Title = &title
+		}
 		changed = append(changed, "title")
 	}
-	if input.ExpiresAt != nil {
+	if input.ClearExpiration {
+		link.ExpiresAt = model.NullTime{}
+		changed = append(changed, "expires_at")
+	} else if input.ExpiresAt != nil {
 		link.ExpiresAt = model.NullTime{NullTime: sql.NullTime{Time: *input.ExpiresAt, Valid: true}}
 		changed = append(changed, "expires_at")
 	}
@@ -518,14 +534,14 @@ func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, inp
 	}
 	if input.DomainID != nil && (link.DomainID == nil || *link.DomainID != *input.DomainID) {
 		if err := s.checkDomain(ctx, userID, input.DomainID); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		available, err := s.shortCode.IsAvailable(ctx, input.DomainID, link.ShortCode)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if !available {
-			return nil, ErrShortCodeTaken
+			return nil, nil, ErrShortCodeTaken
 		}
 		link.DomainID = input.DomainID
 		changed = append(changed, "domain_id")
@@ -533,21 +549,21 @@ func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, inp
 
 	if err := s.linkRepo.Update(ctx, link); err != nil {
 		if errors.Is(err, repository.ErrLinkNotFound) {
-			return nil, ErrLinkNotFound
+			return nil, nil, ErrLinkNotFound
 		}
 		if errors.Is(err, repository.ErrShortCodeExists) {
-			return nil, ErrShortCodeTaken
+			return nil, nil, ErrShortCodeTaken
 		}
 		logger.Error(ctx, "link-service: failed to update link",
 			zap.Uint64("link_id", linkID),
 			zap.Uint64("user_id", userID),
 			zap.Error(err),
 		)
-		return nil, err
+		return nil, nil, err
 	}
 	if input.Tags != nil {
 		if err := s.tagRepo.SetLinkTags(ctx, link.ID, repository.NormalizeTags(*input.Tags)); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		changed = append(changed, "tags")
 	}
@@ -557,14 +573,14 @@ func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, inp
 				zap.Uint64("link_id", link.ID),
 				zap.Error(err),
 			)
-			return nil, err
+			return nil, nil, err
 		}
 		link.RedirectCount++
 	}
 
 	s.activity.Log(detached(ctx), userID, link.GroupID, ActionLinkUpdate, EntityLink, link.ID,
 		map[string]any{"short_code": link.ShortCode, "fields": changed})
-	return link, nil
+	return link, &prev, nil
 }
 
 // SetTags replaces a link's tags and returns the normalized set.
@@ -816,7 +832,7 @@ func (s *LinkServiceImpl) Export(ctx context.Context, groupID uint64, f reposito
 				status = "hidden"
 			}
 			rows = append(rows, []string{
-				short, custom, l.CreatedAt.UTC().Format(time.RFC3339), title, l.OriginalURL,
+				csvSafe(short), csvSafe(custom), l.CreatedAt.UTC().Format(time.RFC3339), csvSafe(title), csvSafe(l.OriginalURL),
 				strconv.FormatInt(l.TotalClicks, 10), status,
 			})
 		}
@@ -825,4 +841,13 @@ func (s *LinkServiceImpl) Export(ctx context.Context, groupID uint64, f reposito
 		}
 	}
 	return rows, nil
+}
+
+// csvSafe neutralizes spreadsheet formula injection: a cell starting with
+// = + - @ TAB or CR is prefixed with an apostrophe.
+func csvSafe(v string) string {
+	if v != "" && strings.ContainsRune("=+-@\t\r", rune(v[0])) {
+		return "'" + v
+	}
+	return v
 }

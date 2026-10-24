@@ -131,7 +131,8 @@ func TestLinkService_Create_BackHalfTaken(t *testing.T) {
 
 func TestLinkService_Create_ForeignDomain(t *testing.T) {
 	f := newLinkSvc(t)
-	f.domains.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(&model.Domain{ID: 5, UserID: 2, Domain: "x.test"}, nil)
+	f.domains.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(&model.Domain{ID: 5, UserID: 2, Domain: "x.test",
+		VerificationStatus: model.DomainVerificationOK}, nil)
 	_, err := f.svc.Create(context.Background(), 1, service.CreateLinkInput{
 		OriginalURL: "https://example.com", Title: "x", GroupID: 7, DomainID: u64(5),
 	})
@@ -285,8 +286,9 @@ func TestLinkService_Update_DestinationIncrementsRedirect(t *testing.T) {
 	f.links.EXPECT().IncrementRedirectCount(gomock.Any(), uint64(3)).Return(nil)
 	f.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionLinkUpdate, service.EntityLink, uint64(3), gomock.Any())
 
-	link, err := f.svc.Update(context.Background(), 1, 3, service.UpdateLinkInput{OriginalURL: "https://new.example.org/x"})
+	link, prev, err := f.svc.Update(context.Background(), 1, 3, service.UpdateLinkInput{OriginalURL: "https://new.example.org/x"})
 	require.NoError(t, err)
+	assert.Equal(t, "https://old.example.com", prev.OriginalURL)
 	assert.Equal(t, 1, link.RedirectCount)
 }
 
@@ -297,7 +299,8 @@ func TestLinkService_Update_SameDestinationNoRedirect(t *testing.T) {
 	f.tags.EXPECT().SetLinkTags(gomock.Any(), uint64(3), []string{"x"}).Return(nil)
 	f.activity.EXPECT().Log(gomock.Any(), gomock.Any(), gomock.Any(), service.ActionLinkUpdate, gomock.Any(), gomock.Any(), gomock.Any())
 	tags := []string{"x"}
-	link, err := f.svc.Update(context.Background(), 1, 3, service.UpdateLinkInput{OriginalURL: "https://e.com", Title: "T", Tags: &tags})
+	newTitle := "T"
+	link, _, err := f.svc.Update(context.Background(), 1, 3, service.UpdateLinkInput{OriginalURL: "https://e.com", Title: &newTitle, Tags: &tags})
 	require.NoError(t, err)
 	assert.Equal(t, 0, link.RedirectCount)
 	assert.Equal(t, "T", *link.Title)
@@ -374,7 +377,7 @@ func TestLinkService_GetDetails_History(t *testing.T) {
 
 func TestLinkService_Export_Rows(t *testing.T) {
 	f := newLinkSvc(t)
-	title := "Hello"
+	title := `=HYPERLINK("x")`
 	created := time.Date(2026, 10, 2, 3, 4, 5, 0, time.UTC)
 	f.links.EXPECT().ListByGroup(gomock.Any(), uint64(7), repository.LinkFilter{}, gomock.Any(), 0).
 		Return([]model.LinkWithStats{
@@ -387,7 +390,48 @@ func TestLinkService_Export_Rows(t *testing.T) {
 	rows, err := f.svc.Export(context.Background(), 7, repository.LinkFilter{})
 	require.NoError(t, err)
 	assert.Equal(t, [][]string{
-		{"https://sho.rt/abc", "", "2026-10-02T03:04:05Z", "Hello", "https://e.com", "4", "active"},
+		{"https://sho.rt/abc", "", "2026-10-02T03:04:05Z", `'=HYPERLINK("x")`, "https://e.com", "4", "active"},
 		{"https://go.brand.test/brand", "https://go.brand.test/brand", "2026-10-02T03:04:05Z", "", "https://f.com", "0", "hidden"},
 	}, rows)
+}
+
+func TestLinkService_Create_UnverifiedDomainRejected(t *testing.T) {
+	f := newLinkSvc(t)
+	f.domains.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(&model.Domain{ID: 5, UserID: 1, Domain: "x.test",
+		VerificationStatus: model.DomainVerificationPending}, nil)
+	_, err := f.svc.Create(context.Background(), 1, service.CreateLinkInput{
+		OriginalURL: "https://example.com", Title: "x", GroupID: 7, DomainID: u64(5),
+	})
+	assert.ErrorIs(t, err, service.ErrDomainNotVerified)
+}
+
+func TestLinkService_Update_ClearsExpiration(t *testing.T) {
+	f := newLinkSvc(t)
+	exp := model.NullTime{}
+	exp.Time, exp.Valid = time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC), true
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(&model.Link{ID: 3, UserID: 1, GroupID: 7, OriginalURL: "https://e.com", ExpiresAt: exp}, nil)
+	f.links.EXPECT().Update(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, l *model.Link) error {
+		assert.False(t, l.ExpiresAt.Valid)
+		return nil
+	})
+	f.activity.EXPECT().Log(gomock.Any(), gomock.Any(), gomock.Any(), service.ActionLinkUpdate, gomock.Any(), gomock.Any(), gomock.Any())
+	link, prev, err := f.svc.Update(context.Background(), 1, 3, service.UpdateLinkInput{ClearExpiration: true})
+	require.NoError(t, err)
+	assert.False(t, link.ExpiresAt.Valid)
+	assert.True(t, prev.ExpiresAt.Valid)
+}
+
+func TestLinkService_Update_ClearsTitle(t *testing.T) {
+	f := newLinkSvc(t)
+	title := "Old"
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(&model.Link{ID: 3, UserID: 1, GroupID: 7, OriginalURL: "https://e.com", Title: &title}, nil)
+	f.links.EXPECT().Update(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, l *model.Link) error {
+		assert.Nil(t, l.Title)
+		return nil
+	})
+	f.activity.EXPECT().Log(gomock.Any(), gomock.Any(), gomock.Any(), service.ActionLinkUpdate, gomock.Any(), gomock.Any(), gomock.Any())
+	empty := ""
+	link, _, err := f.svc.Update(context.Background(), 1, 3, service.UpdateLinkInput{Title: &empty})
+	require.NoError(t, err)
+	assert.Nil(t, link.Title)
 }

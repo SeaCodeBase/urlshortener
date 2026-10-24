@@ -224,6 +224,8 @@ func writeServiceError(c *gin.Context, op string, err error) bool {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "each routing rule needs a valid http(s) destination URL"})
 	case errors.Is(err, service.ErrDomainNotFound):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "domain not found"})
+	case errors.Is(err, service.ErrDomainNotVerified):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "domain is not verified"})
 	case errors.Is(err, service.ErrGroupRequired):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no active group"})
 	default:
@@ -453,13 +455,17 @@ func (h *LinkHandler) Update(c *gin.Context) {
 		return
 	}
 
-	link, err := h.linkService.Update(ctx, userID, linkID, input)
+	link, prev, err := h.linkService.Update(ctx, userID, linkID, input)
 	if writeServiceError(c, "update-link", err) {
 		return
 	}
 
 	domainMap := h.loadDomainMap(ctx, userID)
 	h.invalidate(ctx, domainMap, link)
+	// A domain change leaves the old custom-domain key behind.
+	if prev != nil && prev.DomainID != nil && (link.DomainID == nil || *link.DomainID != *prev.DomainID) {
+		h.invalidate(ctx, domainMap, prev)
+	}
 	h.respondDetails(c, http.StatusOK, userID, link, domainMap)
 }
 

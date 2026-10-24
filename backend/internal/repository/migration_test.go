@@ -129,3 +129,20 @@ func TestMigration002_DomainDefaults(t *testing.T) {
 		t.Errorf("new domain verification_status = %q, want pending", status)
 	}
 }
+
+func TestMigration003_ShortCodeCaseSensitive(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	var col struct {
+		ColumnType string `db:"COLUMN_TYPE"`
+		Collation  string `db:"COLLATION_NAME"`
+	}
+	err := db.Get(&col, `SELECT COLUMN_TYPE, COLLATION_NAME FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'links' AND COLUMN_NAME = 'short_code'`)
+	if err != nil {
+		t.Fatalf("query column: %v", err)
+	}
+	if col.ColumnType != "varchar(255)" || col.Collation != "utf8mb4_bin" {
+		t.Fatalf("short_code: got %s %s, want varchar(255) utf8mb4_bin", col.ColumnType, col.Collation)
+	}
+}

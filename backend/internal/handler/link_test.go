@@ -280,7 +280,8 @@ func TestLinkHandler_EditBackHalf_Taken409(t *testing.T) {
 func TestLinkHandler_Update_InvalidatesCache(t *testing.T) {
 	lr := newLinkRouter(t, true)
 	lr.expectDomains()
-	lr.svc.EXPECT().Update(gomock.Any(), uint64(1), uint64(3), gomock.Any()).Return(&model.Link{ID: 3, ShortCode: "abc"}, nil)
+	lr.svc.EXPECT().Update(gomock.Any(), uint64(1), uint64(3), gomock.Any()).
+		Return(&model.Link{ID: 3, ShortCode: "abc"}, &model.Link{ID: 3, ShortCode: "abc"}, nil)
 	lr.svc.EXPECT().GetDetails(gomock.Any(), uint64(1), uint64(3)).Return(&service.LinkDetails{
 		Link: model.Link{ID: 3, ShortCode: "abc", RedirectCount: 1}, Tags: []string{}, RoutingRules: []model.RoutingRule{}, History: []model.Link{},
 	}, nil)
@@ -296,6 +297,51 @@ func TestLinkHandler_SetTags(t *testing.T) {
 	w := doJSON(lr.r, http.MethodPut, "/api/links/3/tags", `{"tags":["a","b"]}`)
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.JSONEq(t, `{"tags":["a","b"]}`, w.Body.String())
+}
+
+func TestLinkHandler_Update_InvalidatesOldDomain(t *testing.T) {
+	lr := newLinkRouter(t, true)
+	lr.expectDomains(&model.Domain{ID: 5, Domain: "old.test"}, &model.Domain{ID: 6, Domain: "new.test"})
+	lr.svc.EXPECT().Update(gomock.Any(), uint64(1), uint64(3), gomock.Any()).
+		Return(&model.Link{ID: 3, ShortCode: "abc", DomainID: u64p(6)}, &model.Link{ID: 3, ShortCode: "abc", DomainID: u64p(5)}, nil)
+	lr.svc.EXPECT().GetDetails(gomock.Any(), uint64(1), uint64(3)).Return(&service.LinkDetails{
+		Link: model.Link{ID: 3, ShortCode: "abc", DomainID: u64p(6)}, Tags: []string{}, RoutingRules: []model.RoutingRule{}, History: []model.Link{},
+	}, nil)
+	w := doJSON(lr.r, http.MethodPut, "/api/links/3", `{"domain_id":6}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.ElementsMatch(t, []string{"new.test/abc", "old.test/abc"}, lr.inv.calls)
+}
+
+func TestLinkHandler_Create_UnverifiedDomain400(t *testing.T) {
+	lr := newLinkRouter(t, true)
+	lr.svc.EXPECT().Create(gomock.Any(), uint64(1), gomock.Any()).Return(nil, service.ErrDomainNotVerified)
+	w := doJSON(lr.r, http.MethodPost, "/api/links", `{"original_url":"https://e.com","domain_id":5}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.JSONEq(t, `{"error":"domain is not verified"}`, w.Body.String())
+}
+
+func TestLinkHandler_Export_FormulaTitleEscaped(t *testing.T) {
+	// End-to-end through the real service: a scraped title starting with "="
+	// is exported with a leading apostrophe.
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	links := repomocks.NewMockLinkRepository(ctrl)
+	title := `=HYPERLINK("x")`
+	links.EXPECT().ListByGroup(gomock.Any(), uint64(7), gomock.Any(), gomock.Any(), 0).Return([]model.LinkWithStats{
+		{Link: model.Link{ID: 1, ShortCode: "abc", OriginalURL: "https://e.com", Title: &title, CreatedAt: linkCreated}},
+	}, int64(1), nil)
+	svc := service.NewLinkService(service.LinkServiceDeps{Links: links, BaseURL: "https://sho.rt"})
+	cfg := &config.Config{}
+	cfg.URLs.BaseURL = "https://sho.rt"
+	h := NewLinkHandler(svc, &fakeInvalidator{}, repomocks.NewMockDomainRepository(ctrl), cfg)
+	r := gin.New()
+	r.GET("/api/links/export", withGroup, h.Export)
+
+	w := doJSON(r, http.MethodGet, "/api/links/export", "")
+	require.Equal(t, http.StatusOK, w.Code)
+	lines := strings.Split(strings.TrimRight(w.Body.String(), "\n"), "\n")
+	require.Len(t, lines, 2)
+	assert.Equal(t, `https://sho.rt/abc,,2026-10-24T12:00:00Z,"'=HYPERLINK(""x"")",https://e.com,0,active`, lines[1])
 }
 
 func u64p(v uint64) *uint64 { return &v }

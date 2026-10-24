@@ -56,8 +56,8 @@ type LinkService interface {
 	// List pages through the group's links matching params.Filter.
 	List(ctx context.Context, groupID uint64, params ListLinksParams) (*ListLinksResult, error)
 	// Update edits the link in place; a destination change increments
-	// redirect_count.
-	Update(ctx context.Context, userID, linkID uint64, input UpdateLinkInput) (*model.Link, error)
+	// redirect_count. It also returns the link as it was before the update.
+	Update(ctx context.Context, userID, linkID uint64, input UpdateLinkInput) (*model.Link, *model.Link, error)
 	// SetTags replaces the link's tags and returns the normalized set.
 	SetTags(ctx context.Context, userID, linkID uint64, tags []string) ([]string, error)
 	// SetArchived hides/shows links; every id must belong to groupID or

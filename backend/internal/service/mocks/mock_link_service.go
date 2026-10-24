@@ -193,12 +193,13 @@ func (mr *MockLinkServiceMockRecorder) SetTags(ctx, userID, linkID, tags any) *g
 }
 
 // Update mocks base method.
-func (m *MockLinkService) Update(ctx context.Context, userID, linkID uint64, input service.UpdateLinkInput) (*model.Link, error) {
+func (m *MockLinkService) Update(ctx context.Context, userID, linkID uint64, input service.UpdateLinkInput) (*model.Link, *model.Link, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Update", ctx, userID, linkID, input)
 	ret0, _ := ret[0].(*model.Link)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(*model.Link)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // Update indicates an expected call of Update.
