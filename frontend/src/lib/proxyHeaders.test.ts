@@ -17,6 +17,11 @@ describe("buildProxyRequestHeaders", () => {
     expect(out.get("X-Group-ID")).toBe("7");
   });
 
+  it("passes a multipart Content-Type (with its boundary) through unchanged", () => {
+    const ct = "multipart/form-data; boundary=----abc123";
+    expect(buildProxyRequestHeaders(new Headers({ "Content-Type": ct })).get("Content-Type")).toBe(ct);
+  });
+
   it("drops headers outside the allowlist", () => {
     const out = buildProxyRequestHeaders(new Headers({ Cookie: "a=b", Host: "evil", "X-Forwarded-For": "1.2.3.4" }));
     expect(out.has("Cookie")).toBe(false);

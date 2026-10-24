@@ -193,4 +193,29 @@ describe("ApiClient", () => {
     expect(spy).not.toHaveBeenCalled();
     useAuthStore.setState({ logout: original });
   });
+  it("uploadImage sends FormData without a Content-Type header", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ url: "/uploads/a.png", name: "a.png", size: 3, content_type: "image/png" }, 201),
+    );
+    const file = new File(["abc"], "logo.png", { type: "image/png" });
+
+    const res = await api.uploadImage(file);
+
+    const { url, init, headers } = lastCall();
+    expect(url).toBe("/api/uploads");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get("file")).toBeInstanceOf(File);
+    expect(headers.has("Content-Type")).toBe(false);
+    expect(headers.get("Authorization")).toBe("Bearer tok-123");
+    expect(res.url).toBe("/uploads/a.png");
+  });
+
+  it("getQrStats passes the stats query", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({}));
+
+    await api.getQrStats(3, { from: "2026-01-01" });
+
+    expect(lastCall().url).toBe("/api/qr-codes/3/stats?from=2026-01-01");
+  });
 });

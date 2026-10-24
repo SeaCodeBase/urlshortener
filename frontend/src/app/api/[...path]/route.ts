@@ -15,9 +15,9 @@ async function proxyRequest(request: NextRequest, params: Promise<{ path: string
     headers,
   }
 
-  // Include body for methods that support it
+  // Include body for methods that support it; raw bytes so multipart uploads survive.
   if (['POST', 'PUT', 'PATCH'].includes(request.method)) {
-    fetchOptions.body = await request.text()
+    fetchOptions.body = await request.arrayBuffer()
   }
 
   const response = await fetch(`${BACKEND_URL}${backendPath}`, fetchOptions)

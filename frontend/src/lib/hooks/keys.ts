@@ -1,4 +1,4 @@
-import type { ActivityParams, LinkListParams, LinkStatsQuery, TagType, TodayRange } from '@/types';
+import type { ActivityParams, LinkListParams, LinkStatsQuery, QrListParams, TagType, TodayRange } from '@/types';
 import { useAuthStore } from '@/stores/auth';
 
 /**
@@ -11,6 +11,9 @@ export const queryKeys = {
   link: (id: number) => ['link', id] as const,
   routingRules: (id: number) => ['link', id, 'routing-rules'] as const,
   linkStats: (id: number, query: LinkStatsQuery) => ['link', id, 'stats', query] as const,
+  qrCodes: (groupId: number | null, params: QrListParams) => ['qr-codes', groupId, params] as const,
+  qrCode: (id: number) => ['qr-code', id] as const,
+  qrStats: (id: number, query: LinkStatsQuery) => ['qr-code', id, 'stats', query] as const,
   tags: (groupId: number | null, type: TagType) => ['tags', groupId, type] as const,
   groups: ['groups'] as const,
   domains: ['domains'] as const,

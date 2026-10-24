@@ -4,6 +4,8 @@ import type {
   AuthResponse,
   BulkLinksInput,
   BulkLinksResponse,
+  BulkQrInput,
+  CreateQrInput,
   CreateDomainInput,
   CreateLinkInput,
   CreateTokenInput,
@@ -21,6 +23,10 @@ import type {
   LinkStatsV2,
   Meta,
   Passkey,
+  QrCode,
+  QrFilters,
+  QrListParams,
+  QrListResponse,
   RoutingRuleInput,
   RoutingRulesResponse,
   SearchResponse,
@@ -34,6 +40,8 @@ import type {
   UpdateGroupInput,
   UpdateLinkInput,
   UpdateMeInput,
+  UpdateQrInput,
+  UploadResponse,
   User,
 } from '@/types';
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
@@ -116,10 +124,13 @@ class ApiClient {
     this.unauthorizedHandler = handler;
   }
 
-  /** Default headers; ones given in `extra` win. */
-  private headers(extra?: HeadersInit): Headers {
+  /**
+   * Default headers; ones given in `extra` win. A FormData body gets no
+   * Content-Type so the browser sets the multipart boundary.
+   */
+  private headers(extra?: HeadersInit, body?: BodyInit | null): Headers {
     const headers = new Headers(extra);
-    if (!headers.has('Content-Type')) {
+    if (!headers.has('Content-Type') && !(body instanceof FormData)) {
       headers.set('Content-Type', 'application/json');
     }
     if (this.token && !headers.has('Authorization')) {
@@ -137,7 +148,7 @@ class ApiClient {
     try {
       response = await fetch(`${API_BASE}${endpoint}`, {
         ...options,
-        headers: this.headers(options.headers),
+        headers: this.headers(options.headers, options.body),
       });
     } catch {
       throw new ApiError('Network error', 0);
@@ -268,6 +279,52 @@ class ApiClient {
 
   async getLinkStats(id: number, query: LinkStatsQuery = {}) {
     return this.request<LinkStatsV2>(`/api/links/${id}/stats${buildQuery(query)}`);
+  }
+
+  // QR codes
+  async getQrCodes(params: QrListParams = {}) {
+    return this.request<QrListResponse>(`/api/qr-codes${buildQuery(params)}`);
+  }
+
+  async createQrCode(data: CreateQrInput) {
+    return this.send<QrCode>('POST', '/api/qr-codes', data);
+  }
+
+  async getQrCode(id: number) {
+    return this.request<QrCode>(`/api/qr-codes/${id}`);
+  }
+
+  async updateQrCode(id: number, data: UpdateQrInput) {
+    return this.send<QrCode>('PUT', `/api/qr-codes/${id}`, data);
+  }
+
+  async deleteQrCode(id: number) {
+    return this.send<void>('DELETE', `/api/qr-codes/${id}`);
+  }
+
+  async bulkQrCodes(data: BulkQrInput) {
+    return this.send<BulkLinksResponse>('PATCH', '/api/qr-codes/bulk', data);
+  }
+
+  async setQrTags(id: number, tags: string[]) {
+    return this.send<TagsResponse>('PUT', `/api/qr-codes/${id}/tags`, { tags });
+  }
+
+  /** The filtered QR codes as a CSV file. */
+  async exportQrCodes(params: QrFilters = {}): Promise<Blob> {
+    const response = await this.fetchOk(`/api/qr-codes/export${buildQuery(params)}`);
+    return response.blob();
+  }
+
+  async getQrStats(id: number, query: LinkStatsQuery = {}) {
+    return this.request<LinkStatsV2>(`/api/qr-codes/${id}/stats${buildQuery(query)}`);
+  }
+
+  /** Uploads an image (multipart field `file`) → 201; 413/400 on bad files. */
+  async uploadImage(file: File) {
+    const body = new FormData();
+    body.append('file', file);
+    return this.request<UploadResponse>('/api/uploads', { method: 'POST', body });
   }
 
   // Group-level analytics, tags, search, activity

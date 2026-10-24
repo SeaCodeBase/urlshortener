@@ -108,6 +108,8 @@ export interface Link {
   routing_rules?: RoutingRule[];
   /** Earlier back-halves of this link; present with routing_rules. */
   history?: LinkHistoryEntry[];
+  /** The QR code attached to this link, if any. */
+  qr_code_id?: number;
 }
 
 export interface LinksListResponse {
@@ -205,6 +207,138 @@ export interface TagsResponse {
 }
 
 export type TagType = "link" | "qr";
+
+// ---------------------------------------------------------------- QR codes
+
+export type QrPattern = "standard" | "rounded" | "circle" | "diamond" | "classy";
+export type QrCorners = "square" | "rounded" | "extra-rounded" | "dot";
+export type QrFrame = "none" | "border" | "text-bottom" | "text-top";
+export type QrErrorCorrection = "L" | "M" | "Q" | "H";
+
+/** A QR code's design, stored as `render_customizations`. */
+export interface QrDesign {
+  pattern: QrPattern;
+  corners: QrCorners;
+  /** #RGB or #RRGGBB. */
+  color: string;
+  background: string;
+  /** Logo image URL (e.g. /uploads/{name}) or null. */
+  logo: string | null;
+  /** Fraction of the code covered by the logo, 0.2–0.5. */
+  logo_size: number;
+  frame: QrFrame;
+  frame_text: string;
+  frame_color: string;
+  error_correction: QrErrorCorrection;
+}
+
+export const DEFAULT_QR_DESIGN: QrDesign = {
+  pattern: "standard",
+  corners: "square",
+  color: "#000000",
+  background: "#FFFFFF",
+  logo: null,
+  logo_size: 0.3,
+  frame: "none",
+  frame_text: "Scan me",
+  frame_color: "#000000",
+  error_correction: "H",
+};
+
+export interface QrCode {
+  id: number;
+  user_id: number;
+  group_id: number;
+  link_id: number;
+  title: string | null;
+  render_customizations: Record<string, unknown>;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+  tags: string[];
+  total_scans: number;
+  short_url: string;
+  qr_url: string;
+  original_url: string;
+  favicon_url: string;
+  expires_at: string | null;
+  link_source: "link" | "qr";
+  image_url: string;
+  /** Present on GET/PUT /qr-codes/:id and create responses (with routing_rules). */
+  link?: Link;
+}
+
+export interface QrListResponse {
+  qr_codes: QrCode[];
+  total: number;
+  page: number;
+  total_pages: number;
+}
+
+/** Filters of GET /qr-codes and GET /qr-codes/export. */
+export interface QrFilters {
+  q?: string;
+  tags?: string[];
+  archived?: OnOffBoth;
+  expiration?: "expired" | "expiring" | "none";
+  has_link?: OnOffBoth;
+  /** YYYY-MM-DD (UTC). */
+  created_after?: string;
+  /** YYYY-MM-DD (UTC), inclusive. */
+  created_before?: string;
+  sort?: "created" | "scans";
+}
+
+export interface QrListParams extends QrFilters {
+  page?: number;
+  limit?: number;
+}
+
+export interface CreateQrInput {
+  /** Attach to an existing link… */
+  link_id?: number;
+  /** …or create a new one for this URL. */
+  long_url?: string;
+  domain_id?: number;
+  /** Also list the new link under Links (link_source "link"). */
+  share_as_link?: boolean;
+  custom_code?: string;
+  title?: string;
+  tags?: string[];
+  utm?: UTMParams;
+  /** RFC 3339. */
+  expires_at?: string;
+  routing_rules?: RoutingRuleInput[];
+  render_customizations?: QrDesign;
+}
+
+export interface UpdateQrInput {
+  title?: string;
+  tags?: string[];
+  render_customizations?: QrDesign;
+  long_url?: string;
+  /** RFC 3339. */
+  expires_at?: string;
+  clear_expiration?: boolean;
+  routing_rules?: RoutingRuleInput[];
+}
+
+export type BulkQrAction = BulkLinkAction;
+
+export interface BulkQrInput {
+  action: BulkQrAction;
+  ids: number[];
+  add_tags?: string[];
+  remove_tags?: string[];
+}
+
+/** POST /uploads. */
+export interface UploadResponse {
+  url: string;
+  name: string;
+  size: number;
+  content_type: string;
+}
 
 // ---------------------------------------------------------------- Stats
 
