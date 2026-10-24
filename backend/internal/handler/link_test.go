@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -33,6 +34,7 @@ type linkRouter struct {
 	svc     *mocks.MockLinkService
 	domains *repomocks.MockDomainRepository
 	inv     *fakeInvalidator
+	h       *LinkHandler
 }
 
 func newLinkRouter(t *testing.T, favicons bool) *linkRouter {
@@ -47,6 +49,7 @@ func newLinkRouter(t *testing.T, favicons bool) *linkRouter {
 	cfg.URLs.BaseURL = "https://sho.rt"
 	cfg.UI.FaviconService = &favicons
 	h := NewLinkHandler(lr.svc, lr.inv, lr.domains, cfg)
+	lr.h = h
 	lr.r = gin.New()
 	links := lr.r.Group("/api/links", withGroup)
 	links.POST("", h.Create)
@@ -219,7 +222,7 @@ func TestLinkHandler_List_ResponseShape(t *testing.T) {
 		"title":"Example","expires_at":null,"is_active":true,"archived":false,"has_custom_back_half":false,"redirect_count":0,
 		"source":"link","created_at":"2026-10-24T12:00:00Z","updated_at":"2026-10-24T12:00:00Z",
 		"short_url":"https://sho.rt/abc","tags":["news"],"total_clicks":5,
-		"favicon_url":"https://www.google.com/s2/favicons?domain=example.com&sz=32"}],
+		"favicon_url":"https://www.google.com/s2/favicons?domain=example.com&sz=32","page_ids":[]}],
 		"total":1,"page":1,"total_pages":1}`, w.Body.String())
 }
 
@@ -240,7 +243,7 @@ func TestLinkHandler_Get_Details(t *testing.T) {
 		"expires_at":null,"is_active":false,"archived":false,"has_custom_back_half":false,"redirect_count":0,
 		"source":"link","created_at":"2026-10-24T12:00:00Z","updated_at":"2026-10-24T12:00:00Z",
 		"short_url":"https://sho.rt/new","tags":[],"total_clicks":2,"favicon_url":"",
-		"routing_rules":[],"history":[{"id":20,"short_url":"https://sho.rt/old","created_at":"2026-10-24T12:00:00Z"}]}`, w.Body.String())
+		"routing_rules":[],"history":[{"id":20,"short_url":"https://sho.rt/old","created_at":"2026-10-24T12:00:00Z"}],"page_ids":[]}`, w.Body.String())
 }
 
 func TestLinkHandler_Get_NotFound(t *testing.T) {
@@ -435,4 +438,70 @@ func TestLinkHandler_Get_IncludesQRCodeID(t *testing.T) {
 	w = doJSON(lr.r, http.MethodGet, "/api/links", "")
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), `"qr_code_id":9`)
+}
+
+// fakePageIDs serves PageIDsForLinks and records each call's ids.
+type fakePageIDs struct {
+	m     map[uint64][]uint64
+	err   error
+	calls [][]uint64
+}
+
+func (f *fakePageIDs) PageIDsForLinks(_ context.Context, ids []uint64) (map[uint64][]uint64, error) {
+	f.calls = append(f.calls, ids)
+	return f.m, f.err
+}
+
+func TestLinkHandler_PageIDsPresent(t *testing.T) {
+	lr := newLinkRouter(t, false)
+	lr.expectDomains()
+	pages := &fakePageIDs{m: map[uint64][]uint64{30: {1, 3}}}
+	lr.h.SetPageIDs(pages)
+
+	// Get: one lookup, ids of the link's pages.
+	lr.svc.EXPECT().GetDetails(gomock.Any(), uint64(1), uint64(30)).Return(&service.LinkDetails{
+		Link: model.Link{ID: 30, ShortCode: "a"}, Tags: []string{}}, nil)
+	w := doJSON(lr.r, http.MethodGet, "/api/links/30", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), `"page_ids":[1,3]`)
+	assert.Equal(t, [][]uint64{{30}}, pages.calls)
+
+	// List: a single lookup for every link of the page; [] when none.
+	pages.calls = nil
+	lr.svc.EXPECT().List(gomock.Any(), uint64(7), gomock.Any()).Return(&service.ListLinksResult{
+		Links: []model.LinkWithStats{{Link: model.Link{ID: 30, ShortCode: "a"}}, {Link: model.Link{ID: 31, ShortCode: "b"}}},
+		Total: 2, Page: 1, TotalPages: 1}, nil)
+	w = doJSON(lr.r, http.MethodGet, "/api/links", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), `"short_code":"a"`)
+	body := w.Body.String()
+	assert.Contains(t, body, `"page_ids":[1,3]`)
+	assert.Contains(t, body, `"page_ids":[]`)
+	assert.Equal(t, [][]uint64{{30, 31}}, pages.calls)
+
+	// Create (and every respondDetails path): page_ids too.
+	pages.calls = nil
+	lr.svc.EXPECT().Create(gomock.Any(), uint64(1), gomock.Any()).Return(&model.Link{ID: 31, ShortCode: "b"}, nil)
+	lr.svc.EXPECT().GetDetails(gomock.Any(), uint64(1), uint64(31)).Return(&service.LinkDetails{
+		Link: model.Link{ID: 31, ShortCode: "b"}}, nil)
+	w = doJSON(lr.r, http.MethodPost, "/api/links", `{"original_url":"https://e.com"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), `"page_ids":[]`)
+	assert.Len(t, pages.calls, 1)
+
+	// A failed lookup degrades to [] instead of failing the request.
+	pages.err = errors.New("db down")
+	lr.svc.EXPECT().GetDetails(gomock.Any(), uint64(1), uint64(30)).Return(&service.LinkDetails{
+		Link: model.Link{ID: 30, ShortCode: "a"}}, nil)
+	w = doJSON(lr.r, http.MethodGet, "/api/links/30", "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"page_ids":[]`)
+}
+
+func TestLinkHandler_ReservedBackHalf400(t *testing.T) {
+	lr := newLinkRouter(t, true)
+	lr.svc.EXPECT().Create(gomock.Any(), uint64(1), gomock.Any()).Return(nil, service.ErrReservedShortCode)
+	w := doJSON(lr.r, http.MethodPost, "/api/links", `{"original_url":"https://e.com","custom_code":"m"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.JSONEq(t, `{"error":"This back-half is reserved"}`, w.Body.String())
 }

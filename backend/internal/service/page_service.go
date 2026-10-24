@@ -261,6 +261,13 @@ func normalizeSlug(slug string) (string, string) {
 	return slug, ""
 }
 
+// ValidPageSlug returns the normalized slug and whether it is well-formed
+// and not reserved (no availability check).
+func ValidPageSlug(slug string) (string, bool) {
+	norm, reason := normalizeSlug(slug)
+	return norm, reason == ""
+}
+
 func (s *PageServiceImpl) CheckSlug(ctx context.Context, slug string) (SlugCheck, error) {
 	norm, reason := normalizeSlug(slug)
 	out := SlugCheck{Slug: norm, Reason: reason}

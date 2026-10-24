@@ -84,6 +84,8 @@ func main() {
 	tagRepo := repository.NewTagRepository(db)
 	qrRepo := repository.NewQRRepository(db)
 	activityRepo := repository.NewActivityRepository(db)
+	pageRepo := repository.NewPageRepository(db)
+	pageViewRepo := repository.NewPageViewRepository(db)
 
 	// Start click flusher worker
 	clickFlusher := worker.NewClickFlusher(rdb, clickRepo)
@@ -117,6 +119,18 @@ func main() {
 		Domains:  domainRepo,
 		BaseURL:  cfg.URLs.BaseURL,
 	})
+	pageService := service.NewPageService(service.PageServiceDeps{
+		Pages:    pageRepo,
+		Views:    pageViewRepo,
+		Links:    linkRepo,
+		LinkSvc:  linkService,
+		Domains:  domainRepo,
+		Activity: activityService,
+		BaseURL:  cfg.URLs.BaseURL,
+	})
+	// Page views hash IPs with the same salt as clicks (the redirect handler's).
+	pagePublicService := service.NewPagePublicService(pageRepo, pageViewRepo, clickRepo, linkRepo, domainRepo,
+		cfg.URLs.BaseURL, cfg.JWT.Secret)
 	statsService := service.NewStatsService(clickRepo, linkRepo, domainRepo, cfg.URLs.BaseURL)
 	analyticsService := service.NewAnalyticsService(clickRepo, linkRepo, qrRepo, domainRepo, cfg.URLs.BaseURL)
 	dashboardService := service.NewDashboardService(service.DashboardServiceDeps{
@@ -159,6 +173,9 @@ func main() {
 	// Setup handlers
 	authHandler := handler.NewAuthHandler(authService, passkeyService, cfg)
 	linkHandler := handler.NewLinkHandler(linkService, redirectService, domainRepo, cfg)
+	linkHandler.SetPageIDs(pageService)
+	pageHandler := handler.NewPageHandler(pageService, pagePublicService)
+	publicPageHandler := handler.NewPublicPageHandler(pagePublicService)
 	qrHandler := handler.NewQRHandler(qrService, redirectService, domainRepo, statsService, cfg)
 	statsHandler := handler.NewStatsHandler(statsService)
 	uploadHandler := handler.NewUploadHandler(uploadService)
@@ -191,6 +208,10 @@ func main() {
 	})
 	redirectRouter.GET("/", redirectHandler.Root)
 	redirectRouter.GET("/:code", redirectHandler.Redirect)
+	// Shareable page URLs {BaseURL}/m/{slug} hop to the frontend's page route.
+	// HEAD too, so link checkers and `curl -I` see the 302.
+	redirectRouter.GET("/m/:slug", redirectHandler.PageHop)
+	redirectRouter.HEAD("/m/:slug", redirectHandler.PageHop)
 
 	// API Router (authenticated, full functionality)
 	apiRouter := gin.New()
@@ -318,6 +339,16 @@ func main() {
 			analytics.DELETE("/dashboards/:id", dashboardHandler.Delete)
 			analytics.GET("/dashboards/:id/data", dashboardHandler.Data)
 			analytics.GET("/dashboards/:id/export", dashboardHandler.Export)
+		}
+
+		// Link-in-bio pages (protected, group-scoped)
+		handler.RegisterPageRoutes(api.Group("/pages", authMiddleware, groupMW), pageHandler)
+
+		// Published pages (public: no auth, no group; drafts are never served)
+		public := api.Group("/public")
+		{
+			public.GET("/pages/:slug", publicPageHandler.Get)
+			public.POST("/pages/:slug/view", publicPageHandler.View)
 		}
 
 		// Domain routes (protected)

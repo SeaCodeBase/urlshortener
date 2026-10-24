@@ -26,6 +26,7 @@ const (
 	msgLinkNotDeletable = "This link can't be deleted. You can hide it instead."
 	msgBackHalfTaken    = "That back-half is already taken"
 	msgInvalidBackHalf  = "Back-halves can only contain letters, numbers, hyphens and underscores (1-255 characters)"
+	msgReservedBackHalf = "This back-half is reserved"
 	maxBulkIDs          = 1000
 	// maxBulkTags caps add_tags + remove_tags of one bulk edit_tags request.
 	maxBulkTags = 50
@@ -68,6 +69,8 @@ type linkResponse struct {
 	RoutingRules *[]model.RoutingRule `json:"routing_rules,omitempty"`
 	History      *[]historyEntry      `json:"history,omitempty"`
 	QRCodeID     *uint64              `json:"qr_code_id,omitempty"`
+	// PageIDs are the non-archived pages with a block on the link; never null.
+	PageIDs []uint64 `json:"page_ids"`
 }
 
 type listLinksResponse struct {
@@ -140,10 +143,14 @@ func (h *LinkHandler) respondDetails(c *gin.Context, status int, userID uint64, 
 			zap.Uint64("link_id", link.ID),
 			zap.Error(err),
 		)
-		c.JSON(status, h.toResponse(link, nil, 0, domainMap))
+		resp := h.toResponse(link, nil, 0, domainMap)
+		h.attachPageIDs(ctx, &resp)
+		c.JSON(status, resp)
 		return
 	}
-	c.JSON(status, h.toDetailResponse(d, domainMap))
+	resp := h.toDetailResponse(d, domainMap)
+	h.attachPageIDs(ctx, &resp)
+	c.JSON(status, resp)
 }
 
 // writeServiceError maps link service errors to responses. It reports
@@ -160,6 +167,8 @@ func writeServiceError(c *gin.Context, op string, err error) bool {
 		c.JSON(http.StatusConflict, gin.H{"error": msgLinkNotDeletable})
 	case errors.Is(err, service.ErrShortCodeTaken):
 		c.JSON(http.StatusConflict, gin.H{"error": msgBackHalfTaken})
+	case errors.Is(err, service.ErrReservedShortCode):
+		c.JSON(http.StatusBadRequest, gin.H{"error": msgReservedBackHalf})
 	case errors.Is(err, service.ErrInvalidShortCode):
 		c.JSON(http.StatusBadRequest, gin.H{"error": msgInvalidBackHalf})
 	case errors.Is(err, service.ErrInvalidURL):
@@ -226,7 +235,9 @@ func (h *LinkHandler) Get(c *gin.Context) {
 	if writeServiceError(c, "get-link", err) {
 		return
 	}
-	c.JSON(http.StatusOK, h.toDetailResponse(d, h.loadDomainMap(ctx, userID)))
+	resp := h.toDetailResponse(d, h.loadDomainMap(ctx, userID))
+	h.attachPageIDs(ctx, &resp)
+	c.JSON(http.StatusOK, resp)
 }
 
 // parseOnOff parses an on|off(|both) query value into a *bool (nil = both).
@@ -381,7 +392,13 @@ func (h *LinkHandler) List(c *gin.Context) {
 	if writeServiceError(c, "list-links", err) {
 		return
 	}
-	c.JSON(http.StatusOK, h.toListResponse(result, h.loadDomainMap(ctx, userID)))
+	resp := h.toListResponse(result, h.loadDomainMap(ctx, userID))
+	ptrs := make([]*linkResponse, len(resp.Links))
+	for i := range resp.Links {
+		ptrs[i] = &resp.Links[i]
+	}
+	h.attachPageIDs(ctx, ptrs...)
+	c.JSON(http.StatusOK, resp)
 }
 
 // Export handles GET /links/export: the filtered links as a CSV download.

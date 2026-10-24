@@ -15,12 +15,49 @@ import (
 
 const faviconServiceFormat = "https://www.google.com/s2/favicons?domain=%s&sz=32"
 
-// linkPresenter renders links (short URL, favicon, domain names) for the
-// link and QR code handlers.
+// PageIDsLookup maps link ids to the ids of the non-archived pages with a
+// block on them (service.PageService).
+type PageIDsLookup interface {
+	PageIDsForLinks(ctx context.Context, linkIDs []uint64) (map[uint64][]uint64, error)
+}
+
+// linkPresenter renders links (short URL, favicon, domain names, page ids)
+// for the link and QR code handlers.
 type linkPresenter struct {
 	baseURL    string
 	favicons   bool
 	domainRepo repository.DomainRepository
+	pages      PageIDsLookup // nil: every link gets page_ids []
+}
+
+// SetPageIDs sets the lookup used to fill page_ids.
+func (p *linkPresenter) SetPageIDs(pages PageIDsLookup) { p.pages = pages }
+
+// attachPageIDs fills PageIDs of every response with one lookup; on failure
+// the ids stay [] (logged) so the link itself is still served.
+func (p *linkPresenter) attachPageIDs(ctx context.Context, resps ...*linkResponse) {
+	if p.pages == nil || len(resps) == 0 {
+		return
+	}
+	ids := make([]uint64, 0, len(resps))
+	for _, r := range resps {
+		if r.Link != nil {
+			ids = append(ids, r.Link.ID)
+		}
+	}
+	m, err := p.pages.PageIDsForLinks(ctx, ids)
+	if err != nil {
+		logger.Warn(ctx, "link-handler: failed to load page ids for links",
+			zap.Int("links", len(ids)),
+			zap.Error(err),
+		)
+		return
+	}
+	for _, r := range resps {
+		if r.Link != nil && len(m[r.Link.ID]) > 0 {
+			r.PageIDs = m[r.Link.ID]
+		}
+	}
 }
 
 func newLinkPresenter(cfg *config.Config, domainRepo repository.DomainRepository) linkPresenter {
@@ -67,6 +104,7 @@ func (p *linkPresenter) toResponse(link *model.Link, tags []string, clicks int64
 		Tags:        tags,
 		TotalClicks: clicks,
 		FaviconURL:  p.faviconURL(link),
+		PageIDs:     []uint64{},
 	}
 }
 

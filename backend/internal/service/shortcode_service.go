@@ -23,6 +23,9 @@ const (
 // back-halves themselves.
 var reservedShortCodes = map[string]bool{"m": true}
 
+// IsReservedShortCode reports whether code is a reserved back-half.
+func IsReservedShortCode(code string) bool { return reservedShortCodes[code] }
+
 // ShortCodeRepository defines the interface for short code existence checks.
 type ShortCodeRepository interface {
 	ShortCodeExistsInDomain(ctx context.Context, domainID *uint64, code string) (bool, error)

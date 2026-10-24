@@ -144,6 +144,15 @@ func TestLinkService_Create_BackHalfTaken(t *testing.T) {
 	assert.ErrorIs(t, err, service.ErrShortCodeTaken)
 }
 
+func TestLinkService_Create_ReservedBackHalf(t *testing.T) {
+	f := newLinkSvc(t)
+	_, err := f.svc.Create(context.Background(), 1, service.CreateLinkInput{
+		OriginalURL: "https://example.com", Title: "x", CustomCode: "m", GroupID: 7,
+	})
+	assert.ErrorIs(t, err, service.ErrReservedShortCode)
+	assert.ErrorIs(t, err, service.ErrInvalidShortCode)
+}
+
 func TestLinkService_Create_ForeignDomain(t *testing.T) {
 	f := newLinkSvc(t)
 	f.domains.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(&model.Domain{ID: 5, UserID: 2, Domain: "x.test",

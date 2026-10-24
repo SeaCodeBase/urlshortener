@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,6 +57,8 @@ func newRedirectTestRouter(t *testing.T, resolver LinkResolver, rec ClickRecorde
 	r := gin.New()
 	r.GET("/", h.Root)
 	r.GET("/:code", h.Redirect)
+	r.GET("/m/:slug", h.PageHop)
+	r.HEAD("/m/:slug", h.PageHop)
 	return r, domains
 }
 
@@ -190,4 +193,45 @@ func TestRedirectHandler_Root_ReservedHostNoRedirect(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, w.Code, host)
 		assert.Empty(t, w.Header().Get("Location"), host)
 	}
+}
+
+func TestRedirectHandler_PageHop(t *testing.T) {
+	// The hop does no lookup: it only validates the slug format.
+	r, _ := newRedirectTestRouter(t, &fakeResolver{err: service.ErrLinkNotFound}, newFakeClickRecorder())
+
+	w := doGet(r, "sho.rt", "/m/jose", "")
+	require.Equal(t, http.StatusFound, w.Code, w.Body.String())
+	assert.Equal(t, "https://app.example.com/m/jose", w.Header().Get("Location"))
+
+	req := httptest.NewRequest(http.MethodHead, "/m/jose", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, "https://app.example.com/m/jose", w.Header().Get("Location"))
+
+	w = doGet(r, "sho.rt", "/m/Jose-2?x=1", "")
+	require.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, "https://app.example.com/m/jose-2", w.Header().Get("Location"))
+
+	for _, bad := range []string{"/m/ab", "/m/-jose", "/m/jose-", "/m/jo_se", "/m/" + strings.Repeat("a", 41), "/m/api", "/m/%2e%2e"} {
+		w = doGet(r, "sho.rt", bad, "")
+		assert.Equal(t, http.StatusNotFound, w.Code, bad)
+		assert.Contains(t, w.Header().Get("Content-Type"), "text/html", bad)
+		assert.Contains(t, w.Body.String(), ">Page not found</h1>", bad)
+	}
+
+	// /m alone and other one-segment paths still reach the link redirect.
+	w = doGet(r, "sho.rt", "/m", "")
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), ">Link not found</h1>")
+
+	// A trailing slash on the frontend URL is not doubled.
+	gin.SetMode(gin.TestMode)
+	h := NewRedirectHandler(&fakeResolver{}, newFakeClickRecorder(), repomocks.NewMockDomainRepository(gomock.NewController(t)),
+		"salt", "http://localhost:3000/", "sho.rt")
+	r2 := gin.New()
+	r2.GET("/m/:slug", h.PageHop)
+	w = doGet(r2, "sho.rt", "/m/jose", "")
+	require.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, "http://localhost:3000/m/jose", w.Header().Get("Location"))
 }

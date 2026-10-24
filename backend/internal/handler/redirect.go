@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
@@ -28,12 +29,14 @@ type ClickRecorder interface {
 }
 
 const (
-	titleNotFound   = "Link not found"
-	messageNotFound = "The link you followed doesn't exist or may have been removed."
-	titleExpired    = "This link has expired"
-	messageExpired  = "The link you followed is no longer active because it has expired."
-	titleInactive   = "This link is no longer available"
-	messageInactive = "The link you followed has been disabled by its owner."
+	titleNotFound       = "Link not found"
+	messageNotFound     = "The link you followed doesn't exist or may have been removed."
+	titleExpired        = "This link has expired"
+	messageExpired      = "The link you followed is no longer active because it has expired."
+	titleInactive       = "This link is no longer available"
+	messageInactive     = "The link you followed has been disabled by its owner."
+	titlePageNotFound   = "Page not found"
+	messagePageNotFound = "The page you followed doesn't exist or may have been removed."
 )
 
 type RedirectHandler struct {
@@ -155,6 +158,18 @@ func (h *RedirectHandler) Redirect(c *gin.Context) {
 	}()
 
 	c.Redirect(http.StatusFound, target)
+}
+
+// PageHop serves GET /m/:slug : a 302 to the frontend's page route. There is
+// no lookup (the frontend 404s unknown slugs); a malformed or reserved slug
+// gets the HTML 404 page.
+func (h *RedirectHandler) PageHop(c *gin.Context) {
+	slug, ok := service.ValidPageSlug(c.Param("slug"))
+	if !ok {
+		renderErrorPage(c, http.StatusNotFound, titlePageNotFound, messagePageNotFound, h.frontendURL)
+		return
+	}
+	c.Redirect(http.StatusFound, strings.TrimRight(h.frontendURL, "/")+"/m/"+slug)
 }
 
 // Root serves GET / : a verified custom domain with root_redirect gets a 302

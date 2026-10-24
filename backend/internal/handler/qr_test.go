@@ -97,7 +97,7 @@ func TestQRHandler_Create_201_WithQRURL(t *testing.T) {
 		"link":{"id":3,"user_id":1,"group_id":7,"short_code":"abc","original_url":"https://example.com","title":"Example",
 			"expires_at":null,"is_active":false,"archived":false,"has_custom_back_half":false,"redirect_count":0,
 			"source":"qr","created_at":"2026-10-24T12:00:00Z","updated_at":"2026-10-24T12:00:00Z",
-			"short_url":"https://sho.rt/abc","tags":[],"total_clicks":0,"favicon_url":"","qr_code_id":9,"routing_rules":[]}}`,
+			"short_url":"https://sho.rt/abc","tags":[],"total_clicks":0,"favicon_url":"","qr_code_id":9,"routing_rules":[],"page_ids":[]}}`,
 		w.Body.String())
 }
 

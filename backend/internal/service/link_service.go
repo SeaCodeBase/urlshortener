@@ -20,7 +20,10 @@ var (
 	ErrLinkNotFound     = errors.New("link not found")
 	ErrNotLinkOwner     = errors.New("not the owner of this link")
 	ErrInvalidShortCode = errors.New("invalid short code")
-	ErrShortCodeTaken   = errors.New("short code already taken")
+	// ErrReservedShortCode: the back-half is reserved for a redirect-server
+	// route (e.g. "m"); it wraps ErrInvalidShortCode.
+	ErrReservedShortCode = fmt.Errorf("%w: reserved", ErrInvalidShortCode)
+	ErrShortCodeTaken    = errors.New("short code already taken")
 	// ErrLinkNotDeletable: the link was redirected or has a custom back-half
 	// (spec §5.2); it can only be hidden.
 	ErrLinkNotDeletable = errors.New("link can't be deleted")
@@ -343,6 +346,9 @@ func (s *LinkServiceImpl) groupDefaultDomain(ctx context.Context, userID, groupI
 
 // claimBackHalf validates code and checks it is free on the domain.
 func (s *LinkServiceImpl) claimBackHalf(ctx context.Context, domainID *uint64, code string) error {
+	if IsReservedShortCode(code) {
+		return ErrReservedShortCode
+	}
 	if !s.shortCode.IsValid(code) {
 		return ErrInvalidShortCode
 	}
