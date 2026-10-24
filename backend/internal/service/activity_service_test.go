@@ -71,7 +71,7 @@ func TestActivityService_List_Pagination(t *testing.T) {
 func TestTagService_ListByGroup(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := mocks.NewMockTagRepository(ctrl)
-	svc := service.NewTagService(repo)
+	svc := service.NewTagService(repo, mocks.NewMockQRRepository(ctrl))
 
 	repo.EXPECT().ListByGroup(gomock.Any(), uint64(5)).Return([]string{"a", "b"}, nil).Times(2)
 	tags, err := svc.ListByGroup(context.Background(), 5, "link")
@@ -80,11 +80,6 @@ func TestTagService_ListByGroup(t *testing.T) {
 	tags, err = svc.ListByGroup(context.Background(), 5, "")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"a", "b"}, tags)
-
-	tags, err = svc.ListByGroup(context.Background(), 5, "qr")
-	require.NoError(t, err)
-	assert.NotNil(t, tags)
-	assert.Empty(t, tags)
 
 	_, err = svc.ListByGroup(context.Background(), 5, "bogus")
 	assert.ErrorIs(t, err, service.ErrInvalidTagType)

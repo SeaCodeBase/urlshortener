@@ -377,11 +377,54 @@ func TestLinkRepository_ListByGroup_CreatedRange(t *testing.T) {
 	rows, _, err = repo.ListByGroup(ctx, group.ID, repository.LinkFilter{CreatedBefore: &before}, 20, 0)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"old"}, codesOf(rows))
-	// HasQR=on matches nothing until QR codes exist.
+	// HasQR=on matches nothing: no link here has a QR code.
 	rows, total, err := repo.ListByGroup(ctx, group.ID, repository.LinkFilter{HasQR: boolPtr(true)}, 20, 0)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), total)
 	assert.Empty(t, rows)
+}
+
+func TestLinkRepository_ListByGroup_HasQR(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	group, links := linkFixture(t, db, "hasqr@example.com",
+		&model.Link{ShortCode: "withqr"},
+		&model.Link{ShortCode: "noqr"},
+		&model.Link{ShortCode: "qronly", Source: model.LinkSourceQR})
+	qrRepo := repository.NewQRRepository(db)
+	withQR := &model.QRCode{UserID: links[0].UserID, GroupID: group.ID, LinkID: links[0].ID}
+	require.NoError(t, qrRepo.Create(ctx, withQR))
+	owned := &model.QRCode{UserID: links[2].UserID, GroupID: group.ID, LinkID: links[2].ID}
+	require.NoError(t, qrRepo.Create(ctx, owned))
+	repo := repository.NewLinkRepository(db)
+
+	rows, total, err := repo.ListByGroup(ctx, group.ID, repository.LinkFilter{}, 20, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	assert.ElementsMatch(t, []string{"withqr", "noqr"}, codesOf(rows))
+	for _, r := range rows {
+		if r.ShortCode == "withqr" {
+			require.NotNil(t, r.QRCodeID)
+			assert.Equal(t, withQR.ID, *r.QRCodeID)
+		} else {
+			assert.Nil(t, r.QRCodeID)
+		}
+	}
+
+	rows, total, err = repo.ListByGroup(ctx, group.ID, repository.LinkFilter{HasQR: boolPtr(true)}, 20, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Equal(t, []string{"withqr"}, codesOf(rows))
+
+	rows, total, err = repo.ListByGroup(ctx, group.ID, repository.LinkFilter{HasQR: boolPtr(false)}, 20, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Equal(t, []string{"noqr"}, codesOf(rows))
+
+	count, err := repo.CountByGroup(ctx, group.ID, repository.LinkFilter{HasQR: boolPtr(true)})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
 }
 
 func TestLinkRepository_SetArchived(t *testing.T) {

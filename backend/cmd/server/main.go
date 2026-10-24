@@ -82,6 +82,7 @@ func main() {
 	routingRuleRepo := repository.NewRoutingRuleRepository(db)
 	apiTokenRepo := repository.NewAPITokenRepository(db)
 	tagRepo := repository.NewTagRepository(db)
+	qrRepo := repository.NewQRRepository(db)
 	activityRepo := repository.NewActivityRepository(db)
 
 	// Start click flusher worker
@@ -93,7 +94,7 @@ func main() {
 	authService := service.NewAuthService(userRepo, groupRepo, cfg.JWT.Secret)
 	groupService := service.NewGroupService(groupRepo, userRepo, domainRepo)
 	tokenService := service.NewTokenService(apiTokenRepo, userRepo)
-	tagService := service.NewTagService(tagRepo)
+	tagService := service.NewTagService(tagRepo, qrRepo)
 	activityService := service.NewActivityService(activityRepo)
 	shortCodeSvc := service.NewShortCodeService(linkRepo)
 	linkService := service.NewLinkService(service.LinkServiceDeps{
@@ -144,7 +145,7 @@ func main() {
 	domainHandler := handler.NewDomainHandler(domainService, activityService)
 	tokenHandler := handler.NewTokenHandler(tokenService, activityService)
 	groupHandler := handler.NewGroupHandler(groupService, activityService)
-	searchHandler := handler.NewSearchHandler(linkRepo)
+	searchHandler := handler.NewSearchHandler(linkRepo, qrRepo)
 	metaHandler := handler.NewMetaHandler(cfg)
 	tagHandler := handler.NewTagHandler(tagService)
 	activityHandler := handler.NewActivityHandler(activityService)

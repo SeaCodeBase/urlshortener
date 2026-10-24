@@ -257,7 +257,6 @@ type LinkFilter struct {
 	// Expiration is "expired", "expiring" (has a future expiry), "none" or "".
 	Expiration string
 	// HasQR keeps links with (true) or without (false) an attached QR code.
-	// No QR codes exist yet, so true matches nothing and false everything.
 	HasQR *bool
 	// CampaignID is accepted for API compatibility and ignored for now.
 	CampaignID *uint64
@@ -282,7 +281,12 @@ const SortClicks = "clicks"
 
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
-// where builds the WHERE clause (without the keyword) and its arguments.
+// linkListFrom is the FROM clause of ListByGroup/CountByGroup; qr_codes.link_id
+// is unique, so the join never duplicates a link.
+const linkListFrom = ` FROM links l LEFT JOIN qr_codes qc ON qc.link_id = l.id`
+
+// where builds the WHERE clause (without the keyword) and its arguments for
+// a query over linkListFrom.
 func (f LinkFilter) where(groupID uint64) (string, []any) {
 	conds := []string{"l.group_id = ?"}
 	args := []any{groupID}
@@ -318,8 +322,12 @@ func (f LinkFilter) where(groupID uint64) (string, []any) {
 	case ExpirationNone:
 		conds = append(conds, "l.expires_at IS NULL")
 	}
-	if f.HasQR != nil && *f.HasQR {
-		conds = append(conds, "1 = 0")
+	if f.HasQR != nil {
+		if *f.HasQR {
+			conds = append(conds, "qc.id IS NOT NULL")
+		} else {
+			conds = append(conds, "qc.id IS NULL")
+		}
 	}
 	if f.CreatedAfter != nil {
 		conds = append(conds, "l.created_at >= ?")
@@ -336,7 +344,7 @@ func (r *LinkRepositoryImpl) ListByGroup(ctx context.Context, groupID uint64, f 
 	where, args := f.where(groupID)
 
 	var total int64
-	if err := r.db.GetContext(ctx, &total, `SELECT COUNT(*) FROM links l WHERE `+where, args...); err != nil {
+	if err := r.db.GetContext(ctx, &total, `SELECT COUNT(*)`+linkListFrom+` WHERE `+where, args...); err != nil {
 		logger.Error(ctx, "link-repo: failed to count links by group",
 			zap.Uint64("group_id", groupID),
 			zap.Error(err),
@@ -349,8 +357,8 @@ func (r *LinkRepositoryImpl) ListByGroup(ctx context.Context, groupID uint64, f 
 		order = "total_clicks DESC, l.created_at DESC, l.id DESC"
 	}
 	query := `SELECT ` + linkColumns + `,
-			  (SELECT COUNT(*) FROM clicks c WHERE c.link_id = l.id) AS total_clicks
-			  FROM links l WHERE ` + where + ` ORDER BY ` + order + ` LIMIT ? OFFSET ?`
+			  (SELECT COUNT(*) FROM clicks c WHERE c.link_id = l.id) AS total_clicks,
+			  qc.id AS qr_code_id` + linkListFrom + ` WHERE ` + where + ` ORDER BY ` + order + ` LIMIT ? OFFSET ?`
 	rows := []model.LinkWithStats{}
 	if err := r.db.SelectContext(ctx, &rows, query, append(args, limit, offset)...); err != nil {
 		logger.Error(ctx, "link-repo: failed to list links by group",
@@ -367,7 +375,7 @@ func (r *LinkRepositoryImpl) ListByGroup(ctx context.Context, groupID uint64, f 
 func (r *LinkRepositoryImpl) CountByGroup(ctx context.Context, groupID uint64, f LinkFilter) (int64, error) {
 	where, args := f.where(groupID)
 	var count int64
-	err := r.db.GetContext(ctx, &count, `SELECT COUNT(*) FROM links l WHERE `+where, args...)
+	err := r.db.GetContext(ctx, &count, `SELECT COUNT(*)`+linkListFrom+` WHERE `+where, args...)
 	if err != nil {
 		logger.Error(ctx, "link-repo: failed to count links by group",
 			zap.Uint64("group_id", groupID),

@@ -35,6 +35,6 @@ type LinkWithStats struct {
 	Link
 	TotalClicks int64    `db:"total_clicks" json:"total_clicks"`
 	Tags        []string `db:"-" json:"tags"`
-	QRCodeID    *uint64  `db:"-" json:"qr_code_id,omitempty"`
+	QRCodeID    *uint64  `db:"qr_code_id" json:"qr_code_id,omitempty"`
 	FaviconURL  string   `db:"-" json:"favicon_url,omitempty"`
 }

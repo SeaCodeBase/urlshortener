@@ -20,27 +20,29 @@ var _ TagService = (*tagService)(nil)
 
 type tagService struct {
 	tagRepo repository.TagRepository
+	qrRepo  repository.QRRepository
 }
 
-func NewTagService(tagRepo repository.TagRepository) TagService {
-	return &tagService{tagRepo: tagRepo}
+func NewTagService(tagRepo repository.TagRepository, qrRepo repository.QRRepository) TagService {
+	return &tagService{tagRepo: tagRepo, qrRepo: qrRepo}
 }
 
 func (s *tagService) ListByGroup(ctx context.Context, groupID uint64, typ string) ([]string, error) {
+	var tags []string
+	var err error
 	switch typ {
 	case "", TagTypeLink:
-		tags, err := s.tagRepo.ListByGroup(ctx, groupID)
-		if err != nil {
-			return nil, err
-		}
-		if tags == nil {
-			tags = []string{}
-		}
-		return tags, nil
+		tags, err = s.tagRepo.ListByGroup(ctx, groupID)
 	case TagTypeQR:
-		// QR codes arrive in phase 2; until then they have no tags.
-		return []string{}, nil
+		tags, err = s.qrRepo.ListTagsByGroup(ctx, groupID)
 	default:
 		return nil, ErrInvalidTagType
 	}
+	if err != nil {
+		return nil, err
+	}
+	if tags == nil {
+		tags = []string{}
+	}
+	return tags, nil
 }

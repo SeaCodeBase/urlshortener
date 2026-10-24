@@ -146,6 +146,45 @@ type TagRepository interface {
 	RemoveTagsFromLinks(ctx context.Context, linkIDs []uint64, tags []string) error
 }
 
+// QRRepository manages QR codes, each owning exactly one link, and their
+// tags (normalised like TagRepository's).
+//
+//go:generate mockgen -destination=mocks/mock_qr_repo.go -package=mocks . QRRepository
+type QRRepository interface {
+	// Create inserts the QR code and sets ID and timestamps;
+	// ErrQRCodeExistsForLink when the link already has one.
+	Create(ctx context.Context, qr *model.QRCode) error
+	// GetByID returns the QR code with its link fields; ErrQRCodeNotFound.
+	GetByID(ctx context.Context, id uint64) (*QRCodeRow, error)
+	// GetByLinkID returns the link's QR code; ErrQRCodeNotFound.
+	GetByLinkID(ctx context.Context, linkID uint64) (*QRCodeRow, error)
+	// GetByIDs returns the existing QR codes among ids; missing ids are absent.
+	GetByIDs(ctx context.Context, ids []uint64) ([]QRCodeRow, error)
+	// ListByGroup pages through the group's QR codes matching f, plus the
+	// total match count.
+	ListByGroup(ctx context.Context, groupID uint64, f QRFilter, limit, offset int) ([]QRCodeRow, int64, error)
+	// CountByGroup counts the group's QR codes matching f.
+	CountByGroup(ctx context.Context, groupID uint64, f QRFilter) (int64, error)
+	// Update writes title and render_customizations; ErrQRCodeNotFound.
+	Update(ctx context.Context, qr *model.QRCode) error
+	// SetArchived hides (true) or shows (false) the QR codes; empty ids is a no-op.
+	SetArchived(ctx context.Context, ids []uint64, archived bool) error
+	// Delete removes the QR code (not its link); ErrQRCodeNotFound.
+	Delete(ctx context.Context, id uint64) error
+	// QRCodeIDsForLinks maps link ID to QR code ID; links without one are absent.
+	QRCodeIDsForLinks(ctx context.Context, linkIDs []uint64) (map[uint64]uint64, error)
+	// SetTags replaces the QR code's tags (nil/empty clears them).
+	SetTags(ctx context.Context, qrID uint64, tags []string) error
+	// GetTagsFor returns tags keyed by QR code ID; untagged ones are absent.
+	GetTagsFor(ctx context.Context, ids []uint64) (map[uint64][]string, error)
+	// ListTagsByGroup returns the distinct tags of the group's QR codes, sorted.
+	ListTagsByGroup(ctx context.Context, groupID uint64) ([]string, error)
+	// AddTags adds tags to every QR code; existing tags are left alone.
+	AddTags(ctx context.Context, ids []uint64, tags []string) error
+	// RemoveTags removes tags from every QR code.
+	RemoveTags(ctx context.Context, ids []uint64, tags []string) error
+}
+
 //go:generate mockgen -destination=mocks/mock_activity_repo.go -package=mocks . ActivityRepository
 type ActivityRepository interface {
 	// Insert stores the entry and fills ID and CreatedAt.
