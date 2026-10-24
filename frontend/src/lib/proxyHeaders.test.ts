@@ -23,10 +23,33 @@ describe("buildProxyRequestHeaders", () => {
   });
 
   it("drops headers outside the allowlist", () => {
-    const out = buildProxyRequestHeaders(new Headers({ Cookie: "a=b", Host: "evil", "X-Forwarded-For": "1.2.3.4" }));
+    const out = buildProxyRequestHeaders(new Headers({ Cookie: "a=b", Host: "evil", "X-Real-Port": "1" }));
     expect(out.has("Cookie")).toBe(false);
     expect(out.has("Host")).toBe(false);
-    expect(out.has("X-Forwarded-For")).toBe(false);
+    expect(out.has("X-Real-Port")).toBe(false);
+  });
+
+  it("forwards User-Agent and Referer for page-view tracking", () => {
+    const out = buildProxyRequestHeaders(
+      new Headers({ "User-Agent": "Mozilla/5.0 Test", Referer: "https://instagram.com/" }),
+    );
+    expect(out.get("User-Agent")).toBe("Mozilla/5.0 Test");
+    expect(out.get("Referer")).toBe("https://instagram.com/");
+  });
+
+  it("forwards the visitor IP as X-Forwarded-For", () => {
+    const out = buildProxyRequestHeaders(new Headers({ "X-Forwarded-For": "1.2.3.4, 10.0.0.1" }));
+    expect(out.get("X-Forwarded-For")).toBe("1.2.3.4, 10.0.0.1");
+  });
+
+  it("falls back to X-Real-IP for X-Forwarded-For", () => {
+    const out = buildProxyRequestHeaders(new Headers({ "X-Real-IP": "5.6.7.8" }));
+    expect(out.get("X-Forwarded-For")).toBe("5.6.7.8");
+  });
+
+  it("prefers X-Forwarded-For over X-Real-IP", () => {
+    const out = buildProxyRequestHeaders(new Headers({ "X-Forwarded-For": "1.2.3.4", "X-Real-IP": "5.6.7.8" }));
+    expect(out.get("X-Forwarded-For")).toBe("1.2.3.4");
   });
 
   it("defaults Content-Type to JSON and omits missing optional headers", () => {
@@ -34,6 +57,7 @@ describe("buildProxyRequestHeaders", () => {
     expect(out.get("Content-Type")).toBe("application/json");
     expect(out.has("Authorization")).toBe(false);
     expect(out.has("X-Group-ID")).toBe(false);
+    expect(out.has("X-Forwarded-For")).toBe(false);
   });
 });
 
