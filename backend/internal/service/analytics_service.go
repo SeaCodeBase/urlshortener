@@ -135,22 +135,6 @@ func (s *AnalyticsServiceImpl) SetClock(now func() time.Time) { s.now = now }
 
 const dateFmt = "2006-01-02"
 
-// changePct is the relative change from prev to cur; nil when prev is 0.
-func changePct(cur, prev int64) *float64 {
-	if prev == 0 {
-		return nil
-	}
-	pct := float64(cur-prev) / float64(prev) * 100
-	return &pct
-}
-
-func percentOf(n, total int64) float64 {
-	if total == 0 {
-		return 0
-	}
-	return float64(n) / float64(total) * 100
-}
-
 // scopeFor maps a dashboard filter to the clicks it covers.
 func (s *AnalyticsServiceImpl) scopeFor(ctx context.Context, groupID uint64, f DashboardFilter) (repository.ClickScope, error) {
 	switch f.Type {
@@ -298,63 +282,21 @@ func (s *AnalyticsServiceImpl) DashboardData(ctx context.Context, groupID uint64
 		}
 	}
 
-	breakdown := func(facet string) ([]repository.Row, map[string]int64, error) {
-		rows, err := s.clickRepo.BreakdownScope(ctx, scope, cur.from, cur.to, facet, dashboardLimit)
-		if err != nil {
-			return nil, nil, err
-		}
-		prevCounts := map[string]int64{}
-		if q.Compare {
-			prevRows, err := s.clickRepo.BreakdownScope(ctx, scope, prev.from, prev.to, facet, dashboardLimit)
-			if err != nil {
-				return nil, nil, err
-			}
-			for _, r := range prevRows {
-				prevCounts[rowKey(r)] = r.Count
-			}
-		}
-		return rows, prevCounts, nil
+	fetch := func(from, to time.Time, facet string) ([]repository.Row, error) {
+		return s.clickRepo.BreakdownScope(ctx, scope, from, to, facet, dashboardLimit)
 	}
-
-	rows, prevCounts, err := breakdown("device")
+	bd, facet, err := loadBreakdowns(fetch, []string{"device", "referrer", "country", "city"},
+		cur, prev, q.Compare, out.Total)
 	if err != nil {
-		return fail("device breakdown", err)
+		return fail(facet+" breakdown", err)
 	}
-	out.Devices = make([]KeyStat, 0, len(rows))
-	for _, r := range rows {
-		out.Devices = append(out.Devices, KeyStat{Key: r.Key, Clicks: r.Count,
-			Percentage: percentOf(r.Count, out.Total), PrevClicks: prevCounts[rowKey(r)]})
-	}
-
-	if rows, prevCounts, err = breakdown("referrer"); err != nil {
-		return fail("referrer breakdown", err)
-	}
-	out.Referrers = make([]ReferrerStat, 0, len(rows))
-	for _, r := range rows {
-		out.Referrers = append(out.Referrers, ReferrerStat{Referrer: r.Key, Clicks: r.Count,
-			Percentage: percentOf(r.Count, out.Total), PrevClicks: prevCounts[rowKey(r)]})
-	}
-
-	if rows, prevCounts, err = breakdown("country"); err != nil {
-		return fail("country breakdown", err)
-	}
-	out.Countries = make([]CountryStat, 0, len(rows))
-	for _, r := range rows {
-		out.Countries = append(out.Countries, CountryStat{Code: r.Key, Name: getCountryName(r.Key), Clicks: r.Count,
-			Percentage: percentOf(r.Count, out.Total), PrevClicks: prevCounts[rowKey(r)]})
-	}
+	out.Devices = bd["device"].keys()
+	out.Referrers = bd["referrer"].referrers()
+	out.Countries = bd["country"].countries()
+	out.Cities = bd["city"].cities()
 	if len(out.Countries) > 0 {
 		c := out.Countries[0]
 		out.TopLocation = &TopLocation{Code: c.Code, Name: c.Name, Count: c.Clicks}
-	}
-
-	if rows, prevCounts, err = breakdown("city"); err != nil {
-		return fail("city breakdown", err)
-	}
-	out.Cities = make([]CityStat, 0, len(rows))
-	for _, r := range rows {
-		out.Cities = append(out.Cities, CityStat{Name: r.Key, Country: r.Key2, Clicks: r.Count,
-			Percentage: percentOf(r.Count, out.Total), PrevClicks: prevCounts[rowKey(r)]})
 	}
 
 	var prevWin *window
@@ -519,7 +461,13 @@ func (s *AnalyticsServiceImpl) domainName(ctx context.Context, link *model.Link,
 	}
 	name, ok := cache[*link.DomainID]
 	if !ok {
-		if d, err := s.domainRepo.GetByID(ctx, *link.DomainID); err == nil {
+		d, err := s.domainRepo.GetByID(ctx, *link.DomainID)
+		if err != nil {
+			logger.Warn(ctx, "analytics-service: failed to load link domain",
+				zap.Uint64("domain_id", *link.DomainID),
+				zap.Error(err),
+			)
+		} else {
 			name = d.Domain
 		}
 		cache[*link.DomainID] = name

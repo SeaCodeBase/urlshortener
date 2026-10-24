@@ -217,10 +217,7 @@ func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint
 		if out.PrevTotalRange, err = s.clickRepo.CountRange(ctx, ids, prev.from, prev.to, q.Source); err != nil {
 			return fail("previous range total", err)
 		}
-		if out.PrevTotalRange > 0 {
-			pct := float64(out.TotalRange-out.PrevTotalRange) / float64(out.PrevTotalRange) * 100
-			out.ChangePct = &pct
-		}
+		out.ChangePct = changePct(out.TotalRange, out.PrevTotalRange)
 		prevSeries, err := s.clickRepo.Series(ctx, ids, prev.from, prev.to, q.Unit, q.Source)
 		if err != nil {
 			return fail("previous series", err)
@@ -228,74 +225,20 @@ func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint
 		out.PrevSeries = toSeries(prevSeries)
 	}
 
-	// breakdown loads a facet for the current window and, when comparing,
-	// the previous window's counts keyed by Key+"\x00"+Key2.
-	breakdown := func(facet string) ([]repository.Row, map[string]int64, error) {
-		rows, err := s.clickRepo.Breakdown(ctx, ids, cur.from, cur.to, facet, breakdownLimit, q.Source)
-		if err != nil {
-			return nil, nil, err
-		}
-		prevCounts := map[string]int64{}
-		if q.Compare {
-			prevRows, err := s.clickRepo.Breakdown(ctx, ids, prev.from, prev.to, facet, breakdownLimit, q.Source)
-			if err != nil {
-				return nil, nil, err
-			}
-			for _, r := range prevRows {
-				prevCounts[rowKey(r)] = r.Count
-			}
-		}
-		return rows, prevCounts, nil
+	fetch := func(from, to time.Time, facet string) ([]repository.Row, error) {
+		return s.clickRepo.Breakdown(ctx, ids, from, to, facet, breakdownLimit, q.Source)
 	}
-	pctOf := func(n int64) float64 {
-		if out.TotalRange == 0 {
-			return 0
-		}
-		return float64(n) / float64(out.TotalRange) * 100
-	}
-
-	rows, prevCounts, err := breakdown("country")
+	bd, facet, err := loadBreakdowns(fetch, []string{"country", "city", "referrer", "device", "browser", "os"},
+		cur, prev, q.Compare, out.TotalRange)
 	if err != nil {
-		return fail("country breakdown", err)
+		return fail(facet+" breakdown", err)
 	}
-	out.Countries = make([]CountryStat, 0, len(rows))
-	for _, r := range rows {
-		out.Countries = append(out.Countries, CountryStat{Code: r.Key, Name: getCountryName(r.Key), Clicks: r.Count,
-			Percentage: pctOf(r.Count), PrevClicks: prevCounts[rowKey(r)]})
-	}
-
-	if rows, prevCounts, err = breakdown("city"); err != nil {
-		return fail("city breakdown", err)
-	}
-	out.Cities = make([]CityStat, 0, len(rows))
-	for _, r := range rows {
-		out.Cities = append(out.Cities, CityStat{Name: r.Key, Country: r.Key2, Clicks: r.Count,
-			Percentage: pctOf(r.Count), PrevClicks: prevCounts[rowKey(r)]})
-	}
-
-	if rows, prevCounts, err = breakdown("referrer"); err != nil {
-		return fail("referrer breakdown", err)
-	}
-	out.Referrers = make([]ReferrerStat, 0, len(rows))
-	for _, r := range rows {
-		out.Referrers = append(out.Referrers, ReferrerStat{Referrer: r.Key, Clicks: r.Count,
-			Percentage: pctOf(r.Count), PrevClicks: prevCounts[rowKey(r)]})
-	}
-
-	for _, kf := range []struct {
-		facet string
-		dst   *[]KeyStat
-	}{{"device", &out.Devices}, {"browser", &out.Browsers}, {"os", &out.OS}} {
-		rows, prevCounts, err := breakdown(kf.facet)
-		if err != nil {
-			return fail(kf.facet+" breakdown", err)
-		}
-		stats := make([]KeyStat, 0, len(rows))
-		for _, r := range rows {
-			stats = append(stats, KeyStat{Key: r.Key, Clicks: r.Count, Percentage: pctOf(r.Count), PrevClicks: prevCounts[rowKey(r)]})
-		}
-		*kf.dst = stats
-	}
+	out.Countries = bd["country"].countries()
+	out.Cities = bd["city"].cities()
+	out.Referrers = bd["referrer"].referrers()
+	out.Devices = bd["device"].keys()
+	out.Browsers = bd["browser"].keys()
+	out.OS = bd["os"].keys()
 
 	return out, nil
 }
@@ -312,6 +255,95 @@ func (s *StatsServiceImpl) GroupEngagements(ctx context.Context, groupID uint64,
 		return 0, err
 	}
 	return n, nil
+}
+
+// changePct is the relative change from prev to cur; nil when prev is 0.
+func changePct(cur, prev int64) *float64 {
+	if prev == 0 {
+		return nil
+	}
+	pct := float64(cur-prev) / float64(prev) * 100
+	return &pct
+}
+
+// percentOf is n as a percentage of total; 0 when total is 0.
+func percentOf(n, total int64) float64 {
+	if total == 0 {
+		return 0
+	}
+	return float64(n) / float64(total) * 100
+}
+
+// breakdownFetch loads one facet's rows for an inclusive window.
+type breakdownFetch func(from, to time.Time, facet string) ([]repository.Row, error)
+
+// breakdown is a facet's rows for the current window, the previous window's
+// counts keyed by rowKey (empty without comparison) and the current total
+// percentages are taken against.
+type breakdown struct {
+	rows  []repository.Row
+	prev  map[string]int64
+	total int64
+}
+
+// loadBreakdowns fetches each facet for cur and, when compare, for prev. On
+// error it also returns the facet that failed.
+func loadBreakdowns(fetch breakdownFetch, facets []string, cur, prev window, compare bool, total int64) (map[string]breakdown, string, error) {
+	out := make(map[string]breakdown, len(facets))
+	for _, facet := range facets {
+		rows, err := fetch(cur.from, cur.to, facet)
+		if err != nil {
+			return nil, facet, err
+		}
+		b := breakdown{rows: rows, prev: map[string]int64{}, total: total}
+		if compare {
+			prevRows, err := fetch(prev.from, prev.to, facet)
+			if err != nil {
+				return nil, facet, err
+			}
+			for _, r := range prevRows {
+				b.prev[rowKey(r)] = r.Count
+			}
+		}
+		out[facet] = b
+	}
+	return out, "", nil
+}
+
+func (b breakdown) countries() []CountryStat {
+	out := make([]CountryStat, 0, len(b.rows))
+	for _, r := range b.rows {
+		out = append(out, CountryStat{Code: r.Key, Name: getCountryName(r.Key), Clicks: r.Count,
+			Percentage: percentOf(r.Count, b.total), PrevClicks: b.prev[rowKey(r)]})
+	}
+	return out
+}
+
+func (b breakdown) cities() []CityStat {
+	out := make([]CityStat, 0, len(b.rows))
+	for _, r := range b.rows {
+		out = append(out, CityStat{Name: r.Key, Country: r.Key2, Clicks: r.Count,
+			Percentage: percentOf(r.Count, b.total), PrevClicks: b.prev[rowKey(r)]})
+	}
+	return out
+}
+
+func (b breakdown) referrers() []ReferrerStat {
+	out := make([]ReferrerStat, 0, len(b.rows))
+	for _, r := range b.rows {
+		out = append(out, ReferrerStat{Referrer: r.Key, Clicks: r.Count,
+			Percentage: percentOf(r.Count, b.total), PrevClicks: b.prev[rowKey(r)]})
+	}
+	return out
+}
+
+func (b breakdown) keys() []KeyStat {
+	out := make([]KeyStat, 0, len(b.rows))
+	for _, r := range b.rows {
+		out = append(out, KeyStat{Key: r.Key, Clicks: r.Count,
+			Percentage: percentOf(r.Count, b.total), PrevClicks: b.prev[rowKey(r)]})
+	}
+	return out
 }
 
 func rowKey(r repository.Row) string { return r.Key + "\x00" + r.Key2 }

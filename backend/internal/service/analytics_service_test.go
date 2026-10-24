@@ -53,7 +53,7 @@ func (f *analyticsFixture) expectEmptyItems() {
 		Return([]repository.ItemCount{}, nil).AnyTimes()
 }
 
-// expectEmptyBreakdowns makes every facet but those in rows return nothing.
+// expectBreakdowns makes each facet return its rows (nil when absent).
 func (f *analyticsFixture) expectBreakdowns(rows map[string][]repository.Row) {
 	f.clicks.EXPECT().BreakdownScope(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), 200).
 		DoAndReturn(func(_ context.Context, _ repository.ClickScope, _, _ time.Time, facet string, _ int) ([]repository.Row, error) {
