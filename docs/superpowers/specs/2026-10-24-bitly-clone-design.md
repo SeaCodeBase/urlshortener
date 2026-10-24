@@ -36,22 +36,32 @@ Anti-goals (would make this a failure even if it "works")
 - Analytics modules that render placeholder/sample data.
 - Breaking existing links, redirects, passkey login, or the click flusher.
 
-## 3. Visual system (from the live app)
+## 3. Visual system (measured from the live app with computed styles, 1440×900)
 
-- Canvas background `#F4F6FA`; cards white, 1px border `#E3E6EB`, radius 8px, no/low shadow.
-- Text: primary `#031F39` (dark navy), secondary `#5C6B7A`, link `#2A5BD7`.
-- Primary action blue `#2A5BD7` (hover `#1E47B8`), white text, radius 4px. Secondary buttons: white, 1px `#C9CFD8` border, navy text. Destructive: `#D93025` text.
-- Sidebar "Create new" button: deep navy `#0F2E8A` full width.
-- Sidebar: 240px, white, right border. Active item: light blue background `#EDF2FF`, 3px left bar `#2A5BD7`, blue icon+text. Items: Home, Links, QR Codes, Pages, Analytics, Campaigns, Custom domains, (divider), Settings. Collapse chevron on the sidebar edge; collapsed = icons only; below 1024px becomes an off-canvas menu with hamburger.
-- Top bar: 56px, white, bottom border. Left: group switcher (group name + chevron). Right: search icon that expands to a search box ("Search for \"x\" in: Links | QR Codes"), help icon (links to /docs), avatar circle with initial.
-- Profile menu: avatar + name + email; account id row; Support, API documentation, Terms; Sign out.
-- Logo: the existing app logo mark in orange `#EE6123` (Bitly's orange is their brand accent; we keep orange for the logo only).
-- Font: Inter (next/font). Page title 28px/700; card title 18px/700; body 14px; labels 14px/600; helper 12px.
-- Icons: lucide-react, mapping Bitly's Material icons (content_copy→Copy, share→Share2, edit→Pencil, bar_chart→BarChart2, more_horiz→MoreHorizontal, sell→Tag, calendar_today→Calendar, tune→SlidersHorizontal, subdirectory_arrow_right→CornerDownRight, add_circle→PlusCircle).
-- Toggles are switches (shadcn Switch). Dropdown "Show: Active" is a select-style button. Date range picker is a dialog with two-month calendar + preset chips (Last hour, Today, Last 7 days, Last 30 days, Last 60 days, Last 90 days) + Cancel/Apply.
-- Toasts: sonner, top-center.
-- Empty states: illustration-free, centred bold title + grey subtitle + link (e.g. "No results found / Try adjusting your search, filters, or try searching hidden links instead.").
+Exact values captured from app.bitly.com on 2026-10-24 (Links page). Use these verbatim.
 
+- **Font**: Bitly ships a proprietary "Bitly Display" face with the stack `"Bitly Display", system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`. We cannot ship it; use **Inter** (next/font) with the same fallback stack. Base size 14px, weight 400; UI controls 16px/500; letter-spacing 0.16px on buttons.
+- **Colours**
+  - Canvas (page background) `#F4F6FA` (rgb 244,246,250)
+  - Card / sidebar / top bar background `#FFFFFF`
+  - Text primary (navy) `#273144` (rgb 39,49,68); text secondary (meta, "No tags", dates) `#526281` (rgb 82,98,129); body default `#000000` is never used directly
+  - Primary blue (buttons, links, short link, "Add tag") `#2A5BD7` (oklch 0.5156 0.198 264.2; rgb 42,91,215); hover `#1F4BBF`
+  - Sidebar "Create new" `#022D94` (rgb 2,45,148), shadow `0 2px 8px rgba(0,0,0,.24)`
+  - Sidebar active item: background `#EDF2FF` (rgb 237,242,255), text+icon `#0C3EBB` (rgb 12,62,187); inactive item text `#273144`
+  - Border (inputs, secondary buttons) `#E1E4EC` (oklch 0.9061 0.0159 266.3)
+  - Disabled button: background `#F5F6F9`, text `#A3AAB8`
+  - Destructive `#D93025`; success `#1E8E3E`
+  - Brand orange (logo only) `#EE6123`
+- **Layout**
+  - Sidebar: 240px wide, full height, white, padding `16px 12px`, no border (canvas contrast only). "Create new" button 216×40 at y=80, radius 4px, 16px/500 white. Nav items 216×40, radius 4px, 16px/500, icon 20px + 12px gap, 8px vertical spacing; divider before Settings. Collapsed width 64px (icons only). Collapse chevron is a 24px circle button straddling the sidebar edge.
+  - Top bar: height 56px, white, padding `8px 16px 8px 24px`; left: group switcher button; right: search icon, help icon, avatar (32px circle, navy background, white initial).
+  - Content: padding `0 40px` on the canvas; page title (h1) 32px/600, line-height 40px, letter-spacing 0.32px, colour `#273144`, at 32px from top; primary action button right-aligned on the title row.
+  - Toolbar row (search 300px, "Filter by created date", "Add filters") 40px tall; selection row ("0 selected", Export/Hide/Tag text buttons, view radios, "Show: Active") 40px tall.
+- **Cards**: white, radius **12px**, padding `16px 16px 24px 32px`, no border, no shadow; card gap 16px. Link card title 20px/600 `#273144` letter-spacing 0.2px; short link 16px/500 `#2A5BD7`; destination 16px/500 `#2A5BD7` with ↳ icon; meta row 14px `#526281`; "Add tag" 14px `#2A5BD7`.
+- **Buttons**: height 40px, padding `10px 16px`, radius 4px, 16px/500. Primary: `#2A5BD7` bg, white text. Secondary: white bg, 1px `#E1E4EC` border, `#273144` text. Text/icon buttons: transparent, `#273144` (icon 20px) or `#2A5BD7`; icon-only buttons 28px with 4px padding. Disabled: `#F5F6F9` bg, `#A3AAB8` text.
+- **Inputs**: height 40px, 16px/400, padding `1px 12px`, 1px `#E1E4EC` border, radius 4px, text `#273144`, focus ring 2px `#2A5BD7`. Search input has a 20px search icon at left (padding-left 40px).
+- **Other**: Toggles are switches (shadcn Switch, checked `#1E8E3E` green like Bitly's screenshots). Dropdown "Show: Active" is a 40px secondary-style button with chevron. Date range picker is a dialog with two-month calendar + preset chips. Toasts: sonner, top-center. Empty state: centred bold title + grey subtitle + link.
+- Icons: lucide-react mapped from Bitly's Material icons (content_copy→Copy, share→Share2, edit→Pencil, bar_chart→BarChart2, more_horiz→MoreHorizontal, sell→Tag, calendar_today→Calendar, tune→SlidersHorizontal, subdirectory_arrow_right→CornerDownRight, add_circle→PlusCircle, format_list_bulleted/view_agenda/grid_view→List/Rows3/LayoutGrid).
 ## 4. Information architecture & routes (frontend)
 
 ```
