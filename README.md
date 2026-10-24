@@ -53,6 +53,29 @@ Every configuration key is documented in `backend/config.example.yaml`.
   all of the user's groups). A domain that still has links can't be
   deleted.
 
+### QR Codes (Phase 2)
+
+- **Every QR code owns a link** (`qr_codes.link_id`, unique). A QR created
+  from a destination gets a new link with `source='qr'`, hidden from the
+  Links list — or `source='link'` when "Share as a short link" is on. A QR
+  can also be created for an existing Links-list link (Create QR Code).
+  Deleting a link deletes its QR; deleting a QR deletes its `source='qr'`
+  link (a Links-list link stays).
+- **Scans** are redirects of `GET {short_url}?r=qr`; the redirect server
+  records them as clicks with `source='qr'`.
+  `GET /api/qr-codes/{id}/stats` is the link stats endpoint restricted to
+  QR scans.
+- **Endpoints** — `GET/POST /api/qr-codes`, `GET/PUT/DELETE /api/qr-codes/{id}`,
+  `PATCH /api/qr-codes/bulk`, `PUT /api/qr-codes/{id}/tags`,
+  `GET /api/qr-codes/export`, `GET /api/qr-codes/{id}/stats`, and
+  `GET /api/qr-codes/{id}/image?format=png|svg&size=` (plain, unstyled
+  render). Styled codes (pattern, colours, logo, frame) are rendered and
+  downloaded in the browser.
+- **Logos** — `POST /api/uploads` accepts PNG/JPEG up to 5 MB, stores the
+  file under `uploads.path` (default `data/uploads`) and the API server
+  serves it at `/uploads/{name}`. With Docker, `uploads.path` is
+  `/app/uploads`, backed by the writable `uploads` volume.
+
 ### Upgrading an existing install
 
 - Database migrations run **automatically at backend startup**. Applied
