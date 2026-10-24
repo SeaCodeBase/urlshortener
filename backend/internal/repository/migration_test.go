@@ -1,0 +1,131 @@
+package repository_test
+
+import (
+	"context"
+	"os"
+	"testing"
+
+	"github.com/SeaCodeBase/urlshortener/internal/database"
+	"github.com/SeaCodeBase/urlshortener/internal/testutil"
+)
+
+// TestMigration002_Backfill assumes 002_bitly_clone.sql has already been
+// applied to the test database. It inserts a pre-migration style user and
+// link (no group), re-runs the idempotent migration file and checks that the
+// backfill created exactly one group and attached the user and link to it.
+func TestMigration002_Backfill(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	// Use a single connection so FOREIGN_KEY_CHECKS=0 applies to the inserts:
+	// a link created before migration 002 has group_id=0 (the column default).
+	conn, err := db.Connx(ctx)
+	if err != nil {
+		t.Fatalf("conn: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS=0"); err != nil {
+		t.Fatalf("disable fk checks: %v", err)
+	}
+	res, err := conn.ExecContext(ctx,
+		"INSERT INTO users (email, password_hash) VALUES ('backfill.user@example.com', 'x')")
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	userID, _ := res.LastInsertId()
+	res, err = conn.ExecContext(ctx,
+		"INSERT INTO links (user_id, short_code, original_url) VALUES (?, 'bkfill1', 'https://example.com/a')", userID)
+	if err != nil {
+		t.Fatalf("insert link: %v", err)
+	}
+	linkID, _ := res.LastInsertId()
+	if _, err := conn.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS=1"); err != nil {
+		t.Fatalf("enable fk checks: %v", err)
+	}
+	_ = conn.Close()
+
+	raw, err := os.ReadFile("../../migrations/002_bitly_clone.sql")
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	// Run twice: the file must be idempotent and must not duplicate groups.
+	for run := 1; run <= 2; run++ {
+		for _, stmt := range database.SplitStatements(string(raw)) {
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				t.Fatalf("run %d: exec %q: %v", run, stmt, err)
+			}
+		}
+	}
+
+	var groups int
+	if err := db.GetContext(ctx, &groups, "SELECT COUNT(*) FROM `groups` WHERE user_id = ?", userID); err != nil {
+		t.Fatalf("count groups: %v", err)
+	}
+	if groups != 1 {
+		t.Fatalf("expected 1 group for user, got %d", groups)
+	}
+
+	var g struct {
+		ID   uint64 `db:"id"`
+		Name string `db:"name"`
+	}
+	if err := db.GetContext(ctx, &g, "SELECT id, name FROM `groups` WHERE user_id = ?", userID); err != nil {
+		t.Fatalf("get group: %v", err)
+	}
+	if g.Name != "backfill.user" {
+		t.Errorf("group name = %q, want %q", g.Name, "backfill.user")
+	}
+
+	var defaultGroup *uint64
+	if err := db.GetContext(ctx, &defaultGroup, "SELECT default_group_id FROM users WHERE id = ?", userID); err != nil {
+		t.Fatalf("get default group: %v", err)
+	}
+	if defaultGroup == nil || *defaultGroup != g.ID {
+		t.Errorf("users.default_group_id = %v, want %d", defaultGroup, g.ID)
+	}
+
+	var link struct {
+		GroupID  uint64 `db:"group_id"`
+		Archived bool   `db:"archived"`
+		Source   string `db:"source"`
+	}
+	if err := db.GetContext(ctx, &link, "SELECT group_id, archived, source FROM links WHERE id = ?", linkID); err != nil {
+		t.Fatalf("select new link columns: %v", err)
+	}
+	if link.GroupID != g.ID {
+		t.Errorf("links.group_id = %d, want %d", link.GroupID, g.ID)
+	}
+	if link.Archived {
+		t.Error("expected archived = false")
+	}
+	if link.Source != "link" {
+		t.Errorf("source = %q, want link", link.Source)
+	}
+}
+
+// TestMigration002_DomainDefaults checks that the domain columns exist
+// and that a domain created after the migration defaults to 'pending'.
+func TestMigration002_DomainDefaults(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	res, err := db.ExecContext(ctx, "INSERT INTO users (email, password_hash) VALUES ('dom@example.com', 'x')")
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	userID, _ := res.LastInsertId()
+	res, err = db.ExecContext(ctx, "INSERT INTO domains (user_id, domain) VALUES (?, 'new.example.com')", userID)
+	if err != nil {
+		t.Fatalf("insert domain: %v", err)
+	}
+	domainID, _ := res.LastInsertId()
+
+	var status string
+	if err := db.GetContext(ctx, &status, "SELECT verification_status FROM domains WHERE id = ?", domainID); err != nil {
+		t.Fatalf("select status: %v", err)
+	}
+	if status != "pending" {
+		t.Errorf("new domain verification_status = %q, want pending", status)
+	}
+}

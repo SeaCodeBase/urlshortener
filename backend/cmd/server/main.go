@@ -58,6 +58,13 @@ func main() {
 	}
 	defer db.Close()
 
+	applied, err := database.Migrate(ctx, db, cfg.Database.MigrationsPath)
+	if err != nil {
+		logger.Fatal(ctx, "database migration failed",
+			zap.String("path", cfg.Database.MigrationsPath), zap.Error(err))
+	}
+	logger.Info(ctx, "database migrations up to date", zap.Strings("applied", applied))
+
 	rdb, err := cache.Connect(ctx, cfg)
 	if err != nil {
 		logger.Fatal(ctx, "redis connection failed", zap.Error(err))

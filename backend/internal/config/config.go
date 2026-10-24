@@ -10,9 +10,9 @@ import (
 
 // ServerConfig holds server-related configuration
 type ServerConfig struct {
-	Port              string   `yaml:"port"`               // Legacy, kept for backwards compat
-	RedirectPort      string   `yaml:"redirect_port"`      // Port for redirect server
-	APIPort           string   `yaml:"api_port"`           // Port for API server
+	Port              string   `yaml:"port"`          // Legacy, kept for backwards compat
+	RedirectPort      string   `yaml:"redirect_port"` // Port for redirect server
+	APIPort           string   `yaml:"api_port"`      // Port for API server
 	AllowRegistration *bool    `yaml:"allow_registration"`
 	AllowOrigins      []string `yaml:"allow_origins"`
 }
@@ -24,6 +24,8 @@ type DatabaseConfig struct {
 	User     string `yaml:"user"`
 	Password string `yaml:"password"`
 	Name     string `yaml:"name"`
+	// MigrationsPath is the directory holding NNN_*.sql files applied on startup.
+	MigrationsPath string `yaml:"migrations_path"`
 }
 
 // RedisConfig holds Redis connection configuration
@@ -130,6 +132,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Database.Name == "" {
 		cfg.Database.Name = "urlshortener"
+	}
+	if cfg.Database.MigrationsPath == "" {
+		cfg.Database.MigrationsPath = "migrations"
 	}
 	if cfg.Redis.Host == "" {
 		cfg.Redis.Host = "localhost"

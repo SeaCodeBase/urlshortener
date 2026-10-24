@@ -15,6 +15,7 @@ database:
   user: "urlshortener"
   password: ""
   name: "urlshortener"
+  migrations_path: "migrations"  # directory of NNN_*.sql files applied on startup
 
 redis:
   host: "localhost"

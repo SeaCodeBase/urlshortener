@@ -111,6 +111,7 @@ jwt:
 	assert.Equal(t, "3306", cfg.Database.Port)
 	assert.Equal(t, "urlshortener", cfg.Database.User)
 	assert.Equal(t, "urlshortener", cfg.Database.Name)
+	assert.Equal(t, "migrations", cfg.Database.MigrationsPath)
 	assert.Equal(t, "localhost", cfg.Redis.Host)
 	assert.Equal(t, "6379", cfg.Redis.Port)
 	assert.Equal(t, "http://localhost:8080", cfg.URLs.BaseURL)

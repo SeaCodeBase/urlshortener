@@ -18,10 +18,20 @@ func SetupTestDB(t *testing.T) *sqlx.DB {
 		t.Skipf("Skipping test: could not connect to test database: %v", err)
 	}
 
-	// Clean tables before each test
-	_, _ = db.Exec("DELETE FROM clicks")
-	_, _ = db.Exec("DELETE FROM links")
-	_, _ = db.Exec("DELETE FROM users")
+	// Clean tables before each test, children before parents (FK order).
+	for _, table := range []string{
+		"clicks",
+		"link_tags",
+		"dynamic_routing_rules",
+		"links",
+		"api_tokens",
+		"activity_log",
+		"`groups`",
+		"domains",
+		"users",
+	} {
+		_, _ = db.Exec("DELETE FROM " + table)
+	}
 
 	return db
 }

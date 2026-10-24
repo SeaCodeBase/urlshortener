@@ -15,6 +15,8 @@ type Click struct {
 	City        string    `db:"city" json:"city"`
 	DeviceType  string    `db:"device_type" json:"device_type"`
 	Browser     string    `db:"browser" json:"browser"`
+	OS          string    `db:"os" json:"os"`
+	Source      string    `db:"source" json:"source"`
 	UTMSource   string    `db:"utm_source" json:"utm_source"`
 	UTMMedium   string    `db:"utm_medium" json:"utm_medium"`
 	UTMCampaign string    `db:"utm_campaign" json:"utm_campaign"`
