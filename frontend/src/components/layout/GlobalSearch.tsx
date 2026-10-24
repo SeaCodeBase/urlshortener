@@ -60,7 +60,7 @@ export function GlobalSearch() {
         onBlur={() => {
           if (!query) close()
         }}
-        className="h-10 w-[min(300px,60vw)] rounded-[4px] border border-border bg-white pr-9 pl-10 text-base text-foreground outline-none focus:ring-2 focus:ring-primary [&::-webkit-search-cancel-button]:hidden"
+        className="h-10 w-[min(300px,60vw)] rounded-[4px] border border-border bg-card pr-9 pl-10 text-base text-foreground outline-none focus:ring-2 focus:ring-primary [&::-webkit-search-cancel-button]:hidden"
       />
       <button
         type="button"
@@ -87,7 +87,7 @@ export function GlobalSearch() {
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => go(target)}
-                className="h-8 rounded-[4px] border border-border bg-white px-3 text-sm font-medium text-foreground hover:bg-accent"
+                className="h-8 rounded-[4px] border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-accent"
               >
                 {label}
               </button>

@@ -71,6 +71,22 @@ export function buildQuery(params: object = {}): string {
   return qs ? `?${qs}` : '';
 }
 
+/** Per-request options on top of fetch's RequestInit. */
+interface RequestOptions extends RequestInit {
+  /**
+   * A 401 here means bad user input (e.g. a wrong current password), not an
+   * expired session: never sign out for it.
+   */
+  noAuthLogout?: boolean;
+}
+
+/** The auth middleware's 401 messages — the only ones that mean the session is gone. */
+const SESSION_401_MESSAGES = new Set([
+  'authorization header required',
+  'invalid authorization header format',
+  'invalid or expired token',
+]);
+
 class ApiClient {
   private token: string | null = null;
   private groupId: number | null = null;
@@ -113,7 +129,7 @@ class ApiClient {
     return headers;
   }
 
-  private async fetchOk(endpoint: string, options: RequestInit = {}): Promise<Response> {
+  private async fetchOk(endpoint: string, { noAuthLogout = false, ...options }: RequestOptions = {}): Promise<Response> {
     const hadToken = this.token != null;
     let response: Response;
     try {
@@ -127,9 +143,16 @@ class ApiClient {
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       const message = typeof body?.error === 'string' && body.error ? body.error : 'Request failed';
-      // Only a token that was sent and is still current signs the user out:
-      // a failed login (no token) or a stale in-flight request doesn't.
-      if (response.status === 401 && hadToken && this.token != null) {
+      // Only a session 401 from the auth middleware, for a token that was sent
+      // and is still current, signs the user out: a failed login (no token), a
+      // wrong password on an authenticated form, or a stale in-flight request doesn't.
+      if (
+        response.status === 401 &&
+        !noAuthLogout &&
+        hadToken &&
+        this.token != null &&
+        SESSION_401_MESSAGES.has(message)
+      ) {
         this.unauthorizedHandler?.();
       }
       throw new ApiError(message, response.status);
@@ -137,7 +160,7 @@ class ApiClient {
     return response;
   }
 
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  private async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
     const response = await this.fetchOk(endpoint, options);
     if (response.status === 204) {
       return {} as T;
@@ -145,8 +168,9 @@ class ApiClient {
     return response.json();
   }
 
-  private send<T>(method: string, endpoint: string, body?: unknown): Promise<T> {
+  private send<T>(method: string, endpoint: string, body?: unknown, opts: Pick<RequestOptions, 'noAuthLogout'> = {}): Promise<T> {
     return this.request<T>(endpoint, {
+      ...opts,
       method,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -180,14 +204,14 @@ class ApiClient {
   }
 
   async updateEmail(data: UpdateEmailInput) {
-    return this.send<User>('PUT', '/api/auth/email', data);
+    return this.send<User>('PUT', '/api/auth/email', data, { noAuthLogout: true });
   }
 
   async changePassword(oldPassword: string, newPassword: string) {
     return this.send<{ message: string }>('PUT', '/api/auth/password', {
       old_password: oldPassword,
       new_password: newPassword,
-    });
+    }, { noAuthLogout: true });
   }
 
   // Links
@@ -297,7 +321,7 @@ class ApiClient {
   }
 
   async createToken(data: CreateTokenInput) {
-    return this.send<CreateTokenResponse>('POST', '/api/api-tokens', data);
+    return this.send<CreateTokenResponse>('POST', '/api/api-tokens', data, { noAuthLogout: true });
   }
 
   async revokeToken(id: number) {
@@ -322,7 +346,7 @@ class ApiClient {
   }
 
   async beginPasskeyVerify(userId: number): Promise<{ options: { publicKey: PublicKeyCredentialRequestOptionsJSON }; session_data: string }> {
-    return this.send('POST', '/api/auth/passkeys/verify/begin', { user_id: userId });
+    return this.send('POST', '/api/auth/passkeys/verify/begin', { user_id: userId }, { noAuthLogout: true });
   }
 }
 

@@ -7,10 +7,10 @@ import { UserMenu } from './UserMenu'
 
 export const HELP_URL = 'https://github.com/SeaCodeBase/urlshortener#readme'
 
-/** 56px white bar: hamburger (below lg) + group switcher | search, help, user menu. */
+/** 56px bar (bg-card): hamburger (below lg) + group switcher | search, help, user menu. */
 export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
   return (
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-white py-2 pr-4 pl-6">
+    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-card py-2 pr-4 pl-6">
       <div className="flex min-w-0 items-center gap-2">
         <button
           type="button"

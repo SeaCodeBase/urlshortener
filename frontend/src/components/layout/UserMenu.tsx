@@ -39,7 +39,7 @@ export function UserMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label="Open user menu"
-        className="flex size-8 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-white outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+        className="flex size-8 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
       >
         {initial}
       </DropdownMenuTrigger>

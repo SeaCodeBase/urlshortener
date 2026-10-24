@@ -149,14 +149,36 @@ describe("ApiClient", () => {
     const original = useAuthStore.getState().logout;
     const spy = vi.fn(original);
     useAuthStore.setState({ token: "tok-123", logout: spy });
-    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({ error: "unauthorized" }, 401)));
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({ error: "invalid or expired token" }, 401)));
 
-    const results = await Promise.allSettled([api.getTags(), api.getTags()]);
+    const results = await Promise.allSettled([api.getLinks(), api.getLinks()]);
 
     expect(results.map((r) => r.status)).toEqual(["rejected", "rejected"]);
     expect((results[0] as PromiseRejectedResult).reason).toMatchObject({ status: 401 });
     expect(spy).toHaveBeenCalledTimes(1);
     expect(useAuthStore.getState().token).toBeNull();
+    useAuthStore.setState({ logout: original });
+  });
+
+  it("a 401 from changePassword (wrong current password) does not sign out", async () => {
+    const original = useAuthStore.getState().logout;
+    const spy = vi.fn(original);
+    useAuthStore.setState({ token: "tok-123", logout: spy });
+    fetchMock.mockResolvedValue(jsonResponse({ error: "current password is incorrect" }, 401));
+
+    await expect(api.changePassword("old", "new-password")).rejects.toMatchObject({ status: 401 });
+    expect(spy).not.toHaveBeenCalled();
+    useAuthStore.setState({ logout: original });
+  });
+
+  it("a non-session 401 message does not sign out", async () => {
+    const original = useAuthStore.getState().logout;
+    const spy = vi.fn(original);
+    useAuthStore.setState({ token: "tok-123", logout: spy });
+    fetchMock.mockResolvedValue(jsonResponse({ error: "invalid credentials" }, 401));
+
+    await expect(api.getLinks()).rejects.toMatchObject({ status: 401 });
+    expect(spy).not.toHaveBeenCalled();
     useAuthStore.setState({ logout: original });
   });
 

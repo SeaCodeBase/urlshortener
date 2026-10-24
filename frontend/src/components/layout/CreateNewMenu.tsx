@@ -19,19 +19,21 @@ export const CREATE_ITEMS = [
   { label: 'Page', href: '/dashboard/pages/new', icon: FileText, shortcut: undefined },
 ] as const
 
-function isTyping(target: EventTarget | null): boolean {
+/** Keys typed into a field or used inside an open overlay aren't shortcuts. */
+function isTypingOrInOverlay(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   const tag = target.tagName
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return true
+  return target.closest('[role="dialog"],[role="menu"],[role="listbox"],[role="combobox"]') != null
 }
 
-/** `l` → create link, `q` → create QR Code; ignored while typing or with a modifier. */
+/** `l` → create link, `q` → create QR Code; ignored while typing, in overlays, on repeat or with a modifier. */
 export function useCreateShortcuts() {
   const router = useRouter()
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
-      if (isTyping(e.target)) return
+      if (e.defaultPrevented || e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+      if (isTypingOrInOverlay(e.target)) return
       const key = e.key.toLowerCase()
       if (key === 'l') router.push('/dashboard/links/create')
       else if (key === 'q') router.push('/dashboard/qr-codes/create')
