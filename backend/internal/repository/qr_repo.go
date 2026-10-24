@@ -60,6 +60,7 @@ type QRFilter struct {
 // (clicks with source = 'qr').
 type QRCodeRow struct {
 	model.QRCode
+	LinkUserID            uint64         `db:"link_user_id"`
 	LinkShortCode         string         `db:"link_short_code"`
 	LinkOriginalURL       string         `db:"link_original_url"`
 	LinkLongURLHost       *string        `db:"link_long_url_host"`
@@ -70,15 +71,18 @@ type QRCodeRow struct {
 	LinkArchived          bool           `db:"link_archived"`
 	LinkRedirectCount     int            `db:"link_redirect_count"`
 	LinkHasCustomBackHalf bool           `db:"link_has_custom_back_half"`
+	LinkIsActive          bool           `db:"link_is_active"`
+	LinkParentLinkID      *uint64        `db:"link_parent_link_id"`
+	LinkCreatedAt         time.Time      `db:"link_created_at"`
+	LinkUpdatedAt         time.Time      `db:"link_updated_at"`
 	TotalScans            int64          `db:"total_scans"`
 }
 
-// ToLink returns the owned link built from the row's link fields. Columns the
-// row does not load (is_active, parent_link_id, link timestamps) are zero.
+// ToLink returns the owned link built from the row's link fields.
 func (r QRCodeRow) ToLink() model.Link {
 	return model.Link{
 		ID:                r.LinkID,
-		UserID:            r.UserID,
+		UserID:            r.LinkUserID,
 		GroupID:           r.GroupID,
 		ShortCode:         r.LinkShortCode,
 		OriginalURL:       r.LinkOriginalURL,
@@ -90,15 +94,21 @@ func (r QRCodeRow) ToLink() model.Link {
 		RedirectCount:     r.LinkRedirectCount,
 		Source:            r.LinkSource,
 		DomainID:          r.LinkDomainID,
+		IsActive:          r.LinkIsActive,
+		ParentLinkID:      r.LinkParentLinkID,
+		CreatedAt:         r.LinkCreatedAt,
+		UpdatedAt:         r.LinkUpdatedAt,
 	}
 }
 
 const qrRowSelect = `SELECT q.id, q.user_id, q.group_id, q.link_id, q.title, q.render_customizations,
 	q.archived, q.created_at, q.updated_at,
-	l.short_code AS link_short_code, l.original_url AS link_original_url,
+	l.user_id AS link_user_id, l.short_code AS link_short_code, l.original_url AS link_original_url,
 	l.long_url_host AS link_long_url_host, l.title AS link_title, l.domain_id AS link_domain_id,
 	l.source AS link_source, l.expires_at AS link_expires_at, l.archived AS link_archived,
 	l.redirect_count AS link_redirect_count, l.has_custom_back_half AS link_has_custom_back_half,
+	l.is_active AS link_is_active, l.parent_link_id AS link_parent_link_id,
+	l.created_at AS link_created_at, l.updated_at AS link_updated_at,
 	(SELECT COUNT(*) FROM clicks c WHERE c.link_id = l.id AND c.source = 'qr') AS total_scans
 	FROM qr_codes q JOIN links l ON l.id = q.link_id`
 

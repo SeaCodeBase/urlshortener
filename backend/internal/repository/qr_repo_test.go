@@ -63,6 +63,11 @@ func TestQRRepository_CreateGetDelete(t *testing.T) {
 	assert.Equal(t, "qrc1", l.ShortCode)
 	assert.Equal(t, model.LinkSourceQR, l.Source)
 	assert.Equal(t, qr.GroupID, l.GroupID)
+	assert.Equal(t, links[0].UserID, l.UserID)
+	assert.True(t, l.IsActive)
+	assert.Nil(t, l.ParentLinkID)
+	assert.False(t, l.CreatedAt.IsZero())
+	assert.False(t, l.UpdatedAt.IsZero())
 
 	byLink, err := repo.GetByLinkID(ctx, links[0].ID)
 	require.NoError(t, err)
@@ -232,4 +237,30 @@ func TestQRRepository_QRCodeIDsForLinks(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, got)
 	assert.Empty(t, got)
+}
+
+func TestQRRepository_ToLink_UsesLinkColumns(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	_, links := linkFixture(t, db, "qrtolink@example.com", &model.Link{ShortCode: "qrp1"})
+	parentID := links[0].ID
+	child := &model.Link{UserID: links[0].UserID, GroupID: links[0].GroupID, ShortCode: "qrp2",
+		OriginalURL: "https://example.com/qrp2", Source: model.LinkSourceQR, ParentLinkID: &parentID}
+	require.NoError(t, repository.NewLinkRepository(db).Create(ctx, child))
+	// A QR row whose user_id differs from the link's: ToLink must report the
+	// link's own owner.
+	other := createTestUser(t, db, "qrtolink-other@example.com")
+	qr := &model.QRCode{UserID: other.ID, GroupID: child.GroupID, LinkID: child.ID}
+	repo := repository.NewQRRepository(db)
+	require.NoError(t, repo.Create(ctx, qr))
+
+	got, err := repo.GetByID(ctx, qr.ID)
+	require.NoError(t, err)
+	l := got.ToLink()
+	assert.Equal(t, child.UserID, l.UserID)
+	assert.False(t, l.IsActive)
+	require.NotNil(t, l.ParentLinkID)
+	assert.Equal(t, parentID, *l.ParentLinkID)
+	assert.False(t, l.CreatedAt.IsZero())
 }
