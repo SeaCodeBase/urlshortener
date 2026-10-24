@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
 	"github.com/go-webauthn/webauthn/protocol"
@@ -65,6 +66,25 @@ type ShortCodeService interface {
 	// IsAvailable checks if a short code is available within the given domain.
 	// domainID nil means the default domain.
 	IsAvailable(ctx context.Context, domainID *uint64, code string) (bool, error)
+}
+
+//go:generate mockgen -destination=mocks/mock_tag_service.go -package=mocks . TagService
+type TagService interface {
+	// ListByGroup returns the group's distinct tags for an entity type:
+	// "link" (or "") for links, "qr" for QR codes; other types return
+	// ErrInvalidTagType.
+	ListByGroup(ctx context.Context, groupID uint64, typ string) ([]string, error)
+}
+
+//go:generate mockgen -destination=mocks/mock_activity_service.go -package=mocks . ActivityService
+type ActivityService interface {
+	// Log records an activity entry. It never fails: errors are logged and
+	// swallowed so callers' primary actions are unaffected. meta may be nil.
+	Log(ctx context.Context, userID, groupID uint64, action, entityType string, entityID uint64, meta map[string]any)
+	// List pages through the group's activity, newest first. from is
+	// inclusive, to exclusive (nil = unbounded). page < 1 becomes 1; limit
+	// defaults to 20 and is capped at 100.
+	List(ctx context.Context, groupID uint64, from, to *time.Time, page, limit int) (*ActivityListResult, error)
 }
 
 //go:generate mockgen -destination=mocks/mock_passkey_service.go -package=mocks . PasskeyService

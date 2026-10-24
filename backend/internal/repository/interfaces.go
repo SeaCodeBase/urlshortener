@@ -96,6 +96,34 @@ type RoutingRuleRepository interface {
 	ReplaceForLink(ctx context.Context, linkID uint64, rules []model.RoutingRule) error
 }
 
+// TagRepository manages link tags. Tags are trimmed, truncated to 100
+// characters, de-duplicated (case-sensitively) and blank ones dropped.
+//
+//go:generate mockgen -destination=mocks/mock_tag_repo.go -package=mocks . TagRepository
+type TagRepository interface {
+	// SetLinkTags replaces the link's tags (nil/empty clears them).
+	SetLinkTags(ctx context.Context, linkID uint64, tags []string) error
+	// GetLinkTags returns the link's tags sorted; never nil.
+	GetLinkTags(ctx context.Context, linkID uint64) ([]string, error)
+	// GetTagsForLinks returns tags keyed by link ID; links without tags are absent.
+	GetTagsForLinks(ctx context.Context, linkIDs []uint64) (map[uint64][]string, error)
+	// ListByGroup returns the distinct tags used by the group's links, sorted.
+	ListByGroup(ctx context.Context, groupID uint64) ([]string, error)
+	// AddTagsToLinks adds tags to every link; existing tags are left alone.
+	AddTagsToLinks(ctx context.Context, linkIDs []uint64, tags []string) error
+	// RemoveTagsFromLinks removes tags from every link.
+	RemoveTagsFromLinks(ctx context.Context, linkIDs []uint64, tags []string) error
+}
+
+//go:generate mockgen -destination=mocks/mock_activity_repo.go -package=mocks . ActivityRepository
+type ActivityRepository interface {
+	// Insert stores the entry and fills ID and CreatedAt.
+	Insert(ctx context.Context, entry *model.ActivityEntry) error
+	// List returns the group's entries newest first with the total count.
+	// from is inclusive and to exclusive; nil means unbounded.
+	List(ctx context.Context, groupID uint64, from, to *time.Time, limit, offset int) ([]model.ActivityEntry, int64, error)
+}
+
 //go:generate mockgen -destination=mocks/mock_click_repo.go -package=mocks . ClickRepository
 type ClickRepository interface {
 	BatchInsert(ctx context.Context, clicks []model.Click) error

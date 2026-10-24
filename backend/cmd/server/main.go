@@ -81,6 +81,8 @@ func main() {
 	groupRepo := repository.NewGroupRepository(db)
 	routingRuleRepo := repository.NewRoutingRuleRepository(db)
 	apiTokenRepo := repository.NewAPITokenRepository(db)
+	tagRepo := repository.NewTagRepository(db)
+	activityRepo := repository.NewActivityRepository(db)
 
 	// Start click flusher worker
 	clickFlusher := worker.NewClickFlusher(rdb, clickRepo)
@@ -91,6 +93,8 @@ func main() {
 	authService := service.NewAuthService(userRepo, groupRepo, cfg.JWT.Secret)
 	groupService := service.NewGroupService(groupRepo, userRepo, domainRepo)
 	tokenService := service.NewTokenService(apiTokenRepo, userRepo)
+	tagService := service.NewTagService(tagRepo)
+	activityService := service.NewActivityService(activityRepo)
 	shortCodeSvc := service.NewShortCodeService(linkRepo)
 	linkService := service.NewLinkService(linkRepo, shortCodeSvc)
 	statsService := service.NewStatsService(clickRepo, linkRepo)
@@ -112,6 +116,8 @@ func main() {
 	passkeyVerifyHandler := handler.NewPasskeyVerifyHandler(passkeyService, authService)
 	domainHandler := handler.NewDomainHandler(domainRepo)
 	tokenHandler := handler.NewTokenHandler(tokenService)
+	tagHandler := handler.NewTagHandler(tagService)
+	activityHandler := handler.NewActivityHandler(activityService)
 
 	// Click service
 	clickService := service.NewClickService(rdb)
@@ -186,6 +192,10 @@ func main() {
 			apiTokens.POST("", tokenHandler.Create)
 			apiTokens.DELETE("/:id", tokenHandler.Revoke)
 		}
+
+		// Tags and activity log (protected, group-scoped)
+		api.GET("/tags", authMiddleware, groupMW, tagHandler.List)
+		api.GET("/activity-log", authMiddleware, groupMW, activityHandler.List)
 
 		// Domain routes (protected)
 		domains := api.Group("/domains")
