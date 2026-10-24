@@ -21,7 +21,6 @@ type qrSvcFixture struct {
 	qrs      *mocks.MockQRRepository
 	links    *svcmocks.MockLinkService
 	linkRepo *mocks.MockLinkRepository
-	tags     *mocks.MockTagRepository
 	domains  *mocks.MockDomainRepository
 	activity *svcmocks.MockActivityService
 }
@@ -32,7 +31,6 @@ func newQRSvc(t *testing.T) *qrSvcFixture {
 		qrs:      mocks.NewMockQRRepository(ctrl),
 		links:    svcmocks.NewMockLinkService(ctrl),
 		linkRepo: mocks.NewMockLinkRepository(ctrl),
-		tags:     mocks.NewMockTagRepository(ctrl),
 		domains:  mocks.NewMockDomainRepository(ctrl),
 		activity: svcmocks.NewMockActivityService(ctrl),
 	}
@@ -40,7 +38,6 @@ func newQRSvc(t *testing.T) *qrSvcFixture {
 		QRs:      f.qrs,
 		Links:    f.links,
 		LinkRepo: f.linkRepo,
-		Tags:     f.tags,
 		Activity: f.activity,
 		Domains:  f.domains,
 		BaseURL:  "https://sho.rt",
@@ -247,7 +244,8 @@ func TestQRService_Delete_QRSourceDeletesLink(t *testing.T) {
 	link := model.Link{ID: 80, UserID: 1, GroupID: 7, ShortCode: "q8", Source: model.LinkSourceQR,
 		RedirectCount: 3, HasCustomBackHalf: true}
 	f.qrs.EXPECT().GetByID(gomock.Any(), uint64(13)).Return(qrRow(13, 1, 7, link), nil)
-	f.qrs.EXPECT().Delete(gomock.Any(), uint64(13)).Return(nil)
+	// Only the link is deleted; the QR row goes by ON DELETE CASCADE, so no
+	// qrRepo.Delete expectation (a call fails the test).
 	f.linkRepo.EXPECT().Delete(gomock.Any(), uint64(80)).Return(nil)
 	f.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionQRDelete, service.EntityQRCode, uint64(13), gomock.Any())
 
@@ -262,6 +260,7 @@ func TestQRService_Delete_SharedLinkKept(t *testing.T) {
 	link := model.Link{ID: 81, UserID: 1, GroupID: 7, ShortCode: "s1", Source: model.LinkSourceLink}
 	f.qrs.EXPECT().GetByID(gomock.Any(), uint64(14)).Return(qrRow(14, 1, 7, link), nil)
 	f.qrs.EXPECT().Delete(gomock.Any(), uint64(14)).Return(nil)
+	// No linkRepo.Delete expectation: the shared link stays.
 	f.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionQRDelete, service.EntityQRCode, uint64(14), gomock.Any())
 
 	_, linkDeleted, err := f.svc.Delete(context.Background(), 1, 14)
@@ -326,4 +325,48 @@ func TestQRService_Export_Header(t *testing.T) {
 		{"'=cmd", "https://sho.rt/abc", "https://e.com", "2026-10-02T03:04:05Z", "4", "Active"},
 		{"Poster", "https://go.brand.test/brand", "https://f.com", "2026-10-02T03:04:05Z", "0", "Hidden"},
 	}, rows)
+}
+
+func TestQRService_Delete_QRSourceLinkDeleteFails_KeepsQR(t *testing.T) {
+	f := newQRSvc(t)
+	link := model.Link{ID: 82, UserID: 1, GroupID: 7, Source: model.LinkSourceQR}
+	f.qrs.EXPECT().GetByID(gomock.Any(), uint64(15)).Return(qrRow(15, 1, 7, link), nil)
+	f.linkRepo.EXPECT().Delete(gomock.Any(), uint64(82)).Return(assert.AnError)
+
+	_, linkDeleted, err := f.svc.Delete(context.Background(), 1, 15)
+	assert.ErrorIs(t, err, assert.AnError)
+	assert.False(t, linkDeleted)
+}
+
+func TestQRService_Update_LaterFailureReturnsPrevLink(t *testing.T) {
+	f := newQRSvc(t)
+	link := model.Link{ID: 71, UserID: 1, GroupID: 7, ShortCode: "q2", OriginalURL: "https://old.example", Source: model.LinkSourceQR}
+	f.qrs.EXPECT().GetByID(gomock.Any(), uint64(16)).Return(qrRow(16, 1, 7, link), nil)
+	updated := link
+	updated.OriginalURL = "https://new.example"
+	f.links.EXPECT().Update(gomock.Any(), uint64(1), uint64(71), service.UpdateLinkInput{OriginalURL: "https://new.example"}).
+		Return(&updated, &link, nil)
+	f.qrs.EXPECT().SetTags(gomock.Any(), uint64(16), []string{"x"}).Return(assert.AnError)
+
+	d, prev, err := f.svc.Update(context.Background(), 1, 16, service.UpdateQRCodeInput{
+		LongURL: "https://new.example", Tags: &[]string{"x"},
+	})
+	assert.ErrorIs(t, err, assert.AnError)
+	assert.Nil(t, d)
+	require.NotNil(t, prev, "the link changed, so callers must still invalidate it")
+	assert.Equal(t, "https://old.example", prev.OriginalURL)
+}
+
+func TestQRService_Update_RoutingRulesFailureReturnsPrevLink(t *testing.T) {
+	f := newQRSvc(t)
+	link := model.Link{ID: 72, UserID: 1, GroupID: 7, ShortCode: "q3", Source: model.LinkSourceQR}
+	f.qrs.EXPECT().GetByID(gomock.Any(), uint64(17)).Return(qrRow(17, 1, 7, link), nil)
+	f.links.EXPECT().SetRoutingRules(gomock.Any(), uint64(1), uint64(72), gomock.Any()).Return(nil, assert.AnError)
+
+	_, prev, err := f.svc.Update(context.Background(), 1, 17, service.UpdateQRCodeInput{
+		RoutingRules: &[]service.RoutingRuleInput{{LongURL: "https://r.example"}},
+	})
+	assert.ErrorIs(t, err, assert.AnError)
+	require.NotNil(t, prev)
+	assert.Equal(t, "q3", prev.ShortCode)
 }

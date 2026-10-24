@@ -46,7 +46,6 @@ type QRServiceDeps struct {
 	// LinkRepo deletes a QR-owned link (source 'qr') together with its QR
 	// code, bypassing LinkService.Delete's deletability rule.
 	LinkRepo repository.LinkRepository
-	Tags     repository.TagRepository
 	Activity ActivityService
 	// Domains and BaseURL build short links for Export.
 	Domains repository.DomainRepository
@@ -361,7 +360,9 @@ func (s *QRServiceImpl) List(ctx context.Context, groupID uint64, params ListQRP
 // destination and expiration go through LinkService.Update and routing rules
 // through LinkService.SetRoutingRules. prevLink is the link before the update
 // when its destination, expiration or routing rules may have changed (callers
-// invalidate its cached redirect), otherwise nil.
+// invalidate its cached redirect), otherwise nil. prevLink may be non-nil even
+// when err != nil (a later step failed after the link changed); callers
+// invalidate it.
 func (s *QRServiceImpl) Update(ctx context.Context, userID, id uint64, input UpdateQRCodeInput) (*QRCodeDetails, *model.Link, error) {
 	row, err := s.getOwned(ctx, userID, id)
 	if err != nil {
@@ -398,12 +399,12 @@ func (s *QRServiceImpl) Update(ctx context.Context, userID, id uint64, input Upd
 		link, prev = *updated, p
 	}
 	if input.RoutingRules != nil {
-		if _, err := s.links.SetRoutingRules(ctx, userID, link.ID, *input.RoutingRules); err != nil {
-			return nil, nil, err
-		}
 		if prev == nil {
 			snapshot := link
 			prev = &snapshot
+		}
+		if _, err := s.links.SetRoutingRules(ctx, userID, link.ID, *input.RoutingRules); err != nil {
+			return nil, prev, err
 		}
 		changed = append(changed, "routing_rules")
 	}
@@ -422,9 +423,9 @@ func (s *QRServiceImpl) Update(ctx context.Context, userID, id uint64, input Upd
 	if rowChanged {
 		if err := s.qrRepo.Update(ctx, &qr); err != nil {
 			if errors.Is(err, repository.ErrQRCodeNotFound) {
-				return nil, nil, ErrQRCodeNotFound
+				return nil, prev, ErrQRCodeNotFound
 			}
-			return nil, nil, err
+			return nil, prev, err
 		}
 	}
 
@@ -432,11 +433,11 @@ func (s *QRServiceImpl) Update(ctx context.Context, userID, id uint64, input Upd
 	if input.Tags != nil {
 		tags = repository.NormalizeTags(*input.Tags)
 		if err := s.qrRepo.SetTags(ctx, qr.ID, tags); err != nil {
-			return nil, nil, err
+			return nil, prev, err
 		}
 		changed = append(changed, "tags")
 	} else if tags, err = s.tagsOf(ctx, qr.ID); err != nil {
-		return nil, nil, err
+		return nil, prev, err
 	}
 
 	s.activity.Log(detached(ctx), userID, qr.GroupID, ActionQRUpdate, EntityQRCode, qr.ID,
@@ -444,23 +445,23 @@ func (s *QRServiceImpl) Update(ctx context.Context, userID, id uint64, input Upd
 	return &QRCodeDetails{QRCode: qr, Link: link, Tags: tags, TotalScans: row.TotalScans}, prev, nil
 }
 
-// Delete removes the QR code; a QR-owned link (source 'qr') is deleted with
-// it (linkDeleted), a Links-list link stays. Tags are not loaded.
+// Delete removes the QR code. A QR-owned link (source 'qr') is deleted
+// instead, which cascades to the QR row (linkDeleted); a Links-list link
+// stays and only the QR row is deleted. Tags are not loaded.
 func (s *QRServiceImpl) Delete(ctx context.Context, userID, id uint64) (*QRCodeDetails, bool, error) {
 	row, err := s.getOwned(ctx, userID, id)
 	if err != nil {
 		return nil, false, err
 	}
 	d := &QRCodeDetails{QRCode: row.QRCode, Link: row.ToLink(), TotalScans: row.TotalScans}
-	if err := s.qrRepo.Delete(ctx, row.ID); err != nil {
-		if errors.Is(err, repository.ErrQRCodeNotFound) {
-			return nil, false, ErrQRCodeNotFound
-		}
-		return nil, false, err
-	}
-	linkDeleted := false
-	if d.Link.Source == model.LinkSourceQR {
-		if err := s.linkRepo.Delete(ctx, d.Link.ID); err != nil && !errors.Is(err, repository.ErrLinkNotFound) {
+	linkDeleted := d.Link.Source == model.LinkSourceQR
+	if linkDeleted {
+		// Deleting the link removes the QR row too (fk_qr_codes_link is
+		// ON DELETE CASCADE), so a failure leaves both in place.
+		if err := s.linkRepo.Delete(ctx, d.Link.ID); err != nil {
+			if errors.Is(err, repository.ErrLinkNotFound) {
+				return nil, false, ErrQRCodeNotFound
+			}
 			logger.Error(ctx, "qr-service: failed to delete qr-owned link",
 				zap.Uint64("qr_code_id", row.ID),
 				zap.Uint64("link_id", d.Link.ID),
@@ -468,7 +469,11 @@ func (s *QRServiceImpl) Delete(ctx context.Context, userID, id uint64) (*QRCodeD
 			)
 			return nil, false, err
 		}
-		linkDeleted = true
+	} else if err := s.qrRepo.Delete(ctx, row.ID); err != nil {
+		if errors.Is(err, repository.ErrQRCodeNotFound) {
+			return nil, false, ErrQRCodeNotFound
+		}
+		return nil, false, err
 	}
 	s.activity.Log(detached(ctx), userID, row.GroupID, ActionQRDelete, EntityQRCode, row.ID,
 		map[string]any{"short_code": d.Link.ShortCode, "link_deleted": linkDeleted})

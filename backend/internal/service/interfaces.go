@@ -125,9 +125,10 @@ type QRService interface {
 	List(ctx context.Context, groupID uint64, params ListQRParams) (*ListQRResult, error)
 	// Update edits the QR code and its link; prevLink is the link before
 	// the update when its redirect may have changed, otherwise nil.
+	// prevLink may be non-nil even when err != nil; callers invalidate it.
 	Update(ctx context.Context, userID, id uint64, input UpdateQRCodeInput) (details *QRCodeDetails, prevLink *model.Link, err error)
-	// Delete removes the QR code and, when the link is QR-owned (source
-	// 'qr'), the link too (linkDeleted).
+	// Delete removes the QR code; when the link is QR-owned (source 'qr')
+	// it deletes the link, which cascades to the QR row (linkDeleted).
 	Delete(ctx context.Context, userID, id uint64) (details *QRCodeDetails, linkDeleted bool, err error)
 	// SetArchived hides/shows QR codes and returns how many; every id must
 	// belong to groupID or ErrQRCodeNotFound is returned and nothing changes.
