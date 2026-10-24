@@ -30,7 +30,20 @@ import type {
   LinkStatsQuery,
   LinkStatsV2,
   Meta,
+  BlockInput,
+  BlockPatch,
+  CreatePageInput,
+  Page,
+  PageBlock,
+  PageFilters,
+  PagesListResponse,
+  PageStats,
+  PageStatsQuery,
   Passkey,
+  PublishedPage,
+  ReorderBlocksResponse,
+  SlugCheck,
+  UpdatePageInput,
   QrCode,
   QrFilters,
   QrListParams,
@@ -380,6 +393,72 @@ class ApiClient {
   async exportDashboard(id: number, query: DashboardExportQuery = {}): Promise<Blob> {
     const response = await this.fetchOk(`/api/analytics/dashboards/${id}/export${buildQuery(query)}`);
     return response.blob();
+  }
+
+  // Pages (link-in-bio)
+  async listPages(filters: PageFilters = {}) {
+    return this.request<PagesListResponse>(`/api/pages${buildQuery(filters)}`);
+  }
+
+  async getPage(id: number) {
+    return this.request<Page>(`/api/pages/${id}`);
+  }
+
+  /** 409 when the slug is taken, 400 when invalid/reserved. */
+  async createPage(input: CreatePageInput) {
+    return this.send<Page>('POST', '/api/pages', input);
+  }
+
+  async updatePage(id: number, patch: UpdatePageInput) {
+    return this.send<Page>('PUT', `/api/pages/${id}`, patch);
+  }
+
+  async setPageArchived(id: number, archived: boolean) {
+    return this.send<Page>('PATCH', `/api/pages/${id}`, { archived });
+  }
+
+  async deletePage(id: number) {
+    return this.send<void>('DELETE', `/api/pages/${id}`);
+  }
+
+  /** Snapshots the current content as the public page. */
+  async publishPage(id: number) {
+    return this.send<Page>('POST', `/api/pages/${id}/publish`);
+  }
+
+  async checkSlug(slug: string) {
+    return this.request<SlugCheck>(`/api/pages/check-slug${buildQuery({ slug })}`);
+  }
+
+  async addBlock(pageId: number, input: BlockInput) {
+    return this.send<PageBlock>('POST', `/api/pages/${pageId}/blocks`, input);
+  }
+
+  async updateBlock(pageId: number, blockId: number, patch: BlockPatch) {
+    return this.send<PageBlock>('PUT', `/api/pages/${pageId}/blocks/${blockId}`, patch);
+  }
+
+  async deleteBlock(pageId: number, blockId: number) {
+    return this.send<void>('DELETE', `/api/pages/${pageId}/blocks/${blockId}`);
+  }
+
+  /** `ids` must be exactly the page's block ids in the new order (else 400). */
+  async reorderBlocks(pageId: number, ids: number[]) {
+    return this.send<ReorderBlocksResponse>('PUT', `/api/pages/${pageId}/blocks/reorder`, { ids });
+  }
+
+  async getPageStats(id: number, query: PageStatsQuery = {}) {
+    return this.request<PageStats>(`/api/pages/${id}/stats${buildQuery(query)}`);
+  }
+
+  /** Published page (no auth); 404 for drafts and unknown slugs. The /m/[slug] server route fetches the backend directly. */
+  async getPublicPage(slug: string) {
+    return this.request<PublishedPage>(`/api/public/pages/${encodeURIComponent(slug)}`);
+  }
+
+  /** View beacon → 204 (404 when unpublished). */
+  async recordPageView(slug: string) {
+    return this.send<void>('POST', `/api/public/pages/${encodeURIComponent(slug)}/view`);
   }
 
   async getTags(type: TagType = 'link') {

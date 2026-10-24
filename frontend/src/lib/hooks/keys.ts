@@ -4,6 +4,8 @@ import type {
   DashboardSort,
   LinkListParams,
   LinkStatsQuery,
+  PageFilters,
+  PageStatsQuery,
   QrListParams,
   TagType,
   TodayRange,
@@ -36,6 +38,10 @@ export const queryKeys = {
   dashboard: (id: number) => ['dashboard', id] as const,
   dashboardData: (id: number, query: DashboardDataQuery) => ['dashboard', id, 'data', query] as const,
   meta: ['meta'] as const,
+  pages: (groupId: number | null, filters: PageFilters) => ['pages', groupId, filters] as const,
+  page: (id: number) => ['page', id] as const,
+  pageStats: (id: number, query: PageStatsQuery) => ['page', id, 'stats', query] as const,
+  slugCheck: (slug: string) => ['pages', 'check-slug', slug] as const,
 };
 
 /** The active group id (null until the auth store has loaded groups). */

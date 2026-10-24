@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useLinks } from '@/lib/hooks'
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue'
 
 const PAGE_SIZE = 50
 const SEARCH_DEBOUNCE_MS = 300
@@ -52,12 +53,8 @@ function CompareLinkBody({
   onCompare: (id: number) => void
 }) {
   const [search, setSearch] = useState('')
-  const [q, setQ] = useState('')
+  const q = useDebouncedValue(search.trim(), SEARCH_DEBOUNCE_MS)
   const [choice, setChoice] = useState('')
-  useEffect(() => {
-    const t = setTimeout(() => setQ(search.trim()), SEARCH_DEBOUNCE_MS)
-    return () => clearTimeout(t)
-  }, [search])
 
   const { data, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useLinks({
     ...(q ? { q } : {}),

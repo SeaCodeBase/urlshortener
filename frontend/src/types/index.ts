@@ -110,6 +110,8 @@ export interface Link {
   history?: LinkHistoryEntry[];
   /** The QR code attached to this link, if any. */
   qr_code_id?: number;
+  /** Non-archived pages whose blocks reference this link. */
+  page_ids?: number[];
 }
 
 export interface LinksListResponse {
@@ -566,6 +568,233 @@ export interface SearchResponse {
   links: number;
   /** Number of matching QR codes. */
   qr_codes: number;
+}
+
+// ---------------------------------------------------------------- Pages
+
+export type PageTheme = "classic" | "bold" | "minimal" | "dark" | "sunset";
+export type PageBackgroundType = "solid" | "gradient";
+export type PageButtonStyle = "fill" | "outline";
+export type PageButtonRadius = "square" | "rounded" | "pill";
+export type PageFont = "inter" | "serif" | "mono";
+
+/** pages.design: colours are `#RRGGBB`. */
+export interface PageDesign {
+  theme: PageTheme;
+  background: { type: PageBackgroundType; color: string; color2: string };
+  text_color: string;
+  button: { style: PageButtonStyle; radius: PageButtonRadius; color: string; text_color: string };
+  font: PageFont;
+}
+
+export type PageStatus = "draft" | "published";
+export type BlockType = "link" | "text" | "image" | "social";
+export type SocialPlatform = "instagram" | "x" | "facebook" | "tiktok" | "youtube" | "linkedin" | "email" | "website";
+
+export interface LinkBlockContent {
+  /** 1–80 chars. */
+  title: string;
+  /** ≤160 chars. */
+  description: string;
+  /** http(s) URL or "". */
+  thumbnail_url: string;
+}
+
+export interface TextBlockContent {
+  /** ≤120 chars; heading or body must be non-empty. */
+  heading: string;
+  /** ≤1000 chars. */
+  body: string;
+}
+
+export interface ImageBlockContent {
+  /** http(s) URL or `/uploads/...`. */
+  url: string;
+  /** ≤120 chars. */
+  alt: string;
+}
+
+export interface SocialItem {
+  platform: SocialPlatform;
+  /** http(s) URL (`mailto:` for email). */
+  url: string;
+}
+
+export interface SocialBlockContent {
+  /** 1–10 items. */
+  items: SocialItem[];
+}
+
+export interface BlockContentMap {
+  link: LinkBlockContent;
+  text: TextBlockContent;
+  image: ImageBlockContent;
+  social: SocialBlockContent;
+}
+
+export type BlockContent = BlockContentMap[BlockType];
+
+/** The link a link block points at (null for other types). */
+export interface PageBlockLink {
+  id: number;
+  title: string;
+  short_url: string;
+  original_url: string;
+}
+
+interface PageBlockBase {
+  id: number;
+  position: number;
+  is_active: boolean;
+  is_pinned: boolean;
+  link_id: number | null;
+  link?: PageBlockLink | null;
+}
+
+/** A block of GET /pages/:id; discriminated by `type`. */
+export type PageBlock = {
+  [T in BlockType]: PageBlockBase & { type: T; content: BlockContentMap[T] };
+}[BlockType];
+
+/** GET /pages/:id (list items have no `blocks`). */
+export interface Page {
+  id: number;
+  group_id: number;
+  slug: string;
+  title: string;
+  description: string;
+  avatar_url: string;
+  design: PageDesign;
+  status: PageStatus;
+  published_at: string | null;
+  has_unpublished_changes: boolean;
+  archived: boolean;
+  /** Shareable `{BaseURL}/m/{slug}`. */
+  url: string;
+  /** All-time views. */
+  views: number;
+  created_at: string;
+  updated_at: string;
+  blocks?: PageBlock[];
+}
+
+export interface PagesListResponse {
+  pages: Page[];
+  total: number;
+}
+
+/** GET /pages filters. */
+export interface PageFilters {
+  /** Title/slug substring. */
+  q?: string;
+  /** Default off. */
+  archived?: OnOff;
+}
+
+export type PageTemplate = "scratch" | "classic" | "bold" | "minimal";
+
+export interface CreatePageInput {
+  slug: string;
+  title?: string;
+  template?: PageTemplate;
+}
+
+export interface UpdatePageInput {
+  title?: string;
+  description?: string;
+  avatar_url?: string;
+  design?: PageDesign;
+}
+
+/** POST /pages/:id/blocks: link blocks need `link_id` or `new_link`. */
+export type BlockInput = {
+  [T in BlockType]: {
+    type: T;
+    content: BlockContentMap[T];
+    link_id?: number;
+    new_link?: { original_url: string; title?: string };
+  };
+}[BlockType];
+
+/** PUT /pages/:id/blocks/:bid. */
+export interface BlockPatch {
+  content?: BlockContent;
+  is_active?: boolean;
+  is_pinned?: boolean;
+}
+
+export interface ReorderBlocksResponse {
+  blocks: PageBlock[];
+}
+
+export type SlugCheckReason = "" | "invalid" | "reserved" | "taken";
+
+/** GET /pages/check-slug. */
+export interface SlugCheck {
+  slug: string;
+  available: boolean;
+  reason: SlugCheckReason;
+}
+
+interface PublishedBlockBase {
+  id: number;
+  is_pinned: boolean;
+}
+
+/** A block of the published snapshot: active only, pinned first; link blocks carry `short_url` (`?r=page`). */
+export type PublishedBlock = {
+  [T in BlockType]: PublishedBlockBase & {
+    type: T;
+    content: BlockContentMap[T];
+    short_url?: string;
+  };
+}[BlockType];
+
+/** GET /public/pages/:slug. */
+export interface PublishedPage {
+  slug: string;
+  title: string;
+  description: string;
+  avatar_url: string;
+  design: PageDesign;
+  published_at: string;
+  blocks: PublishedBlock[];
+}
+
+export interface PageStatsQuery {
+  /** YYYY-MM-DD (UTC). */
+  from?: string;
+  /** YYYY-MM-DD (UTC). */
+  to?: string;
+  unit?: StatsUnit;
+  compare?: "previous" | "none";
+}
+
+export interface PageBlockStat {
+  block_id: number;
+  title: string;
+  link_id: number | null;
+  short_url: string;
+  clicks: number;
+}
+
+/** GET /pages/:id/stats; `series[].clicks` are views. */
+export interface PageStats {
+  from: string;
+  to: string;
+  unit: StatsUnit;
+  total_views_all_time: number;
+  total_views: number;
+  prev_total_views: number;
+  /** null when the previous total is 0 or there is no comparison. */
+  change_pct: number | null;
+  series: SeriesPoint[];
+  prev_series: SeriesPoint[];
+  referrers: ReferrerStat[];
+  devices: KeyStat[];
+  countries: CountryStat[];
+  cities: CityStat[];
+  blocks: PageBlockStat[];
 }
 
 // ---------------------------------------------------------------- Domains
