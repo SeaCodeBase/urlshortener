@@ -392,3 +392,34 @@ func TestPageRepo_ListByGroup_FilterAndViews(t *testing.T) {
 	assert.NotNil(t, none)
 	assert.Empty(t, none)
 }
+
+func TestPageRepo_UpdatedAtSemantics(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	group, _ := pageFixture(t, db, "page.updatedat@example.com")
+	repo := repository.NewPageRepository(db)
+	p := createPage(t, repo, group, "stamp")
+	b := createBlock(t, repo, p.ID, model.PageBlockText, nil)
+
+	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	setOld := func() {
+		_, err := db.ExecContext(ctx, `UPDATE pages SET updated_at = ? WHERE id = ?`, old, p.ID)
+		require.NoError(t, err)
+	}
+	updatedAt := func() time.Time {
+		got, err := repo.GetByID(ctx, p.ID)
+		require.NoError(t, err)
+		return got.UpdatedAt.UTC()
+	}
+
+	setOld()
+	require.NoError(t, repo.Publish(ctx, p.ID, model.JSONMap{"slug": "stamp"}, time.Now()))
+	assert.Equal(t, old, updatedAt(), "publish keeps updated_at")
+
+	require.NoError(t, repo.SetArchived(ctx, p.ID, true))
+	assert.Equal(t, old, updatedAt(), "archive keeps updated_at")
+
+	require.NoError(t, repo.DeleteBlock(ctx, b.ID))
+	assert.True(t, updatedAt().After(old), "block delete bumps the page")
+}

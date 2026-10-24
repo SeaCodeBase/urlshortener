@@ -192,7 +192,7 @@ func (r *PageRepositoryImpl) Update(ctx context.Context, p *model.Page) error {
 }
 
 func (r *PageRepositoryImpl) SetArchived(ctx context.Context, id uint64, archived bool) error {
-	result, err := r.db.ExecContext(ctx, `UPDATE pages SET archived = ? WHERE id = ?`, archived, id)
+	result, err := r.db.ExecContext(ctx, `UPDATE pages SET archived = ?, updated_at = updated_at WHERE id = ?`, archived, id)
 	if err != nil {
 		logger.Error(ctx, "page-repo: failed to set archived", zap.Uint64("page_id", id), zap.Error(err))
 		return err
@@ -205,7 +205,7 @@ func (r *PageRepositoryImpl) Publish(ctx context.Context, id uint64, content mod
 		content = model.JSONMap{}
 	}
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE pages SET status = ?, published_content = ?, published_at = ? WHERE id = ?`,
+		`UPDATE pages SET status = ?, published_content = ?, published_at = ?, updated_at = updated_at WHERE id = ?`,
 		model.PageStatusPublished, content, at.UTC(), id)
 	if err != nil {
 		logger.Error(ctx, "page-repo: failed to publish page", zap.Uint64("page_id", id), zap.Error(err))
@@ -293,6 +293,13 @@ func (r *PageRepositoryImpl) UpdateBlock(ctx context.Context, b *model.PageBlock
 }
 
 func (r *PageRepositoryImpl) DeleteBlock(ctx context.Context, id uint64) error {
+	// Bump the page's updated_at first so the deletion counts as an
+	// unpublished change (the block row is gone afterwards).
+	if _, err := r.db.ExecContext(ctx,
+		`UPDATE pages SET updated_at = CURRENT_TIMESTAMP WHERE id = (SELECT page_id FROM page_blocks WHERE id = ?)`, id); err != nil {
+		logger.Error(ctx, "page-repo: failed to touch page for block delete", zap.Uint64("block_id", id), zap.Error(err))
+		return err
+	}
 	result, err := r.db.ExecContext(ctx, `DELETE FROM page_blocks WHERE id = ?`, id)
 	if err != nil {
 		logger.Error(ctx, "page-repo: failed to delete block", zap.Uint64("block_id", id), zap.Error(err))

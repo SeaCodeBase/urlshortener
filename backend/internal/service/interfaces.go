@@ -188,6 +188,45 @@ type DashboardService interface {
 	Delete(ctx context.Context, userID, groupID, id uint64) error
 }
 
+//go:generate mockgen -destination=mocks/mock_page_service.go -package=mocks . PageService
+type PageService interface {
+	// CheckSlug normalizes slug (trimmed, lowercase) and reports whether it
+	// can be claimed; Reason is "", "invalid", "reserved" or "taken".
+	CheckSlug(ctx context.Context, slug string) (SlugCheck, error)
+	// Create adds a draft page with the template's design (a text block is
+	// seeded for classic/bold/minimal); *ValidationError for a bad slug,
+	// title or template, repository.ErrPageSlugTaken when claimed.
+	Create(ctx context.Context, userID, groupID uint64, in CreatePageInput) (*PageView, error)
+	// List returns the group's pages newest first, without blocks.
+	List(ctx context.Context, groupID uint64, f repository.PageFilter) ([]PageView, error)
+	// Get returns the page with its blocks and link summaries;
+	// repository.ErrPageNotFound when missing or in another group.
+	Get(ctx context.Context, groupID, id uint64) (*PageView, error)
+	// Update applies the non-nil fields after validating them
+	// (*ValidationError); ErrPageNotFound as Get.
+	Update(ctx context.Context, userID, groupID, id uint64, in UpdatePageInput) (*PageView, error)
+	// SetArchived hides/shows the page; ErrPageNotFound as Get.
+	SetArchived(ctx context.Context, userID, groupID, id uint64, archived bool) (*PageView, error)
+	// Delete removes the page; ErrPageNotFound as Get.
+	Delete(ctx context.Context, userID, groupID, id uint64) error
+	// Publish writes the public snapshot (active blocks, pinned first, link
+	// blocks with "?r=page" short URLs) and marks the page published.
+	Publish(ctx context.Context, userID, groupID, id uint64) (*PageView, error)
+	// AddBlock validates and appends a block; a link block references a
+	// same-group Links-list link (LinkID) or creates one (NewLink).
+	AddBlock(ctx context.Context, userID, groupID, pageID uint64, in BlockInput) (*BlockView, error)
+	// UpdateBlock applies the patch; repository.ErrBlockNotFound when the
+	// block is missing or belongs to another page.
+	UpdateBlock(ctx context.Context, userID, groupID, pageID, blockID uint64, in BlockPatch) (*BlockView, error)
+	// DeleteBlock removes the block; ErrBlockNotFound as UpdateBlock.
+	DeleteBlock(ctx context.Context, userID, groupID, pageID, blockID uint64) error
+	// Reorder sets block positions; ids must be a permutation of the page's
+	// block ids (*ValidationError otherwise).
+	Reorder(ctx context.Context, userID, groupID, pageID uint64, ids []uint64) ([]BlockView, error)
+	// PageIDsForLinks maps link ids to the non-archived pages using them.
+	PageIDsForLinks(ctx context.Context, linkIDs []uint64) (map[uint64][]uint64, error)
+}
+
 //go:generate mockgen -destination=mocks/mock_shortcode_service.go -package=mocks . ShortCodeService
 type ShortCodeService interface {
 	// Generate creates a unique short code within the given domain.

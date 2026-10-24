@@ -246,10 +246,11 @@ type PageRepository interface {
 	ListByGroup(ctx context.Context, groupID uint64, f PageFilter) ([]PageWithViews, error)
 	// Update writes title, description, avatar_url and design; ErrPageNotFound.
 	Update(ctx context.Context, p *model.Page) error
-	// SetArchived sets the archived flag; ErrPageNotFound.
-	SetArchived(ctx context.Context, id uint64, archived bool) error
-	// Publish sets status 'published', published_content and published_at;
+	// SetArchived sets the archived flag without touching updated_at;
 	// ErrPageNotFound.
+	SetArchived(ctx context.Context, id uint64, archived bool) error
+	// Publish sets status 'published', published_content and published_at
+	// without touching updated_at; ErrPageNotFound.
 	Publish(ctx context.Context, id uint64, content model.JSONMap, at time.Time) error
 	// Delete removes the page with its blocks and views; ErrPageNotFound.
 	Delete(ctx context.Context, id uint64) error
@@ -262,7 +263,8 @@ type PageRepository interface {
 	CreateBlock(ctx context.Context, b *model.PageBlock) error
 	// UpdateBlock writes content, is_active and is_pinned; ErrBlockNotFound.
 	UpdateBlock(ctx context.Context, b *model.PageBlock) error
-	// DeleteBlock removes the block; ErrBlockNotFound.
+	// DeleteBlock removes the block and bumps its page's updated_at;
+	// ErrBlockNotFound.
 	DeleteBlock(ctx context.Context, id uint64) error
 	// ReorderBlocks sets each block's position to its index in ids, in one
 	// transaction. ids must be exactly the page's block ids (a permutation);

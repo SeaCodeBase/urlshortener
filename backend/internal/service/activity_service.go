@@ -38,6 +38,15 @@ const (
 	ActionDashboardUpdate    = "dashboard.update"
 	ActionDashboardDelete    = "dashboard.delete"
 	ActionDashboardDuplicate = "dashboard.duplicate"
+
+	ActionPageCreate = "page.create"
+	// ActionPageUpdate covers title/description/avatar/design edits and any
+	// block change or reorder.
+	ActionPageUpdate  = "page.update"
+	ActionPagePublish = "page.publish"
+	ActionPageHide    = "page.hide"
+	ActionPageUnhide  = "page.unhide"
+	ActionPageDelete  = "page.delete"
 )
 
 // Activity log entity types.
@@ -48,6 +57,7 @@ const (
 	EntityGroup     = "group"
 	EntityQRCode    = "qr_code"
 	EntityDashboard = "dashboard"
+	EntityPage      = "page"
 )
 
 const (
