@@ -13,11 +13,17 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func newGroupService(t *testing.T) (*service.GroupServiceImpl, *mocks.MockGroupRepository, *mocks.MockUserRepository) {
+func newGroupServiceWithDomains(t *testing.T) (*service.GroupServiceImpl, *mocks.MockGroupRepository, *mocks.MockUserRepository, *mocks.MockDomainRepository) {
 	ctrl := gomock.NewController(t)
 	groupRepo := mocks.NewMockGroupRepository(ctrl)
 	userRepo := mocks.NewMockUserRepository(ctrl)
-	return service.NewGroupService(groupRepo, userRepo), groupRepo, userRepo
+	domainRepo := mocks.NewMockDomainRepository(ctrl)
+	return service.NewGroupService(groupRepo, userRepo, domainRepo), groupRepo, userRepo, domainRepo
+}
+
+func newGroupService(t *testing.T) (*service.GroupServiceImpl, *mocks.MockGroupRepository, *mocks.MockUserRepository) {
+	svc, groupRepo, userRepo, _ := newGroupServiceWithDomains(t)
+	return svc, groupRepo, userRepo
 }
 
 func u64(v uint64) *uint64 { return &v }
@@ -74,7 +80,7 @@ func TestGroupService_ResolveActive_CreatesDefaultWhenMissing(t *testing.T) {
 				g.ID = 42
 				return nil
 			}),
-		userRepo.EXPECT().UpdateDefaultGroup(gomock.Any(), uint64(1), uint64(42)).Return(nil),
+		userRepo.EXPECT().SetDefaultGroupIfUnset(gomock.Any(), uint64(1), uint64(42), (*uint64)(nil)).Return(true, nil),
 	)
 
 	got, err := svc.ResolveActive(context.Background(), 1, nil)
@@ -132,9 +138,11 @@ func TestGroupService_Get_NotFound(t *testing.T) {
 }
 
 func TestGroupService_Update(t *testing.T) {
-	svc, groupRepo, _ := newGroupService(t)
+	svc, groupRepo, _, domainRepo := newGroupServiceWithDomains(t)
 	groupRepo.EXPECT().GetByID(gomock.Any(), uint64(5)).
 		Return(&model.Group{ID: 5, UserID: 1, Name: "old"}, nil)
+	domainRepo.EXPECT().GetByID(gomock.Any(), uint64(8)).
+		Return(&model.Domain{ID: 8, UserID: 1, VerificationStatus: model.DomainVerificationOK}, nil)
 	groupRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, g *model.Group) error {
 			assert.Equal(t, "new", g.Name)
@@ -195,10 +203,67 @@ func TestGroupService_ResolveActive_DefaultGroupGoneRecreates(t *testing.T) {
 			g.ID = 10
 			return nil
 		})
-	userRepo.EXPECT().UpdateDefaultGroup(gomock.Any(), uint64(1), uint64(10)).Return(nil)
+	userRepo.EXPECT().SetDefaultGroupIfUnset(gomock.Any(), uint64(1), uint64(10), u64(9)).Return(true, nil)
 
 	got, err := svc.ResolveActive(context.Background(), 1, nil)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(10), got.ID)
 	assert.Equal(t, "bob", got.Name)
+}
+
+func TestGroupService_ResolveActive_LostRaceUsesWinner(t *testing.T) {
+	svc, groupRepo, userRepo := newGroupService(t)
+	winner := &model.Group{ID: 50, UserID: 1, Name: "jane"}
+	gomock.InOrder(
+		userRepo.EXPECT().GetByID(gomock.Any(), uint64(1)).
+			Return(&model.User{ID: 1, Email: "jane@example.com"}, nil),
+		groupRepo.EXPECT().Create(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, g *model.Group) error {
+				g.ID = 51
+				return nil
+			}),
+		userRepo.EXPECT().SetDefaultGroupIfUnset(gomock.Any(), uint64(1), uint64(51), (*uint64)(nil)).
+			Return(false, nil),
+		groupRepo.EXPECT().Delete(gomock.Any(), uint64(51)).Return(nil),
+		userRepo.EXPECT().GetByID(gomock.Any(), uint64(1)).
+			Return(&model.User{ID: 1, Email: "jane@example.com", DefaultGroupID: u64(50)}, nil),
+		groupRepo.EXPECT().GetByID(gomock.Any(), uint64(50)).Return(winner, nil),
+	)
+
+	got, err := svc.ResolveActive(context.Background(), 1, nil)
+	require.NoError(t, err)
+	assert.Equal(t, winner, got)
+}
+
+func TestGroupService_Update_ForeignDomainRejected(t *testing.T) {
+	svc, groupRepo, _, domainRepo := newGroupServiceWithDomains(t)
+	groupRepo.EXPECT().GetByID(gomock.Any(), uint64(5)).
+		Return(&model.Group{ID: 5, UserID: 1, Name: "g"}, nil)
+	domainRepo.EXPECT().GetByID(gomock.Any(), uint64(8)).
+		Return(&model.Domain{ID: 8, UserID: 2, VerificationStatus: model.DomainVerificationOK}, nil)
+
+	_, err := svc.Update(context.Background(), 1, 5, service.UpdateGroupInput{DefaultDomainID: u64(8)})
+	assert.ErrorIs(t, err, service.ErrNotDomainOwner)
+}
+
+func TestGroupService_Update_MissingDomainRejected(t *testing.T) {
+	svc, groupRepo, _, domainRepo := newGroupServiceWithDomains(t)
+	groupRepo.EXPECT().GetByID(gomock.Any(), uint64(5)).
+		Return(&model.Group{ID: 5, UserID: 1, Name: "g"}, nil)
+	domainRepo.EXPECT().GetByID(gomock.Any(), uint64(8)).
+		Return(nil, repository.ErrDomainNotFound)
+
+	_, err := svc.Update(context.Background(), 1, 5, service.UpdateGroupInput{DefaultDomainID: u64(8)})
+	assert.ErrorIs(t, err, service.ErrNotDomainOwner)
+}
+
+func TestGroupService_Update_UnverifiedDomainRejected(t *testing.T) {
+	svc, groupRepo, _, domainRepo := newGroupServiceWithDomains(t)
+	groupRepo.EXPECT().GetByID(gomock.Any(), uint64(5)).
+		Return(&model.Group{ID: 5, UserID: 1, Name: "g"}, nil)
+	domainRepo.EXPECT().GetByID(gomock.Any(), uint64(8)).
+		Return(&model.Domain{ID: 8, UserID: 1, VerificationStatus: model.DomainVerificationPending}, nil)
+
+	_, err := svc.Update(context.Background(), 1, 5, service.UpdateGroupInput{DefaultDomainID: u64(8)})
+	assert.ErrorIs(t, err, service.ErrDomainNotVerified)
 }

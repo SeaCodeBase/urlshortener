@@ -126,3 +126,26 @@ func (r *GroupRepositoryImpl) CountByUserID(ctx context.Context, userID uint64) 
 	}
 	return count, nil
 }
+
+func (r *GroupRepositoryImpl) Delete(ctx context.Context, id uint64) error {
+	result, err := r.db.ExecContext(ctx, "DELETE FROM `groups` WHERE id = ?", id)
+	if err != nil {
+		logger.Error(ctx, "group-repo: failed to delete group",
+			zap.Uint64("group_id", id),
+			zap.Error(err),
+		)
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		logger.Error(ctx, "group-repo: failed to get rows affected on delete",
+			zap.Uint64("group_id", id),
+			zap.Error(err),
+		)
+		return err
+	}
+	if rows == 0 {
+		return ErrGroupNotFound
+	}
+	return nil
+}

@@ -260,3 +260,45 @@ func TestUserRepository_UpdateAccount(t *testing.T) {
 		t.Errorf("expected ErrUserNotFound, got %v", err)
 	}
 }
+
+func TestUserRepository_SetDefaultGroupIfUnset(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	repo := repository.NewUserRepository(db)
+	groupRepo := repository.NewGroupRepository(db)
+	user := createTestUser(t, db, "race@example.com")
+	g1 := &model.Group{UserID: user.ID, Name: "first"}
+	g2 := &model.Group{UserID: user.ID, Name: "second"}
+	if err := groupRepo.Create(ctx, g1); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := groupRepo.Create(ctx, g2); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+
+	ok, err := repo.SetDefaultGroupIfUnset(ctx, user.ID, g1.ID, nil)
+	if err != nil || !ok {
+		t.Fatalf("first SetDefaultGroupIfUnset: ok=%v err=%v", ok, err)
+	}
+	// A second caller that also observed NULL loses.
+	ok, err = repo.SetDefaultGroupIfUnset(ctx, user.ID, g2.ID, nil)
+	if err != nil || ok {
+		t.Fatalf("stale SetDefaultGroupIfUnset: expected ok=false, got ok=%v err=%v", ok, err)
+	}
+	got, _ := repo.GetByID(ctx, user.ID)
+	if got.DefaultGroupID == nil || *got.DefaultGroupID != g1.ID {
+		t.Fatalf("expected default_group_id %d, got %v", g1.ID, got.DefaultGroupID)
+	}
+
+	// A caller that observed the current value wins (non-NULL compare).
+	ok, err = repo.SetDefaultGroupIfUnset(ctx, user.ID, g2.ID, &g1.ID)
+	if err != nil || !ok {
+		t.Fatalf("SetDefaultGroupIfUnset with current value: ok=%v err=%v", ok, err)
+	}
+	got, _ = repo.GetByID(ctx, user.ID)
+	if got.DefaultGroupID == nil || *got.DefaultGroupID != g2.ID {
+		t.Errorf("expected default_group_id %d, got %v", g2.ID, got.DefaultGroupID)
+	}
+}

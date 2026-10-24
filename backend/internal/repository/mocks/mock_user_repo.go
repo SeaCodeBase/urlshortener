@@ -100,6 +100,21 @@ func (mr *MockUserRepositoryMockRecorder) GetByID(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MockUserRepository)(nil).GetByID), ctx, id)
 }
 
+// SetDefaultGroupIfUnset mocks base method.
+func (m *MockUserRepository) SetDefaultGroupIfUnset(ctx context.Context, userID, groupID uint64, expectedCurrent *uint64) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetDefaultGroupIfUnset", ctx, userID, groupID, expectedCurrent)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetDefaultGroupIfUnset indicates an expected call of SetDefaultGroupIfUnset.
+func (mr *MockUserRepositoryMockRecorder) SetDefaultGroupIfUnset(ctx, userID, groupID, expectedCurrent any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetDefaultGroupIfUnset", reflect.TypeOf((*MockUserRepository)(nil).SetDefaultGroupIfUnset), ctx, userID, groupID, expectedCurrent)
+}
+
 // UpdateAccount mocks base method.
 func (m *MockUserRepository) UpdateAccount(ctx context.Context, userID uint64, accountName *string, dismissed *bool) error {
 	m.ctrl.T.Helper()

@@ -150,6 +150,30 @@ func (r *UserRepositoryImpl) UpdateDefaultGroup(ctx context.Context, userID, gro
 	return r.requireUpdated(ctx, result, userID)
 }
 
+func (r *UserRepositoryImpl) SetDefaultGroupIfUnset(ctx context.Context, userID, groupID uint64, expectedCurrent *uint64) (bool, error) {
+	query := `UPDATE users SET default_group_id = ?, updated_at = NOW() WHERE id = ? AND default_group_id <=> ?`
+	result, err := r.db.ExecContext(ctx, query, groupID, userID, expectedCurrent)
+	if err != nil {
+		logger.Error(ctx, "user-repo: failed to conditionally set default group",
+			zap.Uint64("user_id", userID),
+			zap.Uint64("group_id", groupID),
+			zap.Error(err),
+		)
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		logger.Error(ctx, "user-repo: failed to get rows affected",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
+		return false, err
+	}
+	// groupID is always a freshly created group, so a matched row always
+	// changes and rows == 0 really means the compare failed.
+	return rows > 0, nil
+}
+
 func (r *UserRepositoryImpl) UpdateAccount(ctx context.Context, userID uint64, accountName *string, dismissed *bool) error {
 	sets := []string{}
 	args := []interface{}{}

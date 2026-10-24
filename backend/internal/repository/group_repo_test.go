@@ -133,3 +133,25 @@ func TestGroupRepository_Update(t *testing.T) {
 		t.Errorf("expected ErrGroupNotFound, got %v", err)
 	}
 }
+
+func TestGroupRepository_Delete(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	repo := repository.NewGroupRepository(db)
+	user := createTestUser(t, db, "del@example.com")
+	g := &model.Group{UserID: user.ID, Name: "gone"}
+	if err := repo.Create(ctx, g); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if err := repo.Delete(ctx, g.ID); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+	if _, err := repo.GetByID(ctx, g.ID); !errors.Is(err, repository.ErrGroupNotFound) {
+		t.Errorf("expected ErrGroupNotFound after delete, got %v", err)
+	}
+	if err := repo.Delete(ctx, g.ID); !errors.Is(err, repository.ErrGroupNotFound) {
+		t.Errorf("expected ErrGroupNotFound on second delete, got %v", err)
+	}
+}

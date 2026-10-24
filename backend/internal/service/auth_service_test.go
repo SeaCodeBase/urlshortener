@@ -34,6 +34,24 @@ func TestAuthService_Register(t *testing.T) {
 	if resp.User.Email != input.Email {
 		t.Errorf("Expected email %s, got %s", input.Email, resp.User.Email)
 	}
+
+	if resp.User.DefaultGroupID == nil {
+		t.Fatal("Expected DefaultGroupID to be set")
+	}
+	group, err := repository.NewGroupRepository(db).GetByID(ctx, *resp.User.DefaultGroupID)
+	if err != nil {
+		t.Fatalf("Expected default group row to exist: %v", err)
+	}
+	if group.UserID != resp.User.ID || group.Name != "test" {
+		t.Errorf("Unexpected default group: %+v", group)
+	}
+	stored, err := userRepo.GetByID(ctx, resp.User.ID)
+	if err != nil {
+		t.Fatalf("GetByID failed: %v", err)
+	}
+	if stored.DefaultGroupID == nil || *stored.DefaultGroupID != group.ID {
+		t.Errorf("Expected stored default_group_id %d, got %v", group.ID, stored.DefaultGroupID)
+	}
 }
 
 func TestAuthService_Login(t *testing.T) {

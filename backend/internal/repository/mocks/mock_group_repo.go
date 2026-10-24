@@ -70,6 +70,20 @@ func (mr *MockGroupRepositoryMockRecorder) Create(ctx, group any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockGroupRepository)(nil).Create), ctx, group)
 }
 
+// Delete mocks base method.
+func (m *MockGroupRepository) Delete(ctx context.Context, id uint64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Delete", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Delete indicates an expected call of Delete.
+func (mr *MockGroupRepositoryMockRecorder) Delete(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockGroupRepository)(nil).Delete), ctx, id)
+}
+
 // GetByID mocks base method.
 func (m *MockGroupRepository) GetByID(ctx context.Context, id uint64) (*model.Group, error) {
 	m.ctrl.T.Helper()
