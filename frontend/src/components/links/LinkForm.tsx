@@ -28,10 +28,10 @@ import {
 import { UtmBuilder, cleanUtm, rememberUtm } from './UtmBuilder'
 
 export const QR_COLORS = ['#000000', '#D93025', '#F3A33B', '#1E8E3E', '#61B3DE', '#2A5BD7', '#8C6BE0', '#D64680']
-const HEX_RE = /^#[0-9A-Fa-f]{6}$/
+export const HEX_RE = /^#[0-9A-Fa-f]{6}$/
 const PENDING_QR_KEY = 'pending-qr'
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+export function Section({ title, children }: { title: string; children: ReactNode }) {
   const [open, setOpen] = useState(true)
   const id = useId()
   return (
@@ -53,7 +53,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-function SwitchRow({
+export function SwitchRow({
   label,
   checked,
   onCheckedChange,
