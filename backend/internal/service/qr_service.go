@@ -31,6 +31,8 @@ const maxRenderCustomizationsBytes = 8192
 var (
 	hexColor         = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 	errorCorrections = map[string]bool{"L": true, "M": true, "Q": true, "H": true}
+	// uploadedLogo is the path of an image stored by POST /uploads.
+	uploadedLogo = regexp.MustCompile(`^/uploads/[0-9a-f]{32}\.(png|jpg)$`)
 )
 
 // QRExportHeader is the CSV header of the QR code export.
@@ -132,7 +134,7 @@ type ListQRResult struct {
 
 // normalizeRenderCustomizations returns {} for nil and validates a design:
 // at most 8 KB serialised, error_correction in L|M|Q|H, color and background
-// as #RRGGBB.
+// as #RRGGBB, logo null or an /uploads/ image path.
 func normalizeRenderCustomizations(rc model.JSONMap) (model.JSONMap, error) {
 	if rc == nil {
 		return model.JSONMap{}, nil
@@ -151,6 +153,11 @@ func normalizeRenderCustomizations(rc model.JSONMap) (model.JSONMap, error) {
 			if s, ok := v.(string); !ok || !hexColor.MatchString(s) {
 				return nil, fmt.Errorf("%w: %s must be a #RRGGBB color", ErrInvalidRenderCustomizations, key)
 			}
+		}
+	}
+	if v, ok := rc["logo"]; ok && v != nil {
+		if s, ok := v.(string); !ok || !uploadedLogo.MatchString(s) {
+			return nil, fmt.Errorf("%w: logo must be an uploaded image path", ErrInvalidRenderCustomizations)
 		}
 	}
 	return rc, nil

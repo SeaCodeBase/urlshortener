@@ -281,12 +281,21 @@ func TestLinkService_EditBackHalf_CreatesChild(t *testing.T) {
 
 func TestLinkService_EditBackHalf_DomainZeroMeansDefault(t *testing.T) {
 	f := newLinkSvc(t)
-	old := &model.Link{ID: 3, UserID: 1, GroupID: 7, ShortCode: "abc", OriginalURL: "https://e.com", DomainID: u64(5)}
+	old := &model.Link{ID: 3, UserID: 1, GroupID: 7, ShortCode: "abc", OriginalURL: "https://e.com", DomainID: u64(5), Source: model.LinkSourceLink}
 	f.links.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(old, nil)
 	f.codes.EXPECT().IsValid("x").Return(true)
 	f.codes.EXPECT().IsAvailable(gomock.Any(), (*uint64)(nil), "x").Return(false, nil)
 	_, err := f.svc.EditBackHalf(context.Background(), 1, 3, u64(0), "x")
 	assert.ErrorIs(t, err, service.ErrShortCodeTaken)
+}
+
+func TestLinkService_EditBackHalf_RejectsQRSourceLink(t *testing.T) {
+	f := newLinkSvc(t)
+	old := &model.Link{ID: 3, UserID: 1, GroupID: 7, ShortCode: "q1", OriginalURL: "https://e.com", Source: model.LinkSourceQR}
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(old, nil)
+	// No code checks, no create: gomock fails on any unexpected call.
+	_, err := f.svc.EditBackHalf(context.Background(), 1, 3, nil, "New-Half")
+	assert.ErrorIs(t, err, service.ErrLinkNotFound)
 }
 
 func TestLinkService_Update_DestinationIncrementsRedirect(t *testing.T) {

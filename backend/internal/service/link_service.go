@@ -889,6 +889,10 @@ func (s *LinkServiceImpl) EditBackHalf(ctx context.Context, userID, linkID uint6
 	if err != nil {
 		return nil, err
 	}
+	// QR-owned links are edited through their QR code, not link-only operations.
+	if old.Source != model.LinkSourceLink {
+		return nil, ErrLinkNotFound
+	}
 	switch {
 	case domainID == nil:
 		domainID = old.DomainID

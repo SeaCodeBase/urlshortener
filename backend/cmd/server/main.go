@@ -198,6 +198,7 @@ func main() {
 	// Uploaded images (public, no directory listing)
 	uploads := apiRouter.Group("/uploads", func(c *gin.Context) {
 		c.Header("Cache-Control", "public, max-age=86400")
+		c.Header("X-Content-Type-Options", "nosniff")
 		c.Next()
 	})
 	uploads.StaticFS("/", gin.Dir(cfg.Uploads.Path, false))
