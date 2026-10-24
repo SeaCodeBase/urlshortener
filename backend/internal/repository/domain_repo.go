@@ -15,6 +15,9 @@ import (
 var (
 	ErrDomainNotFound = errors.New("domain not found")
 	ErrDomainExists   = errors.New("domain already exists")
+	// ErrDomainHasLinks: links still reference the domain (fk_links_domain
+	// is ON DELETE RESTRICT, migration 004).
+	ErrDomainHasLinks = errors.New("domain still has links")
 )
 
 const domainColumns = `id, user_id, group_id, domain, verification_token, verification_status, verification_error,
@@ -122,6 +125,26 @@ func (r *DomainRepositoryImpl) Update(ctx context.Context, domain *model.Domain)
 		)
 		return err
 	}
+	return r.checkAffected(ctx, result, domain.ID)
+}
+
+func (r *DomainRepositoryImpl) UpdateVerification(ctx context.Context, id uint64, status string,
+	errMsg *string, verifiedAt, lastCheckedAt model.NullTime) error {
+	query := `UPDATE domains SET verification_status = ?, verification_error = ?, verified_at = ?, last_checked_at = ?
+		WHERE id = ?`
+	result, err := r.db.ExecContext(ctx, query, status, errMsg, verifiedAt.NullTime, lastCheckedAt.NullTime, id)
+	if err != nil {
+		logger.Error(ctx, "domain-repo: failed to update domain verification",
+			zap.Uint64("id", id),
+			zap.Error(err),
+		)
+		return err
+	}
+	return r.checkAffected(ctx, result, id)
+}
+
+// checkAffected returns ErrDomainNotFound when an UPDATE matched no row.
+func (r *DomainRepositoryImpl) checkAffected(ctx context.Context, result sql.Result, id uint64) error {
 	rows, err := result.RowsAffected()
 	if err != nil {
 		return err
@@ -131,9 +154,9 @@ func (r *DomainRepositoryImpl) Update(ctx context.Context, domain *model.Domain)
 	}
 	// MariaDB reports 0 affected rows when nothing changed; re-check existence.
 	var count int
-	if err := r.db.GetContext(ctx, &count, `SELECT COUNT(*) FROM domains WHERE id = ?`, domain.ID); err != nil {
+	if err := r.db.GetContext(ctx, &count, `SELECT COUNT(*) FROM domains WHERE id = ?`, id); err != nil {
 		logger.Error(ctx, "domain-repo: failed to check domain existence",
-			zap.Uint64("id", domain.ID),
+			zap.Uint64("id", id),
 			zap.Error(err),
 		)
 		return err
@@ -148,6 +171,9 @@ func (r *DomainRepositoryImpl) Delete(ctx context.Context, id uint64) error {
 	query := `DELETE FROM domains WHERE id = ?`
 	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
+		if strings.Contains(err.Error(), "foreign key constraint fails") {
+			return ErrDomainHasLinks
+		}
 		logger.Error(ctx, "domain-repo: failed to delete domain",
 			zap.Uint64("id", id),
 			zap.Error(err),

@@ -30,6 +30,8 @@ var (
 	ErrDomainNotFound = errors.New("domain not found")
 	// ErrInvalidRoutingRule: a routing rule has no valid http(s) destination.
 	ErrInvalidRoutingRule = errors.New("invalid routing rule")
+	// ErrExpirationTooSoon: expires_at must leave time to use the link.
+	ErrExpirationTooSoon = errors.New("expiration must be at least 5 minutes in the future")
 )
 
 const (
@@ -42,7 +44,17 @@ const (
 	exportPageSize = 500
 	// maxExportRows caps one export.
 	maxExportRows = 100000
+	// minExpirationLead is how far in the future a new expiration must be.
+	minExpirationLead = 5 * time.Minute
 )
+
+// checkExpiration rejects an expiration earlier than now + 5 minutes.
+func checkExpiration(at time.Time) error {
+	if at.Before(time.Now().Add(minExpirationLead)) {
+		return ErrExpirationTooSoon
+	}
+	return nil
+}
 
 // LinkExportHeader is the CSV header of GET /links/export (spec §5.2).
 var LinkExportHeader = []string{"Link", "Custom Link", "Date created", "Title", "Destination URL", "Engagements", "Status"}
@@ -57,8 +69,10 @@ type LinkServiceDeps struct {
 	Tags       repository.TagRepository
 	Rules      repository.RoutingRuleRepository
 	Domains    repository.DomainRepository
-	Clicks     repository.ClickRepository
-	Activity   ActivityService
+	// Groups supplies the active group's default domain; nil disables it.
+	Groups   repository.GroupRepository
+	Clicks   repository.ClickRepository
+	Activity ActivityService
 	// TitleFetcher fetches a destination's title when none is given;
 	// nil selects FetchTitle.
 	TitleFetcher TitleFetcher
@@ -72,6 +86,7 @@ type LinkServiceImpl struct {
 	tagRepo      repository.TagRepository
 	ruleRepo     repository.RoutingRuleRepository
 	domainRepo   repository.DomainRepository
+	groupRepo    repository.GroupRepository
 	clickRepo    repository.ClickRepository
 	activity     ActivityService
 	titleFetcher TitleFetcher
@@ -89,6 +104,7 @@ func NewLinkService(d LinkServiceDeps) *LinkServiceImpl {
 		tagRepo:      d.Tags,
 		ruleRepo:     d.Rules,
 		domainRepo:   d.Domains,
+		groupRepo:    d.Groups,
 		clickRepo:    d.Clicks,
 		activity:     d.Activity,
 		titleFetcher: tf,
@@ -107,10 +123,12 @@ type RoutingRuleInput struct {
 }
 
 type CreateLinkInput struct {
-	OriginalURL  string             `json:"original_url" binding:"required,url"`
-	CustomCode   string             `json:"custom_code,omitempty"`
-	Title        string             `json:"title,omitempty"`
-	ExpiresAt    *time.Time         `json:"expires_at,omitempty"`
+	OriginalURL string     `json:"original_url" binding:"required,url"`
+	CustomCode  string     `json:"custom_code,omitempty"`
+	Title       string     `json:"title,omitempty"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	// DomainID nil uses the active group's default domain (if any); 0
+	// explicitly selects the service's default domain.
 	DomainID     *uint64            `json:"domain_id,omitempty"`
 	Tags         []string           `json:"tags,omitempty"`
 	UTM          *UTMParams         `json:"utm,omitempty"`
@@ -253,8 +271,10 @@ func detached(ctx context.Context) context.Context {
 	return context.WithoutCancel(ctx)
 }
 
-// checkDomain verifies that domainID (when set) belongs to userID.
-func (s *LinkServiceImpl) checkDomain(ctx context.Context, userID uint64, domainID *uint64) error {
+// checkDomain verifies that domainID (when set) belongs to userID, is
+// verified, and is usable by groupID (domains bound to another group are
+// reported as not found).
+func (s *LinkServiceImpl) checkDomain(ctx context.Context, userID, groupID uint64, domainID *uint64) error {
 	if domainID == nil {
 		return nil
 	}
@@ -265,13 +285,45 @@ func (s *LinkServiceImpl) checkDomain(ctx context.Context, userID uint64, domain
 	if err != nil {
 		return err
 	}
-	if d.UserID != userID {
+	if d.UserID != userID || (d.GroupID != nil && *d.GroupID != groupID) {
 		return ErrDomainNotFound
 	}
 	if d.VerificationStatus != model.DomainVerificationOK {
 		return ErrDomainNotVerified
 	}
 	return nil
+}
+
+// groupDefaultDomain returns the group's default_domain_id when it is still
+// usable for new links (owned, verified, not bound to another group);
+// otherwise nil, the service's default domain.
+func (s *LinkServiceImpl) groupDefaultDomain(ctx context.Context, userID, groupID uint64) *uint64 {
+	if s.groupRepo == nil {
+		return nil
+	}
+	group, err := s.groupRepo.GetByID(ctx, groupID)
+	if err != nil {
+		if !errors.Is(err, repository.ErrGroupNotFound) {
+			logger.Warn(ctx, "link-service: failed to load group default domain",
+				zap.Uint64("group_id", groupID),
+				zap.Error(err),
+			)
+		}
+		return nil
+	}
+	if group.DefaultDomainID == nil {
+		return nil
+	}
+	id := *group.DefaultDomainID
+	if err := s.checkDomain(ctx, userID, groupID, &id); err != nil {
+		logger.Warn(ctx, "link-service: group default domain is not usable; using the default domain",
+			zap.Uint64("group_id", groupID),
+			zap.Uint64("domain_id", id),
+			zap.Error(err),
+		)
+		return nil
+	}
+	return &id
 }
 
 // claimBackHalf validates code and checks it is free on the domain.
@@ -308,8 +360,20 @@ func (s *LinkServiceImpl) Create(ctx context.Context, userID uint64, input Creat
 	if err != nil {
 		return nil, err
 	}
-	if err := s.checkDomain(ctx, userID, input.DomainID); err != nil {
-		return nil, err
+	if input.ExpiresAt != nil {
+		if err := checkExpiration(*input.ExpiresAt); err != nil {
+			return nil, err
+		}
+	}
+	switch {
+	case input.DomainID == nil:
+		input.DomainID = s.groupDefaultDomain(ctx, userID, input.GroupID)
+	case *input.DomainID == 0:
+		input.DomainID = nil
+	default:
+		if err := s.checkDomain(ctx, userID, input.GroupID, input.DomainID); err != nil {
+			return nil, err
+		}
 	}
 
 	var shortCode string
@@ -570,6 +634,13 @@ func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, inp
 		link.ExpiresAt = model.NullTime{}
 		changed = append(changed, "expires_at")
 	} else if input.ExpiresAt != nil {
+		// Re-sending the current expiration (e.g. from an edit form) is
+		// not a change and is not re-validated.
+		if !link.ExpiresAt.Valid || !link.ExpiresAt.Time.Equal(*input.ExpiresAt) {
+			if err := checkExpiration(*input.ExpiresAt); err != nil {
+				return nil, nil, err
+			}
+		}
 		link.ExpiresAt = model.NullTime{NullTime: sql.NullTime{Time: *input.ExpiresAt, Valid: true}}
 		changed = append(changed, "expires_at")
 	}
@@ -578,7 +649,7 @@ func (s *LinkServiceImpl) Update(ctx context.Context, userID, linkID uint64, inp
 		changed = append(changed, "is_active")
 	}
 	if input.DomainID != nil && (link.DomainID == nil || *link.DomainID != *input.DomainID) {
-		if err := s.checkDomain(ctx, userID, input.DomainID); err != nil {
+		if err := s.checkDomain(ctx, userID, link.GroupID, input.DomainID); err != nil {
 			return nil, nil, err
 		}
 		available, err := s.shortCode.IsAvailable(ctx, input.DomainID, link.ShortCode)
@@ -775,7 +846,7 @@ func (s *LinkServiceImpl) EditBackHalf(ctx context.Context, userID, linkID uint6
 	case *domainID == 0:
 		domainID = nil
 	default:
-		if err := s.checkDomain(ctx, userID, domainID); err != nil {
+		if err := s.checkDomain(ctx, userID, old.GroupID, domainID); err != nil {
 			return nil, err
 		}
 	}

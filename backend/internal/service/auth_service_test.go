@@ -34,6 +34,9 @@ func TestAuthService_Register(t *testing.T) {
 	if resp.User.Email != input.Email {
 		t.Errorf("Expected email %s, got %s", input.Email, resp.User.Email)
 	}
+	if resp.User.CreatedAt.IsZero() {
+		t.Error("Expected created_at to be populated from the stored row")
+	}
 
 	if resp.User.DefaultGroupID == nil {
 		t.Fatal("Expected DefaultGroupID to be set")

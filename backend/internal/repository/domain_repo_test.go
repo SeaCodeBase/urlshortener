@@ -95,3 +95,59 @@ func TestDomainRepository_Update(t *testing.T) {
 
 	assert.ErrorIs(t, repo.Update(ctx, &model.Domain{ID: 999999, VerificationStatus: model.DomainVerificationOK}), repository.ErrDomainNotFound)
 }
+
+func TestDomainRepository_UpdateVerification_KeepsSettings(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	user := createTestUser(t, db, "domver@example.com")
+	repo := repository.NewDomainRepository(db)
+	d := &model.Domain{UserID: user.ID, Domain: "ver.example.com", VerificationToken: "tok", VerificationStatus: model.DomainVerificationPending}
+	require.NoError(t, repo.Create(ctx, d))
+
+	// A settings edit lands while verification is in flight.
+	root := "https://example.com/home"
+	edited := *d
+	edited.RootRedirect = &root
+	require.NoError(t, repo.Update(ctx, &edited))
+
+	now := time.Now().UTC().Truncate(time.Second)
+	at := model.NullTime{NullTime: sql.NullTime{Time: now, Valid: true}}
+	require.NoError(t, repo.UpdateVerification(ctx, d.ID, model.DomainVerificationOK, nil, at, at))
+
+	got, err := repo.GetByID(ctx, d.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.DomainVerificationOK, got.VerificationStatus)
+	assert.True(t, got.VerifiedAt.Valid)
+	assert.True(t, got.LastCheckedAt.Time.Equal(now))
+	require.NotNil(t, got.RootRedirect, "root_redirect must survive a verification write")
+	assert.Equal(t, root, *got.RootRedirect)
+
+	assert.ErrorIs(t, repo.UpdateVerification(ctx, 999999, model.DomainVerificationOK, nil, at, at), repository.ErrDomainNotFound)
+}
+
+func TestDomainRepository_Delete_RefusesWhileLinksExist(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	_, links := linkFixture(t, db, "domdel@example.com", &model.Link{ShortCode: "base1"})
+	repo := repository.NewDomainRepository(db)
+	d := &model.Domain{UserID: links[0].UserID, Domain: "del.example.com"}
+	require.NoError(t, repo.Create(ctx, d))
+	linkRepo := repository.NewLinkRepository(db)
+	onDomain := &model.Link{UserID: links[0].UserID, GroupID: links[0].GroupID, ShortCode: "d1",
+		OriginalURL: "https://example.com", IsActive: true, DomainID: &d.ID}
+	require.NoError(t, linkRepo.Create(ctx, onDomain))
+
+	n, err := linkRepo.CountByDomainID(ctx, d.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), n)
+	assert.ErrorIs(t, repo.Delete(ctx, d.ID), repository.ErrDomainHasLinks)
+
+	require.NoError(t, linkRepo.Delete(ctx, onDomain.ID))
+	n, err = linkRepo.CountByDomainID(ctx, d.ID)
+	require.NoError(t, err)
+	assert.Zero(t, n)
+	require.NoError(t, repo.Delete(ctx, d.ID))
+}

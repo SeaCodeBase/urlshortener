@@ -102,6 +102,7 @@ func main() {
 		Tags:       tagRepo,
 		Rules:      routingRuleRepo,
 		Domains:    domainRepo,
+		Groups:     groupRepo,
 		Clicks:     clickRepo,
 		Activity:   activityService,
 		BaseURL:    cfg.URLs.BaseURL,
@@ -120,7 +121,7 @@ func main() {
 		frontendHost = u.Hostname()
 	}
 	// The service's own hosts can never be claimed as custom domains.
-	domainService := service.NewDomainService(domainRepo, groupRepo, service.NewNetResolver(),
+	domainService := service.NewDomainService(domainRepo, groupRepo, linkRepo, service.NewNetResolver(),
 		cfg.URLs.RedirectHost, baseHost, frontendHost)
 	redirectService := service.NewRedirectService(linkRepo, domainRepo, routingRuleRepo, rdb, baseHost,
 		cfg.URLs.RedirectHost, frontendHost)

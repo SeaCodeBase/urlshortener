@@ -41,13 +41,17 @@ Every configuration key is documented in `backend/config.example.yaml`.
   devices).
 - **Edit link** — change destination, title, tags; back-half history keeps
   previous back-halves listed.
-- **Groups** — every link, tag, domain and activity entry belongs to a group;
-  switch the active group from the UI.
+- **Groups** — every link, tag and activity entry belongs to a group;
+  switch the active group from the UI. A group can have a default custom
+  domain that new links use unless another domain is picked.
 - **API access tokens** — personal tokens (`us_...`) for scripted access.
 - **Activity log** — what was created, edited, hidden or deleted, per group.
 - **Custom domains** — add your own domain, verify it via DNS
   (CNAME to `urls.redirect_host`, or an A record to `urls.redirect_ip` for
-  apex domains), and create links on it.
+  apex domains), and create links on it. Domains belong to the user; an
+  optional `group_id` restricts a domain to one group (`null` = usable by
+  all of the user's groups). A domain that still has links can't be
+  deleted.
 
 ### Upgrading an existing install
 
@@ -80,7 +84,7 @@ curl -H "Authorization: Bearer us_xxxxxxxxxxxxxxxx" \
 
 ### Groups
 
-Group-scoped endpoints (`/api/links`, `/api/tags`, `/api/domains`,
+Group-scoped endpoints (`/api/links`, `/api/tags`,
 `/api/activity-log`, analytics) act on the group named by the `X-Group-ID`
 header; without it the user's default group is used:
 

@@ -146,3 +146,64 @@ func TestMigration003_ShortCodeCaseSensitive(t *testing.T) {
 		t.Fatalf("short_code: got %s %s, want varchar(255) utf8mb4_bin", col.ColumnType, col.Collation)
 	}
 }
+
+// TestMigration004_DomainKeyUnique assumes 004_links_domain_key.sql has been
+// applied. It re-runs the idempotent file, then checks that two
+// default-domain links (domain_id NULL) can no longer share a short code
+// while a custom domain still has its own namespace.
+func TestMigration004_DomainKeyUnique(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	raw, err := os.ReadFile("../../migrations/004_links_domain_key.sql")
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	for _, stmt := range database.SplitStatements(string(raw)) {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("re-run %q: %v", stmt, err)
+		}
+	}
+
+	res, err := db.ExecContext(ctx, "INSERT INTO users (email, password_hash) VALUES ('mig004@example.com', 'x')")
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	userID, _ := res.LastInsertId()
+	res, err = db.ExecContext(ctx, "INSERT INTO `groups` (user_id, name) VALUES (?, 'g')", userID)
+	if err != nil {
+		t.Fatalf("insert group: %v", err)
+	}
+	groupID, _ := res.LastInsertId()
+	res, err = db.ExecContext(ctx, "INSERT INTO domains (user_id, domain) VALUES (?, 'mig004.example.com')", userID)
+	if err != nil {
+		t.Fatalf("insert domain: %v", err)
+	}
+	domainID, _ := res.LastInsertId()
+
+	insert := func(domain any) error {
+		_, err := db.ExecContext(ctx,
+			"INSERT INTO links (user_id, group_id, domain_id, short_code, original_url) VALUES (?, ?, ?, 'same', 'https://example.com')",
+			userID, groupID, domain)
+		return err
+	}
+	if err := insert(nil); err != nil {
+		t.Fatalf("first default-domain link: %v", err)
+	}
+	if err := insert(nil); err == nil {
+		t.Fatal("second default-domain link with the same code was accepted")
+	}
+	if err := insert(domainID); err != nil {
+		t.Fatalf("same code on a custom domain: %v", err)
+	}
+
+	var oldIndex int
+	if err := db.GetContext(ctx, &oldIndex, `SELECT COUNT(*) FROM information_schema.STATISTICS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'links' AND INDEX_NAME = 'idx_domain_short_code'`); err != nil {
+		t.Fatalf("query indexes: %v", err)
+	}
+	if oldIndex != 0 {
+		t.Error("idx_domain_short_code should have been dropped")
+	}
+}

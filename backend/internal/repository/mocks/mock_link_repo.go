@@ -42,6 +42,21 @@ func (m *MockLinkRepository) EXPECT() *MockLinkRepositoryMockRecorder {
 	return m.recorder
 }
 
+// CountByDomainID mocks base method.
+func (m *MockLinkRepository) CountByDomainID(ctx context.Context, domainID uint64) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountByDomainID", ctx, domainID)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountByDomainID indicates an expected call of CountByDomainID.
+func (mr *MockLinkRepositoryMockRecorder) CountByDomainID(ctx, domainID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountByDomainID", reflect.TypeOf((*MockLinkRepository)(nil).CountByDomainID), ctx, domainID)
+}
+
 // CountByGroup mocks base method.
 func (m *MockLinkRepository) CountByGroup(ctx context.Context, groupID uint64, f repository.LinkFilter) (int64, error) {
 	m.ctrl.T.Helper()

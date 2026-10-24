@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -21,10 +22,13 @@ type linkSvcFixture struct {
 	tags     *mocks.MockTagRepository
 	rules    *mocks.MockRoutingRuleRepository
 	domains  *mocks.MockDomainRepository
+	groups   *mocks.MockGroupRepository
 	clicks   *mocks.MockClickRepository
 	codes    *svcmocks.MockShortCodeService
 	activity *svcmocks.MockActivityService
 	titles   []string // URLs passed to the title fetcher
+	// groupDefaults is the default_domain_id returned for a group id.
+	groupDefaults map[uint64]*uint64
 }
 
 func newLinkSvc(t *testing.T) *linkSvcFixture {
@@ -34,16 +38,24 @@ func newLinkSvc(t *testing.T) *linkSvcFixture {
 		tags:     mocks.NewMockTagRepository(ctrl),
 		rules:    mocks.NewMockRoutingRuleRepository(ctrl),
 		domains:  mocks.NewMockDomainRepository(ctrl),
+		groups:   mocks.NewMockGroupRepository(ctrl),
 		clicks:   mocks.NewMockClickRepository(ctrl),
 		codes:    svcmocks.NewMockShortCodeService(ctrl),
 		activity: svcmocks.NewMockActivityService(ctrl),
+
+		groupDefaults: map[uint64]*uint64{},
 	}
+	f.groups.EXPECT().GetByID(gomock.Any(), gomock.Any()).AnyTimes().
+		DoAndReturn(func(_ context.Context, id uint64) (*model.Group, error) {
+			return &model.Group{ID: id, UserID: 1, DefaultDomainID: f.groupDefaults[id]}, nil
+		})
 	f.svc = service.NewLinkService(service.LinkServiceDeps{
 		Links:      f.links,
 		ShortCodes: f.codes,
 		Tags:       f.tags,
 		Rules:      f.rules,
 		Domains:    f.domains,
+		Groups:     f.groups,
 		Clicks:     f.clicks,
 		Activity:   f.activity,
 		BaseURL:    "https://sho.rt",
@@ -531,4 +543,96 @@ func TestLinkService_GetRoutingRules(t *testing.T) {
 	f2.links.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(&model.Link{ID: 3, UserID: 2}, nil)
 	_, err = f2.svc.GetRoutingRules(context.Background(), 1, 3)
 	assert.ErrorIs(t, err, service.ErrNotLinkOwner)
+}
+
+func TestLinkService_Create_UsesGroupDefaultDomain(t *testing.T) {
+	f := newLinkSvc(t)
+	f.groupDefaults[7] = u64(5)
+	f.domains.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(&model.Domain{ID: 5, UserID: 1, Domain: "go.brand.test",
+		VerificationStatus: model.DomainVerificationOK}, nil)
+	f.codes.EXPECT().Generate(gomock.Any(), u64(5)).Return("Ab3dE5f", nil)
+	var created *model.Link
+	f.expectCreate(12, &created)
+	f.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionLinkCreate, service.EntityLink, uint64(12), gomock.Any())
+
+	_, err := f.svc.Create(context.Background(), 1, service.CreateLinkInput{
+		OriginalURL: "https://example.com", Title: "x", GroupID: 7,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, created.DomainID)
+	assert.Equal(t, uint64(5), *created.DomainID)
+}
+
+func TestLinkService_Create_ExplicitDefaultDomainOverridesGroupDefault(t *testing.T) {
+	f := newLinkSvc(t)
+	f.groupDefaults[7] = u64(5)
+	f.codes.EXPECT().Generate(gomock.Any(), (*uint64)(nil)).Return("Ab3dE5f", nil)
+	var created *model.Link
+	f.expectCreate(13, &created)
+	f.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionLinkCreate, service.EntityLink, uint64(13), gomock.Any())
+
+	_, err := f.svc.Create(context.Background(), 1, service.CreateLinkInput{
+		OriginalURL: "https://example.com", Title: "x", GroupID: 7, DomainID: u64(0),
+	})
+	require.NoError(t, err)
+	assert.Nil(t, created.DomainID)
+}
+
+func TestLinkService_Create_UnusableGroupDefaultFallsBack(t *testing.T) {
+	f := newLinkSvc(t)
+	f.groupDefaults[7] = u64(5)
+	f.domains.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(&model.Domain{ID: 5, UserID: 1, Domain: "go.brand.test",
+		VerificationStatus: model.DomainVerificationError}, nil)
+	f.codes.EXPECT().Generate(gomock.Any(), (*uint64)(nil)).Return("Ab3dE5f", nil)
+	var created *model.Link
+	f.expectCreate(14, &created)
+	f.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionLinkCreate, service.EntityLink, uint64(14), gomock.Any())
+
+	_, err := f.svc.Create(context.Background(), 1, service.CreateLinkInput{
+		OriginalURL: "https://example.com", Title: "x", GroupID: 7,
+	})
+	require.NoError(t, err)
+	assert.Nil(t, created.DomainID)
+}
+
+func TestLinkService_Create_DomainOfOtherGroupRejected(t *testing.T) {
+	f := newLinkSvc(t)
+	f.domains.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(&model.Domain{ID: 5, UserID: 1, GroupID: u64(8),
+		Domain: "go.brand.test", VerificationStatus: model.DomainVerificationOK}, nil)
+	_, err := f.svc.Create(context.Background(), 1, service.CreateLinkInput{
+		OriginalURL: "https://example.com", Title: "x", GroupID: 7, DomainID: u64(5),
+	})
+	assert.ErrorIs(t, err, service.ErrDomainNotFound)
+}
+
+func TestLinkService_Create_ExpirationTooSoon(t *testing.T) {
+	f := newLinkSvc(t)
+	soon := time.Now().Add(time.Minute)
+	_, err := f.svc.Create(context.Background(), 1, service.CreateLinkInput{
+		OriginalURL: "https://example.com", Title: "x", GroupID: 7, ExpiresAt: &soon,
+	})
+	assert.ErrorIs(t, err, service.ErrExpirationTooSoon)
+	assert.EqualError(t, err, "expiration must be at least 5 minutes in the future")
+}
+
+func TestLinkService_Update_ExpirationTooSoon(t *testing.T) {
+	f := newLinkSvc(t)
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(10)).Return(&model.Link{ID: 10, UserID: 1, GroupID: 7, ShortCode: "abc",
+		OriginalURL: "https://example.com", IsActive: true}, nil)
+	past := time.Now().Add(-time.Hour)
+	_, _, err := f.svc.Update(context.Background(), 1, 10, service.UpdateLinkInput{ExpiresAt: &past})
+	assert.ErrorIs(t, err, service.ErrExpirationTooSoon)
+}
+
+func TestLinkService_Update_UnchangedExpirationNotRevalidated(t *testing.T) {
+	f := newLinkSvc(t)
+	past := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(10)).Return(&model.Link{ID: 10, UserID: 1, GroupID: 7, ShortCode: "abc",
+		OriginalURL: "https://example.com", IsActive: true,
+		ExpiresAt: model.NullTime{NullTime: sql.NullTime{Time: past, Valid: true}}}, nil)
+	f.links.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil)
+	f.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionLinkUpdate, service.EntityLink, uint64(10), gomock.Any())
+	title := "renamed"
+	_, _, err := f.svc.Update(context.Background(), 1, 10, service.UpdateLinkInput{Title: &title, ExpiresAt: &past})
+	require.NoError(t, err)
 }

@@ -32,7 +32,7 @@ func TestDomainService_DemoteReservedDomains(t *testing.T) {
 	front := mk("app.example.com", model.DomainVerificationOK)
 	other := mk("go.brand.com", model.DomainVerificationOK)
 
-	svc := service.NewDomainService(domains, repository.NewGroupRepository(db), &fakeResolver{}, "r.sho.rt", "SHO.RT:8080", "app.example.com")
+	svc := service.NewDomainService(domains, repository.NewGroupRepository(db), repository.NewLinkRepository(db), &fakeResolver{}, "r.sho.rt", "SHO.RT:8080", "app.example.com")
 	n, err := svc.DemoteReservedDomains(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 2, n)

@@ -24,6 +24,9 @@ var (
 	ErrInvalidRedirectURL = errors.New("redirect URLs must be valid http(s) URLs")
 	// ErrDomainReserved: the domain is one of the service's own hosts.
 	ErrDomainReserved = errors.New("this domain is reserved")
+	// ErrDomainHasLinks: a domain can't be deleted while links use it
+	// (deleting it would silently move them to another namespace).
+	ErrDomainHasLinks = errors.New("this domain still has links; delete or move them first")
 )
 
 const (
@@ -60,10 +63,13 @@ type UpdateDomainInput struct {
 	ClearGroup       bool
 }
 
-// DomainCacheInvalidator drops cached host lookups for a domain
+// DomainCacheInvalidator drops cached redirect data for a domain
 // (implemented by *RedirectService).
 type DomainCacheInvalidator interface {
+	// InvalidateDomain drops the cached host lookup.
 	InvalidateDomain(ctx context.Context, host string) error
+	// InvalidateHost drops the host lookup and every link cached under host.
+	InvalidateHost(ctx context.Context, host string) error
 }
 
 // Compile-time check: DomainServiceImpl implements DomainService
@@ -72,6 +78,7 @@ var _ DomainService = (*DomainServiceImpl)(nil)
 type DomainServiceImpl struct {
 	domains      repository.DomainRepository
 	groups       repository.GroupRepository
+	links        repository.LinkRepository
 	resolver     DNSResolver
 	redirectHost string
 	reserved     map[string]bool
@@ -94,14 +101,28 @@ func (s *DomainServiceImpl) invalidate(ctx context.Context, host string) {
 	}
 }
 
+// invalidateHost drops every cached entry of a removed domain.
+func (s *DomainServiceImpl) invalidateHost(ctx context.Context, host string) {
+	if s.cache == nil {
+		return
+	}
+	if err := s.cache.InvalidateHost(ctx, host); err != nil {
+		logger.Warn(ctx, "domain-service: failed to invalidate host cache",
+			zap.String("domain", host),
+			zap.Error(err),
+		)
+	}
+}
+
 // NewDomainService creates the domain service. redirectHost is the hostname
 // custom domains CNAME to (config urls.redirect_host); it and reservedHosts
 // (the service's own hosts, e.g. the base URL and frontend hosts; ports are
 // ignored) can never be added as custom domains.
-func NewDomainService(domains repository.DomainRepository, groups repository.GroupRepository, resolver DNSResolver, redirectHost string, reservedHosts ...string) *DomainServiceImpl {
+func NewDomainService(domains repository.DomainRepository, groups repository.GroupRepository, links repository.LinkRepository, resolver DNSResolver, redirectHost string, reservedHosts ...string) *DomainServiceImpl {
 	s := &DomainServiceImpl{
 		domains:      domains,
 		groups:       groups,
+		links:        links,
 		resolver:     resolver,
 		redirectHost: normalizeHost(redirectHost),
 		reserved:     ReservedHostSet(append([]string{redirectHost}, reservedHosts...)...),
@@ -147,9 +168,8 @@ func (s *DomainServiceImpl) DemoteReservedDomains(ctx context.Context) (int, err
 			continue
 		}
 		msg := reservedHostError
-		domain.VerificationStatus = model.DomainVerificationError
-		domain.VerificationError = &msg
-		if err := s.domains.Update(ctx, domain); err != nil {
+		if err := s.domains.UpdateVerification(ctx, domain.ID, model.DomainVerificationError, &msg,
+			domain.VerifiedAt, domain.LastCheckedAt); err != nil {
 			return n, err
 		}
 		n++
@@ -193,7 +213,18 @@ func (s *DomainServiceImpl) Create(ctx context.Context, userID uint64, input Cre
 		VerificationToken:  token,
 		VerificationStatus: model.DomainVerificationPending,
 	}
-	if err := s.domains.Create(ctx, domain); err != nil {
+	err = s.domains.Create(ctx, domain)
+	if errors.Is(err, repository.ErrDomainExists) {
+		var released bool
+		if released, err = s.releaseStaleClaim(ctx, userID, name); err != nil {
+			return nil, err
+		}
+		if !released {
+			return nil, ErrDomainExists
+		}
+		err = s.domains.Create(ctx, domain)
+	}
+	if err != nil {
 		if errors.Is(err, repository.ErrDomainExists) {
 			return nil, ErrDomainExists
 		}
@@ -201,6 +232,47 @@ func (s *DomainServiceImpl) Create(ctx context.Context, userID uint64, input Cre
 	}
 	// Reload to pick up database defaults (created_at).
 	return s.domains.GetByID(ctx, domain.ID)
+}
+
+// releaseStaleClaim deletes another user's never-verified (pending or
+// error) row for name so the domain can't be squatted by an unproven claim.
+// It reports false, leaving the row alone, when the row is verified, belongs
+// to userID, or still has links.
+func (s *DomainServiceImpl) releaseStaleClaim(ctx context.Context, userID uint64, name string) (bool, error) {
+	existing, err := s.domains.GetByDomain(ctx, name)
+	if errors.Is(err, repository.ErrDomainNotFound) {
+		return true, nil // deleted concurrently: retry the insert
+	}
+	if err != nil {
+		return false, err
+	}
+	if existing.UserID == userID || existing.VerificationStatus == model.DomainVerificationOK {
+		return false, nil
+	}
+	if s.links != nil {
+		n, err := s.links.CountByDomainID(ctx, existing.ID)
+		if err != nil {
+			return false, err
+		}
+		if n > 0 {
+			return false, nil
+		}
+	}
+	if err := s.domains.Delete(ctx, existing.ID); err != nil {
+		if errors.Is(err, repository.ErrDomainHasLinks) {
+			return false, nil
+		}
+		if !errors.Is(err, repository.ErrDomainNotFound) {
+			return false, err
+		}
+	}
+	logger.Info(ctx, "domain-service: released stale unverified domain claim",
+		zap.String("domain", name),
+		zap.Uint64("previous_user_id", existing.UserID),
+		zap.Uint64("user_id", userID),
+	)
+	s.invalidateHost(ctx, name)
+	return true, nil
 }
 
 func (s *DomainServiceImpl) Verify(ctx context.Context, userID, domainID uint64) (*model.Domain, error) {
@@ -229,7 +301,13 @@ func (s *DomainServiceImpl) Verify(ctx context.Context, userID, domainID uint64)
 		domain.VerificationStatus = model.DomainVerificationError
 		domain.VerificationError = &failure
 	}
-	if err := s.domains.Update(ctx, domain); err != nil {
+	// Only the verification columns are written so a concurrent settings
+	// edit (redirects, group) is not overwritten with the values read above.
+	if err := s.domains.UpdateVerification(ctx, domain.ID, domain.VerificationStatus, domain.VerificationError,
+		domain.VerifiedAt, domain.LastCheckedAt); err != nil {
+		if errors.Is(err, repository.ErrDomainNotFound) {
+			return nil, ErrNotDomainOwner
+		}
 		logger.Error(ctx, "domain-service: failed to save verification result",
 			zap.Uint64("domain_id", domainID),
 			zap.Error(err),
@@ -322,13 +400,26 @@ func (s *DomainServiceImpl) Delete(ctx context.Context, userID, domainID uint64)
 	if err != nil {
 		return nil, err
 	}
+	if s.links != nil {
+		n, err := s.links.CountByDomainID(ctx, domainID)
+		if err != nil {
+			return nil, err
+		}
+		if n > 0 {
+			return nil, ErrDomainHasLinks
+		}
+	}
 	if err := s.domains.Delete(ctx, domainID); err != nil {
 		if errors.Is(err, repository.ErrDomainNotFound) {
 			return nil, ErrNotDomainOwner
 		}
+		// A link was created on the domain after the count above.
+		if errors.Is(err, repository.ErrDomainHasLinks) {
+			return nil, ErrDomainHasLinks
+		}
 		return nil, err
 	}
-	s.invalidate(ctx, domain.Domain)
+	s.invalidateHost(ctx, domain.Domain)
 	return domain, nil
 }
 

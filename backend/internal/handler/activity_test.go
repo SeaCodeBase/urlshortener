@@ -67,7 +67,7 @@ func TestActivityHandler_List_LimitCapped(t *testing.T) {
 
 func TestActivityHandler_List_BadParams400(t *testing.T) {
 	r, _ := newActivityRouter(t)
-	for _, q := range []string{"from=2026-13-01", "to=yesterday", "page=abc", "limit=x", "from=2026-10-05&to=2026-10-01"} {
+	for _, q := range []string{"from=2026-13-01", "to=yesterday", "page=abc", "page=10001", "limit=x", "from=2026-10-05&to=2026-10-01"} {
 		w := doJSON(r, http.MethodGet, "/api/activity-log?"+q, "")
 		assert.Equal(t, http.StatusBadRequest, w.Code, q)
 	}

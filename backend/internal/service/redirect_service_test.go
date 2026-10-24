@@ -410,3 +410,51 @@ func TestRedirectService_DomainCacheInvalidation(t *testing.T) {
 		t.Fatal("verified custom domain links are cached under the domain host")
 	}
 }
+
+func TestRedirectService_InvalidateHost(t *testing.T) {
+	f := newRedirectFixture(t)
+	ctx := context.Background()
+	for _, k := range []string{
+		linkCacheKeyPrefix + "go.brand.com:a",
+		linkCacheKeyPrefix + "go.brand.com:b",
+		linkCacheKeyPrefix + "go.brand.com.evil:a", // other host sharing the prefix
+		linkCacheKeyPrefix + "sho.rt:a",
+		domainCacheKeyPrefix + "go.brand.com",
+		domainCacheKeyPrefix + "other.com",
+	} {
+		if err := f.mr.Set(k, "{}"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := f.svc.InvalidateHost(ctx, "Go.Brand.com:443"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, gone := range []string{
+		linkCacheKeyPrefix + "go.brand.com:a",
+		linkCacheKeyPrefix + "go.brand.com:b",
+		domainCacheKeyPrefix + "go.brand.com",
+	} {
+		if f.mr.Exists(gone) {
+			t.Errorf("%s should have been deleted", gone)
+		}
+	}
+	for _, kept := range []string{
+		linkCacheKeyPrefix + "go.brand.com.evil:a",
+		linkCacheKeyPrefix + "sho.rt:a",
+		domainCacheKeyPrefix + "other.com",
+	} {
+		if !f.mr.Exists(kept) {
+			t.Errorf("%s should have been kept", kept)
+		}
+	}
+
+	// The base host is never wiped.
+	if err := f.svc.InvalidateHost(ctx, "sho.rt"); err != nil {
+		t.Fatal(err)
+	}
+	if !f.mr.Exists(linkCacheKeyPrefix + "sho.rt:a") {
+		t.Error("base host entries must survive InvalidateHost")
+	}
+}

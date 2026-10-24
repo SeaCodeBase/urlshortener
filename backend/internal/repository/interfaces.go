@@ -81,6 +81,8 @@ type LinkRepository interface {
 	// IncrementRedirectCount records a destination change; ErrLinkNotFound
 	// when the link does not exist.
 	IncrementRedirectCount(ctx context.Context, id uint64) error
+	// CountByDomainID counts the links (of any group or source) on a custom domain.
+	CountByDomainID(ctx context.Context, domainID uint64) (int64, error)
 }
 
 //go:generate mockgen -destination=mocks/mock_passkey_repo.go -package=mocks . PasskeyRepository
@@ -107,6 +109,12 @@ type DomainRepository interface {
 	// verified_at, last_checked_at, root_redirect and not_found_redirect (nil
 	// clears); ErrDomainNotFound when the domain is missing.
 	Update(ctx context.Context, domain *model.Domain) error
+	// UpdateVerification writes only verification_status, verification_error,
+	// verified_at and last_checked_at, so a concurrent settings edit is kept;
+	// ErrDomainNotFound when the domain is missing.
+	UpdateVerification(ctx context.Context, id uint64, status string, errMsg *string,
+		verifiedAt, lastCheckedAt model.NullTime) error
+	// Delete removes the domain; ErrDomainHasLinks when links still use it.
 	Delete(ctx context.Context, id uint64) error
 }
 

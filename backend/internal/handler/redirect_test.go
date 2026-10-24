@@ -154,6 +154,18 @@ func TestRedirectHandler_RootRedirect(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "Link not found")
 }
 
+func TestRedirectHandler_Root_NormalizesHost(t *testing.T) {
+	r, domains := newRedirectTestRouter(t, &fakeResolver{}, newFakeClickRecorder())
+	root := "https://brand.example.com"
+	// Mixed case and a trailing dot are looked up as the stored lowercase name.
+	domains.EXPECT().GetByDomain(gomock.Any(), "go.brand.com").Return(&model.Domain{ID: 1, Domain: "go.brand.com",
+		RootRedirect: &root, VerificationStatus: model.DomainVerificationOK}, nil)
+
+	w := doGet(r, "Go.Brand.COM.:8080", "/", "")
+	require.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, root, w.Header().Get("Location"))
+}
+
 func TestRedirectHandler_Root_UnverifiedDomainIgnored(t *testing.T) {
 	r, domains := newRedirectTestRouter(t, &fakeResolver{}, newFakeClickRecorder())
 	root := "https://evil.example.com"

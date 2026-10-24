@@ -8,7 +8,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
@@ -165,11 +164,10 @@ func (h *RedirectHandler) Redirect(c *gin.Context) {
 // Root serves GET / : a verified custom domain with root_redirect gets a 302
 // there, anything else the "Link not found" page.
 func (h *RedirectHandler) Root(c *gin.Context) {
-	host := c.Request.Host
-	if i := strings.LastIndex(host, ":"); i != -1 {
-		host = host[:i]
-	}
-	if h.reserved[strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")] {
+	// Same normalisation as RedirectService.Resolve: domains are stored
+	// lowercased without port or trailing dot.
+	host := service.NormalizeRequestHost(c.Request.Host)
+	if h.reserved[host] {
 		renderErrorPage(c, http.StatusNotFound, titleNotFound, messageNotFound, h.frontendURL)
 		return
 	}

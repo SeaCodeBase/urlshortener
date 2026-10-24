@@ -49,6 +49,7 @@ type domainRouter struct {
 	r        *gin.Engine
 	domains  *repomocks.MockDomainRepository
 	groups   *repomocks.MockGroupRepository
+	links    *repomocks.MockLinkRepository
 	activity *mocks.MockActivityService
 	dns      *fakeDNS
 }
@@ -59,10 +60,11 @@ func newDomainRouter(t *testing.T) *domainRouter {
 	dr := &domainRouter{
 		domains:  repomocks.NewMockDomainRepository(ctrl),
 		groups:   repomocks.NewMockGroupRepository(ctrl),
+		links:    repomocks.NewMockLinkRepository(ctrl),
 		activity: mocks.NewMockActivityService(ctrl),
 		dns:      &fakeDNS{txt: map[string][]string{}, cname: map[string]string{}, fail: map[string]error{}},
 	}
-	svc := service.NewDomainService(dr.domains, dr.groups, dr.dns, "sho.rt", "app.example.com")
+	svc := service.NewDomainService(dr.domains, dr.groups, dr.links, dr.dns, "sho.rt", "app.example.com")
 	h := NewDomainHandler(svc, dr.activity)
 	dr.r = gin.New()
 	g := dr.r.Group("/api/domains", withGroup)
@@ -85,10 +87,7 @@ func TestDomainHandler_Verify_TXT(t *testing.T) {
 	dr := newDomainRouter(t)
 	dr.domains.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(handlerDomain(), nil)
 	dr.dns.txt["_urlshortener.go.example.com"] = []string{"verify=" + domainToken}
-	dr.domains.EXPECT().Update(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, d *model.Domain) error {
-		assert.Equal(t, model.DomainVerificationOK, d.VerificationStatus)
-		return nil
-	})
+	dr.domains.EXPECT().UpdateVerification(gomock.Any(), uint64(3), model.DomainVerificationOK, gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	dr.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionDomainVerify, service.EntityDomain, uint64(3), gomock.Any())
 
 	w := doJSON(dr.r, http.MethodPost, "/api/domains/3/verify", "")
@@ -104,7 +103,7 @@ func TestDomainHandler_Verify_TXT(t *testing.T) {
 func TestDomainHandler_Verify_Failure200WithError(t *testing.T) {
 	dr := newDomainRouter(t)
 	dr.domains.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(handlerDomain(), nil)
-	dr.domains.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil)
+	dr.domains.EXPECT().UpdateVerification(gomock.Any(), uint64(3), model.DomainVerificationError, gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	dr.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionDomainVerify, service.EntityDomain, uint64(3), gomock.Any())
 
 	w := doJSON(dr.r, http.MethodPost, "/api/domains/3/verify", "")
@@ -180,6 +179,10 @@ func TestDomainHandler_Create_Errors(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	dr.domains.EXPECT().Create(gomock.Any(), gomock.Any()).Return(repository.ErrDomainExists)
+	taken := handlerDomain()
+	taken.UserID = 2
+	taken.VerificationStatus = model.DomainVerificationOK
+	dr.domains.EXPECT().GetByDomain(gomock.Any(), "go.example.com").Return(taken, nil)
 	w = doJSON(dr.r, http.MethodPost, "/api/domains", `{"domain":"go.example.com"}`)
 	assert.Equal(t, http.StatusConflict, w.Code)
 
@@ -226,6 +229,7 @@ func TestDomainHandler_Update_InvalidRedirect400(t *testing.T) {
 func TestDomainHandler_Delete(t *testing.T) {
 	dr := newDomainRouter(t)
 	dr.domains.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(handlerDomain(), nil)
+	dr.links.EXPECT().CountByDomainID(gomock.Any(), uint64(3)).Return(int64(0), nil)
 	dr.domains.EXPECT().Delete(gomock.Any(), uint64(3)).Return(nil)
 	dr.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionDomainDelete, service.EntityDomain, uint64(3), gomock.Any())
 	w := doJSON(dr.r, http.MethodDelete, "/api/domains/3", "")
@@ -234,4 +238,13 @@ func TestDomainHandler_Delete(t *testing.T) {
 	dr.domains.EXPECT().GetByID(gomock.Any(), uint64(4)).Return(nil, repository.ErrDomainNotFound)
 	w = doJSON(dr.r, http.MethodDelete, "/api/domains/4", "")
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestDomainHandler_Delete_WithLinks409(t *testing.T) {
+	dr := newDomainRouter(t)
+	dr.domains.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(handlerDomain(), nil)
+	dr.links.EXPECT().CountByDomainID(gomock.Any(), uint64(3)).Return(int64(2), nil)
+	w := doJSON(dr.r, http.MethodDelete, "/api/domains/3", "")
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.JSONEq(t, `{"error":"This domain still has links. Delete or move them first."}`, w.Body.String())
 }

@@ -114,6 +114,27 @@ func TestLinkHandler_Bulk_BadRequest(t *testing.T) {
 	}
 }
 
+func TestLinkHandler_Bulk_EditTagsCapped(t *testing.T) {
+	lr := newLinkRouter(t, true)
+	tags := make([]string, 0, 51)
+	for i := 0; i < 51; i++ {
+		tags = append(tags, fmt.Sprintf("%q", fmt.Sprintf("t%d", i)))
+	}
+	body := `{"action":"edit_tags","ids":[1],"add_tags":[` + strings.Join(tags[:30], ",") +
+		`],"remove_tags":[` + strings.Join(tags[30:], ",") + `]}`
+	w := doJSON(lr.r, http.MethodPatch, "/api/links/bulk", body)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.JSONEq(t, `{"error":"edit_tags accepts at most 50 tags per request"}`, w.Body.String())
+}
+
+func TestLinkHandler_Create_ExpirationTooSoon400(t *testing.T) {
+	lr := newLinkRouter(t, true)
+	lr.svc.EXPECT().Create(gomock.Any(), uint64(1), gomock.Any()).Return(nil, service.ErrExpirationTooSoon)
+	w := doJSON(lr.r, http.MethodPost, "/api/links", `{"original_url":"https://example.com","expires_at":"2020-01-01T00:00:00Z"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.JSONEq(t, `{"error":"expiration must be at least 5 minutes in the future"}`, w.Body.String())
+}
+
 func TestLinkHandler_Export_CSVHeader(t *testing.T) {
 	lr := newLinkRouter(t, true)
 	archived := false
@@ -171,7 +192,7 @@ func TestLinkHandler_List_ParsesFilters(t *testing.T) {
 func TestLinkHandler_List_BadParams400(t *testing.T) {
 	lr := newLinkRouter(t, true)
 	for _, q := range []string{"archived=maybe", "custom_back_half=x", "expiration=soon", "has_qr=1", "sort=name",
-		"created_after=2026-13-01", "created_before=yesterday", "page=abc", "limit=x", "campaign_id=z",
+		"created_after=2026-13-01", "created_before=yesterday", "page=abc", "page=10001", "limit=x", "campaign_id=z",
 		"created_after=2026-10-05&created_before=2026-10-01"} {
 		w := doJSON(lr.r, http.MethodGet, "/api/links?"+q, "")
 		assert.Equal(t, http.StatusBadRequest, w.Code, q)

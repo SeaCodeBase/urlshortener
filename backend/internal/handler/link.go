@@ -23,11 +23,15 @@ import (
 
 // Error messages shown verbatim by the UI (spec §5.2, §5.3).
 const (
-	msgLinkNotFound      = "link not found"
-	msgLinkNotDeletable  = "This link can't be deleted. You can hide it instead."
-	msgBackHalfTaken     = "That back-half is already taken"
-	msgInvalidBackHalf   = "Back-halves can only contain letters, numbers, hyphens and underscores (1-255 characters)"
-	maxBulkIDs           = 1000
+	msgLinkNotFound     = "link not found"
+	msgLinkNotDeletable = "This link can't be deleted. You can hide it instead."
+	msgBackHalfTaken    = "That back-half is already taken"
+	msgInvalidBackHalf  = "Back-halves can only contain letters, numbers, hyphens and underscores (1-255 characters)"
+	maxBulkIDs          = 1000
+	// maxBulkTags caps add_tags + remove_tags of one bulk edit_tags request.
+	maxBulkTags = 50
+	// maxPage bounds ?page= so offsets stay cheap (also used by activity).
+	maxPage              = 10_000
 	faviconServiceFormat = "https://www.google.com/s2/favicons?domain=%s&sz=32"
 )
 
@@ -220,7 +224,7 @@ func writeServiceError(c *gin.Context, op string, err error) bool {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "destination must be a valid http(s) URL of at most 2048 characters"})
 	case errors.Is(err, service.ErrInvalidUTMParam):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	case errors.Is(err, service.ErrInvalidRoutingRule):
+	case errors.Is(err, service.ErrInvalidRoutingRule), errors.Is(err, service.ErrExpirationTooSoon):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, service.ErrDomainNotFound):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "domain not found"})
@@ -395,6 +399,10 @@ func (h *LinkHandler) List(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid page"})
 		return
 	}
+	if page > maxPage {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page must be at most 10000"})
+		return
+	}
 	limit, err := strconv.Atoi(c.DefaultQuery("limit", "20"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
@@ -521,6 +529,10 @@ func (h *LinkHandler) Bulk(c *gin.Context) {
 		}
 		c.JSON(http.StatusOK, gin.H{"updated": len(links)})
 	case "edit_tags":
+		if len(req.AddTags)+len(req.RemoveTags) > maxBulkTags {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "edit_tags accepts at most 50 tags per request"})
+			return
+		}
 		if err := h.linkService.BulkTags(ctx, groupID, req.IDs, req.AddTags, req.RemoveTags); writeServiceError(c, "bulk-links", err) {
 			return
 		}

@@ -44,6 +44,8 @@ func (r *LinkRepositoryImpl) Create(ctx context.Context, link *model.Link) error
 		link.UserID, link.GroupID, link.ShortCode, link.OriginalURL, link.LongURLHost, link.Title, link.ExpiresAt,
 		link.IsActive, link.Archived, link.HasCustomBackHalf, link.ParentLinkID, link.Source, link.DomainID)
 	if err != nil {
+		// The unique index uq_links_domain_key_code (migration 004) covers
+		// every domain including the default one (domain_key 0).
 		if strings.Contains(err.Error(), "Duplicate entry") {
 			return ErrShortCodeExists
 		}
@@ -213,6 +215,18 @@ func (r *LinkRepositoryImpl) GetByDomainAndShortCode(ctx context.Context, domain
 		return nil, err
 	}
 	return &link, nil
+}
+
+func (r *LinkRepositoryImpl) CountByDomainID(ctx context.Context, domainID uint64) (int64, error) {
+	var count int64
+	if err := r.db.GetContext(ctx, &count, `SELECT COUNT(*) FROM links WHERE domain_id = ?`, domainID); err != nil {
+		logger.Error(ctx, "link-repo: failed to count links by domain ID",
+			zap.Uint64("domain_id", domainID),
+			zap.Error(err),
+		)
+		return 0, err
+	}
+	return count, nil
 }
 
 func (r *LinkRepositoryImpl) CountByUserID(ctx context.Context, userID uint64) (int64, error) {

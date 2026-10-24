@@ -1,6 +1,13 @@
 package middleware
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+)
 
 func TestMatchOrigin(t *testing.T) {
 	tests := []struct {
@@ -66,5 +73,31 @@ func TestMatchOrigin(t *testing.T) {
 				t.Errorf("MatchOrigin(%q, %v) = %v, want %v", tt.origin, tt.patterns, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestCORSMiddleware_AllowsPatchAndGroupHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(CORSMiddleware([]string{"http://localhost:3000"}))
+	r.PATCH("/api/links/bulk", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/links/bulk", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Access-Control-Request-Method", "PATCH")
+	req.Header.Set("Access-Control-Request-Headers", "X-Group-ID")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("preflight status = %d, want 204", w.Code)
+	}
+	methods := w.Header().Get("Access-Control-Allow-Methods")
+	if !strings.Contains(methods, "PATCH") {
+		t.Errorf("Access-Control-Allow-Methods = %q, want PATCH", methods)
+	}
+	headers := w.Header().Get("Access-Control-Allow-Headers")
+	if !strings.Contains(headers, "X-Group-ID") {
+		t.Errorf("Access-Control-Allow-Headers = %q, want X-Group-ID", headers)
 	}
 }

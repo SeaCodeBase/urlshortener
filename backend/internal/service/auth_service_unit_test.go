@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
 	"github.com/SeaCodeBase/urlshortener/internal/repository"
@@ -131,6 +132,9 @@ func TestAuthServiceImpl_Register_Success(t *testing.T) {
 		})
 	mockGroupRepo.EXPECT().Create(gomock.Any(), gomock.Any()).Return(nil)
 	mockUserRepo.EXPECT().UpdateDefaultGroup(gomock.Any(), uint64(1), gomock.Any()).Return(nil)
+	createdAt := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	mockUserRepo.EXPECT().GetByID(gomock.Any(), uint64(1)).
+		Return(&model.User{ID: 1, Email: "new@example.com", CreatedAt: createdAt}, nil)
 
 	input := service.RegisterInput{
 		Email:    "new@example.com",
@@ -141,6 +145,7 @@ func TestAuthServiceImpl_Register_Success(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, resp.Token)
 	assert.Equal(t, "new@example.com", resp.User.Email)
+	assert.True(t, resp.User.CreatedAt.Equal(createdAt), "created_at comes from the stored row")
 }
 
 func TestAuthServiceImpl_Register_EmailTaken(t *testing.T) {
@@ -189,6 +194,8 @@ func TestAuthServiceImpl_Register_CreatesDefaultGroup(t *testing.T) {
 				return nil
 			}),
 		mockUserRepo.EXPECT().UpdateDefaultGroup(gomock.Any(), uint64(5), uint64(77)).Return(nil),
+		mockUserRepo.EXPECT().GetByID(gomock.Any(), uint64(5)).
+			Return(&model.User{ID: 5, Email: "jane.doe@example.com", DefaultGroupID: u64(77)}, nil),
 	)
 
 	resp, err := svc.Register(context.Background(), service.RegisterInput{

@@ -115,6 +115,16 @@ func (s *AuthServiceImpl) Register(ctx context.Context, input RegisterInput) (*A
 	if err != nil {
 		return nil, err
 	}
+	// Re-read the row so database defaults (created_at) are returned.
+	stored, err := s.userRepo.GetByID(ctx, user.ID)
+	if err != nil {
+		logger.Error(ctx, "auth-service: failed to reload registered user",
+			zap.Uint64("user_id", user.ID),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+	user = stored
 	user.DefaultGroupID = &group.ID
 
 	token, err := s.generateToken(user.ID)

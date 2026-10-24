@@ -142,6 +142,47 @@ func (s *RedirectService) InvalidateDomain(ctx context.Context, host string) err
 	return s.rdb.Del(ctx, domainCacheKeyPrefix+normalizeHost(stripPort(host))).Err()
 }
 
+// invalidateHostScanCount is the SCAN COUNT hint used by InvalidateHost.
+const invalidateHostScanCount = 500
+
+// InvalidateHost drops every cached entry of a custom domain: the host
+// lookup and all link entries cached under the host (link:v2:{host}:*,
+// found with SCAN so Redis is never blocked by KEYS). Reserved hosts and the
+// base host are ignored: their entries belong to the default domain.
+func (s *RedirectService) InvalidateHost(ctx context.Context, host string) error {
+	h := normalizeHost(stripPort(host))
+	if h == "" || s.reserved[h] {
+		return nil
+	}
+	if err := s.rdb.Del(ctx, domainCacheKeyPrefix+h).Err(); err != nil {
+		return err
+	}
+	iter := s.rdb.Scan(ctx, 0, linkCacheKeyPrefix+h+":*", invalidateHostScanCount).Iterator()
+	batch := make([]string, 0, invalidateHostScanCount)
+	for iter.Next(ctx) {
+		batch = append(batch, iter.Val())
+		if len(batch) == cap(batch) {
+			if err := s.rdb.Del(ctx, batch...).Err(); err != nil {
+				return err
+			}
+			batch = batch[:0]
+		}
+	}
+	if err := iter.Err(); err != nil {
+		return err
+	}
+	if len(batch) > 0 {
+		return s.rdb.Del(ctx, batch...).Err()
+	}
+	return nil
+}
+
+// NormalizeRequestHost lowercases a request Host header and strips the port
+// and a trailing dot, the form domains are stored and cached under.
+func NormalizeRequestHost(host string) string {
+	return normalizeHost(stripPort(host))
+}
+
 // Resolve looks up the link for host+code (cache first). Archived links still
 // resolve. It returns ErrLinkNotFound, ErrLinkInactive or ErrLinkExpired; for
 // expired links (and unknown codes on a custom domain) the returned

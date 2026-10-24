@@ -127,3 +127,17 @@ func (mr *MockDomainRepositoryMockRecorder) Update(ctx, domain any) *gomock.Call
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Update", reflect.TypeOf((*MockDomainRepository)(nil).Update), ctx, domain)
 }
+
+// UpdateVerification mocks base method.
+func (m *MockDomainRepository) UpdateVerification(ctx context.Context, id uint64, status string, errMsg *string, verifiedAt, lastCheckedAt model.NullTime) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateVerification", ctx, id, status, errMsg, verifiedAt, lastCheckedAt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateVerification indicates an expected call of UpdateVerification.
+func (mr *MockDomainRepositoryMockRecorder) UpdateVerification(ctx, id, status, errMsg, verifiedAt, lastCheckedAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVerification", reflect.TypeOf((*MockDomainRepository)(nil).UpdateVerification), ctx, id, status, errMsg, verifiedAt, lastCheckedAt)
+}

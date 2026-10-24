@@ -86,6 +86,10 @@ func (h *ActivityHandler) List(c *gin.Context) {
 	if page < 1 {
 		page = 1
 	}
+	if page > maxPage {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page must be at most 10000"})
+		return
+	}
 	if limit < 1 {
 		limit = service.DefaultActivityLimit
 	}
