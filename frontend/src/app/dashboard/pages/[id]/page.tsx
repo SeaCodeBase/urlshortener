@@ -1,0 +1,132 @@
+'use client'
+
+import { Suspense } from 'react'
+import NextLink from 'next/link'
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { EmptyState } from '@/components/common/EmptyState'
+import { BuildTab } from '@/components/pages/BuildTab'
+import { EditorTopBar, PAGES_HREF } from '@/components/pages/EditorTopBar'
+import { PhonePreview } from '@/components/pages/PhonePreview'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ApiError } from '@/lib/api'
+import { usePage } from '@/lib/hooks'
+import type { Page } from '@/types'
+
+const TABS = ['build', 'design', 'track'] as const
+type EditorTab = (typeof TABS)[number]
+
+const parseTab = (v: string | null): EditorTab => (TABS.includes(v as EditorTab) ? (v as EditorTab) : 'build')
+
+function EditorSkeleton() {
+  return (
+    <div className="space-y-6 pt-8" aria-busy="true" aria-label="Loading page">
+      <Skeleton className="h-5 w-20" />
+      <Skeleton className="h-10 w-80" />
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_375px]">
+        <div className="space-y-3">
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-16 rounded-xl" />
+          <Skeleton className="h-16 rounded-xl" />
+        </div>
+        <Skeleton className="hidden h-[700px] rounded-[32px] lg:block" />
+      </div>
+    </div>
+  )
+}
+
+function Editor({ page }: { page: Page }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const tab = parseTab(searchParams.get('tab'))
+
+  function setTab(next: string) {
+    const sp = new URLSearchParams(searchParams.toString())
+    if (next === 'build') sp.delete('tab')
+    else sp.set('tab', next)
+    const qs = sp.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+  }
+
+  return (
+    <div className="space-y-6 pb-12">
+      <EditorTopBar page={page} />
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_375px]">
+        <Tabs value={tab} onValueChange={setTab} className="min-w-0">
+          <TabsList>
+            <TabsTrigger value="build">Build</TabsTrigger>
+            <TabsTrigger value="design">Design</TabsTrigger>
+            <TabsTrigger value="track">Track</TabsTrigger>
+          </TabsList>
+          <TabsContent value="build" className="pt-4">
+            <BuildTab page={page} />
+          </TabsContent>
+          <TabsContent value="design" className="pt-4">
+            <div>Design</div>
+          </TabsContent>
+          <TabsContent value="track" className="pt-4">
+            <div>Track</div>
+          </TabsContent>
+        </Tabs>
+        <aside className="sticky top-6 hidden self-start lg:block" aria-label="Page preview">
+          <PhonePreview page={page} />
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+function EditorPageInner() {
+  const params = useParams<{ id: string }>()
+  const id = Number(params.id)
+  const valid = Number.isInteger(id) && id > 0
+  const { data: page, isLoading, isError, error, isFetching, refetch } = usePage(valid ? id : null)
+
+  if (!valid || (error instanceof ApiError && error.status === 404)) {
+    return (
+      <div className="pt-8">
+        <EmptyState
+          title="Page not found"
+          description="It may have been deleted, or it belongs to another group."
+          action={
+            <Button asChild>
+              <NextLink href={PAGES_HREF}>Back to Pages</NextLink>
+            </Button>
+          }
+        />
+      </div>
+    )
+  }
+  if (isLoading) return <EditorSkeleton />
+  if (isError || !page) {
+    return (
+      <div className="space-y-4 pt-8">
+        <NextLink href={PAGES_HREF} className="text-sm font-semibold text-primary hover:underline">
+          ← Pages
+        </NextLink>
+        <EmptyState
+          title="Couldn't load the page"
+          description={error instanceof ApiError ? error.message : 'Something went wrong.'}
+          action={
+            <Button type="button" variant="secondary" disabled={isFetching} onClick={() => refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      </div>
+    )
+  }
+  return <Editor page={page} />
+}
+
+/** Page editor (spec §5.7): top bar, Build | Design | Track tabs, and a live phone preview. */
+export default function PageEditorPage() {
+  return (
+    // useSearchParams needs a Suspense boundary.
+    <Suspense fallback={<EditorSkeleton />}>
+      <EditorPageInner />
+    </Suspense>
+  )
+}

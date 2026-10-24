@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Eye, EyeOff, MoreHorizontal, Trash2 } from 'lucide-react'
+import { ExternalLink, Eye, EyeOff, MoreHorizontal, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Button } from '@/components/ui/button'
@@ -9,19 +9,23 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ApiError } from '@/lib/api'
 import { usePageMutations } from '@/lib/hooks'
 import type { Page } from '@/types'
 
-/** "⋯" menu on a page card: Hide/Show and Delete (with confirmation). */
+/** "⋯" menu on a page card (and the editor): optional "View page", Hide/Show and Delete (with confirmation). */
 export function PageActionsMenu({
   page,
   onDeleted,
   triggerClassName = 'size-8',
+  showViewPage = false,
 }: {
   page: Page
+  /** Adds "View page" (opens `page.url` in a new tab; disabled until the page is published). */
+  showViewPage?: boolean
   /** Called after a successful delete (e.g. to leave the editor). */
   onDeleted?: () => void
   triggerClassName?: string
@@ -63,6 +67,18 @@ export function PageActionsMenu({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
+          {showViewPage && (
+            <>
+              <DropdownMenuItem
+                disabled={page.status !== 'published'}
+                onSelect={() => window.open(page.url, '_blank', 'noopener,noreferrer')}
+              >
+                <ExternalLink />
+                View page
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
           <DropdownMenuItem onSelect={toggleHidden}>
             {page.archived ? <Eye /> : <EyeOff />}
             {page.archived ? 'Show' : 'Hide'}

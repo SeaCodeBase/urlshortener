@@ -37,11 +37,40 @@ function PageAvatar({ page }: { page: Page }) {
   )
 }
 
+/** Draft / Published chip, plus an amber dot when a published page has unpublished changes. */
+export function PageStatusChip({ page }: { page: Page }) {
+  const published = page.status === 'published'
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        className={cn(
+          'rounded-full px-2.5 py-0.5 text-xs font-medium',
+          published ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground',
+        )}
+      >
+        {published ? 'Published' : 'Draft'}
+      </span>
+      {published && page.has_unpublished_changes && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              role="img"
+              tabIndex={0}
+              aria-label="Unpublished changes"
+              className="inline-block size-2 rounded-full bg-amber-500"
+            />
+          </TooltipTrigger>
+          <TooltipContent>Unpublished changes</TooltipContent>
+        </Tooltip>
+      )}
+    </span>
+  )
+}
+
 /** Pages list card: avatar, title, URL + copy, views, status, Edit / Share / ⋯. */
 export function PageCard({ page }: { page: Page }) {
   const [shareOpen, setShareOpen] = useState(false)
   const editHref = `/dashboard/pages/${page.id}`
-  const published = page.status === 'published'
   const title = page.title || page.slug
 
   return (
@@ -76,29 +105,7 @@ export function PageCard({ page }: { page: Page }) {
             <BarChart2 className="size-4" aria-hidden />
             {viewsLabel(page.views)}
           </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span
-              className={cn(
-                'rounded-full px-2.5 py-0.5 text-xs font-medium',
-                published ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground',
-              )}
-            >
-              {published ? 'Published' : 'Draft'}
-            </span>
-            {published && page.has_unpublished_changes && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    role="img"
-                    tabIndex={0}
-                    aria-label="Unpublished changes"
-                    className="inline-block size-2 rounded-full bg-amber-500"
-                  />
-                </TooltipTrigger>
-                <TooltipContent>Unpublished changes</TooltipContent>
-              </Tooltip>
-            )}
-          </span>
+          <PageStatusChip page={page} />
         </div>
       </div>
 
