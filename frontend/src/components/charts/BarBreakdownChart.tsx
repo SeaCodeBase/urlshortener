@@ -12,6 +12,26 @@ export interface BarBreakdownRow {
 
 const ROW_HEIGHT = 32
 
+/** Longest axis label drawn in full; longer ones end in "…". */
+export const MAX_LABEL_CHARS = 24
+
+/** `label` cut to MAX_LABEL_CHARS characters (the last being "…") when longer. */
+export function truncateLabel(label: string): string {
+  const chars = Array.from(label)
+  return chars.length > MAX_LABEL_CHARS ? `${chars.slice(0, MAX_LABEL_CHARS - 1).join('')}…` : label
+}
+
+/** Y-axis category tick: the truncated label, with the full label as a hover `title`. */
+export function CategoryTick({ x, y, payload }: { x?: number | string; y?: number | string; payload?: { value?: unknown } }) {
+  const label = String(payload?.value ?? '')
+  return (
+    <text x={x} y={y} dy={4} textAnchor="end" fontSize={12} fill="#526281">
+      <title>{label}</title>
+      {truncateLabel(label)}
+    </text>
+  )
+}
+
 /** Horizontal bars per label: current engagements (and previous period when comparing). */
 export function BarBreakdownChart({
   rows,
@@ -40,10 +60,10 @@ export function BarBreakdownChart({
         <YAxis
           type="category"
           dataKey="label"
-          width={120}
+          width={160}
           tickLine={false}
           axisLine={false}
-          tick={{ fontSize: 12, fill: '#526281' }}
+          tick={<CategoryTick />}
         />
         <Tooltip cursor={{ fill: '#F4F6FA' }} />
         {compare && <Legend verticalAlign="top" align="right" height={28} iconType="square" />}

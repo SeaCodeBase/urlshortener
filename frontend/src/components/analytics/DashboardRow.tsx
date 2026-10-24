@@ -8,10 +8,15 @@ import { DATE_RANGE_OPTIONS } from './modules'
 /** "Showing data for …" line describing a dashboard's link / QR filter. */
 export function filterSummary(filter: DashboardFilter): string {
   switch (filter.type) {
-    case 'links':
-      return `Showing data for ${filter.ids.length} ${filter.ids.length === 1 ? 'link' : 'links'}`
-    case 'qr':
-      return `Showing data for ${filter.ids.length} ${filter.ids.length === 1 ? 'QR Code' : 'QR Codes'}`
+    case 'links': {
+      // ids are empty (and omitted by the API) once every filtered link was deleted.
+      const n = filter.ids?.length ?? 0
+      return `Showing data for ${n} ${n === 1 ? 'link' : 'links'}`
+    }
+    case 'qr': {
+      const n = filter.ids?.length ?? 0
+      return `Showing data for ${n} ${n === 1 ? 'QR Code' : 'QR Codes'}`
+    }
     default:
       return 'Showing data for all links and QR Codes'
   }

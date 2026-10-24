@@ -7,6 +7,7 @@ import { LayoutDashboard } from 'lucide-react'
 import { formatDate } from '@/lib/format'
 import { useDashboardMutations, useDashboards } from '@/lib/hooks'
 import { DashboardNameDialog } from './DashboardNameDialog'
+import { LoadError } from './LoadError'
 
 const MAX_TILES = 3
 const TILE = 'flex h-32 flex-col rounded-xl border border-border bg-card p-6 transition-colors'
@@ -14,7 +15,7 @@ const TILE = 'flex h-32 flex-col rounded-xl border border-border bg-card p-6 tra
 /** "Dashboards" section of the analytics overview: create tile, the 3 newest dashboards, "View all →". */
 export function OverviewDashboards() {
   const router = useRouter()
-  const { data, isLoading } = useDashboards()
+  const { data, isLoading, isError, refetch } = useDashboards()
   const { create } = useDashboardMutations()
   const [open, setOpen] = useState(false)
   const dashboards = data?.dashboards.slice(0, MAX_TILES) ?? []
@@ -38,6 +39,9 @@ export function OverviewDashboards() {
           + Create dashboard
         </button>
         {isLoading && <div className={`${TILE} animate-pulse`} aria-hidden />}
+        {isError && !data && (
+          <LoadError className={`${TILE} justify-center lg:col-span-3`} message="Couldn't load dashboards." onRetry={() => void refetch()} />
+        )}
         {dashboards.map((d) => (
           <Link key={d.id} href={`/dashboard/analytics/dashboards/${d.id}`} className={`${TILE} justify-between hover:border-primary`}>
             <span className="flex min-w-0 items-center gap-2">

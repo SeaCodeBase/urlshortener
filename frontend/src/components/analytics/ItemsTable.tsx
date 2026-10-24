@@ -53,7 +53,7 @@ export function ItemsTable({ items, compare }: { items: AnalyticsItem[]; compare
                 </TableCell>
                 <TableCell className="max-w-0">
                   <div className="flex min-w-0 items-center gap-3">
-                    <Favicon url={item.original_url ?? ''} size={28} />
+                    <Favicon url={item.original_url} size={28} />
                     <div className="min-w-0">
                       <Link href={itemHref(item)} className="block truncate font-semibold text-foreground hover:underline">
                         {item.title || formatShortUrl(item.short_url)}

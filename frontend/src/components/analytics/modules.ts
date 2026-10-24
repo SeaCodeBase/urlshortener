@@ -1,4 +1,3 @@
-import { format, subDays } from 'date-fns'
 import type { DashboardDateRange, DashboardLayout, ModuleKey, ModuleViz } from '@/types'
 
 /** Dashboard module registry: title (spec §5.8 copy) and allowed visualizations, the first being the default. */
@@ -41,11 +40,16 @@ export const DATE_RANGE_OPTIONS: { value: DashboardDateRange; label: string }[] 
   { value: 'last_90_days', label: 'Last 90 days' },
 ]
 
-/** Inclusive `yyyy-MM-dd` window of a saved date range ending today (`now`'s calendar day). */
+const DAY_MS = 86_400_000
+
+/**
+ * Inclusive `yyyy-MM-dd` window of a saved date range ending today, in UTC
+ * calendar days like the backend (`NormalizeStatsQuery`) and Home's stats, so
+ * the browser's time zone never shifts the window.
+ */
 export function rangeFor(dateRange: DashboardDateRange, now: Date = new Date()): { from: string; to: string } {
   const days = RANGE_DAYS[dateRange] ?? RANGE_DAYS.last_7_days
-  return {
-    from: format(subDays(now, days - 1), 'yyyy-MM-dd'),
-    to: format(now, 'yyyy-MM-dd'),
-  }
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10)
+  return { from: iso(today - (days - 1) * DAY_MS), to: iso(today) }
 }

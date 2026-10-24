@@ -4,7 +4,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api";
 import type { LinkStatsQuery, LinkStatsV2 } from "@/types";
-import { LinkAnalytics } from "./LinkAnalytics";
+import { LinkAnalytics, flagEmoji } from "./LinkAnalytics";
 
 let search = new URLSearchParams();
 vi.mock("next/navigation", () => ({
@@ -216,5 +216,18 @@ describe("LinkAnalytics", () => {
     expect(screen.queryByRole("button", { name: "Compare to a link" })).not.toBeInTheDocument();
     expect(getQrStats.mock.calls[0][1]).not.toHaveProperty("compare_link");
     getQrStats.mockRestore();
+  });
+});
+
+describe("flagEmoji", () => {
+  it("draws the flag of an ISO country code", () => {
+    expect(flagEmoji("US")).toBe("🇺🇸");
+    expect(flagEmoji("de")).toBe("🇩🇪");
+  });
+
+  it("returns '' for user-assigned and malformed codes", () => {
+    for (const code of ["XX", "ZZ", "AA", "QM", "QZ", "XA", "XZ", "", "U", "USA", "1A", "É1"]) {
+      expect(flagEmoji(code), code).toBe("");
+    }
   });
 });

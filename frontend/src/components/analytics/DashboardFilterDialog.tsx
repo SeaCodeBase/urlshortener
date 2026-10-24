@@ -63,8 +63,9 @@ function FilterBody({
 }) {
   const [type, setType] = useState<FilterType>(value.type)
   const [selected, setSelected] = useState<Record<PickType, number[]>>({
-    links: value.type === 'links' ? value.ids : [],
-    qr: value.type === 'qr' ? value.ids : [],
+    // Deleted links/QR codes are pruned by the API, which omits an empty ids array.
+    links: value.type === 'links' ? (value.ids ?? []) : [],
+    qr: value.type === 'qr' ? (value.ids ?? []) : [],
   })
   const [saving, setSaving] = useState(false)
 

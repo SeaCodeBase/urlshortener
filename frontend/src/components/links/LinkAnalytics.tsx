@@ -93,10 +93,12 @@ export function rangeLabel(state: Pick<AnalyticsUrlState, 'from' | 'to'>, now = 
   return `${format(from, 'MMM d, yyyy')} – ${format(to, 'MMM d, yyyy')}`
 }
 
-/** `US` → 🇺🇸 (empty for anything that isn't a 2-letter code). */
+/** `US` → 🇺🇸 (empty for anything that isn't a 2-letter code or is a user-assigned code). */
 export function flagEmoji(code: string): string {
   const c = code.toUpperCase()
   if (!/^[A-Z]{2}$/.test(c)) return ''
+  // ISO 3166 user-assigned codes (AA, QM–QZ, XA–XZ, ZZ) have no flag; they would draw as boxed letters.
+  if (/^(AA|Q[M-Z]|X[A-Z]|ZZ)$/.test(c)) return ''
   return String.fromCodePoint(...[...c].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65))
 }
 

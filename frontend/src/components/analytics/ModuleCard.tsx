@@ -64,13 +64,36 @@ const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Unknow
 
 type Breakdown = { key: string; label: string; display?: ReactNode; clicks: number; percentage: number; prev_clicks?: number }
 
+/** Chart views (bar/doughnut) show at most this many rows plus "Other"; tables and CSVs keep every row. */
+export const CHART_MAX_ROWS = 8
+
+/**
+ * Keeps the first CHART_MAX_ROWS rows (already sorted by engagements) and
+ * folds the rest into one "Other" row summing clicks, percentage and, when
+ * comparing, prev_clicks.
+ */
+export function capChartRows(rows: Breakdown[], compare: boolean): Breakdown[] {
+  if (rows.length <= CHART_MAX_ROWS) return rows
+  const rest = rows.slice(CHART_MAX_ROWS)
+  const other: Breakdown = {
+    key: '__other',
+    label: 'Other',
+    clicks: rest.reduce((sum, r) => sum + r.clicks, 0),
+    percentage: Math.round(rest.reduce((sum, r) => sum + r.percentage, 0) * 10) / 10,
+  }
+  if (compare) other.prev_clicks = rest.reduce((sum, r) => sum + (r.prev_clicks ?? 0), 0)
+  return [...rows.slice(0, CHART_MAX_ROWS), other]
+}
+
 const toTable = (rows: Breakdown[]): BreakdownRow[] =>
   rows.map((r) => ({ key: r.key, label: r.display ?? r.label, clicks: r.clicks, percentage: r.percentage, prev_clicks: r.prev_clicks }))
-const toBars = (rows: Breakdown[]): BarBreakdownRow[] => rows.map((r) => ({ label: r.label, value: r.clicks, prev: r.prev_clicks }))
+/** Bar rows of a chart view, capped to the top rows plus "Other". */
+const toBars = (rows: Breakdown[], compare: boolean): BarBreakdownRow[] =>
+  capChartRows(rows, compare).map((r) => ({ label: r.label, value: r.clicks, prev: r.prev_clicks }))
 
 function breakdownView(viz: ModuleViz, labelHeader: string, rows: Breakdown[], compare: boolean): ReactNode {
-  if (viz === 'doughnut') return <DoughnutChart rows={rows.map((r) => ({ label: r.label, value: r.clicks }))} />
-  if (viz === 'bar') return <BarBreakdownChart rows={toBars(rows)} compare={compare} />
+  if (viz === 'doughnut') return <DoughnutChart rows={capChartRows(rows, false).map((r) => ({ label: r.label, value: r.clicks }))} />
+  if (viz === 'bar') return <BarBreakdownChart rows={toBars(rows, compare)} compare={compare} />
   return <BreakdownTable labelHeader={labelHeader} rows={toTable(rows)} compare={compare} />
 }
 
@@ -163,7 +186,7 @@ function ModuleBody({ moduleKey, viz, data, compare, unit }: Omit<ModuleCardProp
         compare,
       )
     case 'locations': {
-      if (viz === 'bar') return <BarBreakdownChart rows={toBars(countryRows(data))} compare={compare} />
+      if (viz === 'bar') return <BarBreakdownChart rows={toBars(countryRows(data), compare)} compare={compare} />
       const cities: BreakdownRow[] = data.cities.map((c) => ({
         key: `${c.name}\u0000${c.country}`,
         label: c.name ? `${c.name}${c.country ? `, ${c.country}` : ''}` : 'Unknown',
@@ -190,7 +213,16 @@ function ModuleBody({ moduleKey, viz, data, compare, unit }: Omit<ModuleCardProp
       if (viz === 'bar') {
         return (
           <BarBreakdownChart
-            rows={data.items.map((it) => ({ label: it.title || formatShortUrl(it.short_url), value: it.clicks, prev: it.prev_clicks }))}
+            rows={toBars(
+              data.items.map((it) => ({
+                key: `${it.type}:${it.id}`,
+                label: it.title || formatShortUrl(it.short_url),
+                clicks: it.clicks,
+                percentage: it.percentage,
+                prev_clicks: it.prev_clicks,
+              })),
+              compare,
+            )}
             compare={compare}
           />
         )

@@ -4,10 +4,11 @@ import { StatCard } from '@/components/common/StatCard'
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart'
 import { formatNumber } from '@/lib/format'
 import { useAnalyticsOverview } from '@/lib/hooks'
+import { LoadError } from './LoadError'
 
 /** "Performance overview": engagements this week vs last week, with both weeks charted. */
 export function PerformanceOverview() {
-  const { data, isLoading } = useAnalyticsOverview()
+  const { data, isLoading, isError, refetch } = useAnalyticsOverview()
 
   return (
     <section aria-labelledby="overview-performance">
@@ -22,7 +23,9 @@ export function PerformanceOverview() {
           className="pb-0"
         />
         <div className="p-6">
-          {isLoading || !data ? (
+          {isError && !data ? (
+            <LoadError message="Couldn't load the performance overview." onRetry={() => void refetch()} />
+          ) : isLoading || !data ? (
             <div className="h-[280px] animate-pulse rounded-lg bg-muted" aria-hidden />
           ) : (
             <TimeSeriesChart

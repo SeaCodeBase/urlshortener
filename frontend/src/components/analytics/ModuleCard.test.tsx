@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { DashboardData } from "@/types";
-import { ModuleCard } from "./ModuleCard";
+import { ModuleCard, capChartRows } from "./ModuleCard";
 
 const DATA: DashboardData = {
   from: "2026-10-18",
@@ -77,5 +77,45 @@ describe("ModuleCard", () => {
     );
     expect(screen.getByRole("button", { name: "Reorder Engagements by device" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download Engagements by device CSV" })).toBeInTheDocument();
+  });
+
+  it("doughnut legend shows the top 8 referrers and folds the rest into Other", () => {
+    const referrers = Array.from({ length: 12 }, (_, i) => ({
+      referrer: `https://site${i}.example/`,
+      clicks: 100 - i,
+      percentage: 5,
+      prev_clicks: 1,
+    }));
+    render(
+      <ModuleCard moduleKey="referrers" viz="doughnut" data={{ ...DATA, referrers }} compare={false} unit="day" onChangeViz={vi.fn()} />,
+    );
+    const items = within(screen.getByRole("list", { name: "Legend" })).getAllByRole("listitem");
+    expect(items).toHaveLength(9);
+    expect(within(items[0]).getByText("https://site0.example/")).toBeInTheDocument();
+    expect(within(items[8]).getByText("Other")).toBeInTheDocument();
+    // 92 + 91 + 90 + 89
+    expect(within(items[8]).getByText("362")).toBeInTheDocument();
+  });
+});
+
+describe("capChartRows", () => {
+  const row = (i: number) => ({ key: `k${i}`, label: `L${i}`, clicks: 10 + i, percentage: 2, prev_clicks: i });
+
+  it("keeps up to 8 rows unchanged", () => {
+    const rows = Array.from({ length: 8 }, (_, i) => row(i));
+    expect(capChartRows(rows, true)).toEqual(rows);
+  });
+
+  it("folds rows after the 8th into one Other row", () => {
+    const rows = Array.from({ length: 11 }, (_, i) => row(i));
+    const capped = capChartRows(rows, true);
+    expect(capped).toHaveLength(9);
+    expect(capped.slice(0, 8)).toEqual(rows.slice(0, 8));
+    expect(capped[8]).toEqual({ key: "__other", label: "Other", clicks: 18 + 19 + 20, percentage: 6, prev_clicks: 8 + 9 + 10 });
+  });
+
+  it("Other has no prev when not comparing", () => {
+    const capped = capChartRows(Array.from({ length: 9 }, (_, i) => row(i)), false);
+    expect(capped[8]).toEqual({ key: "__other", label: "Other", clicks: 18, percentage: 2 });
   });
 });

@@ -34,8 +34,12 @@ const dashboards = [
   dashboard(1, "Default", "2026-08-01T12:00:00Z"),
 ];
 
+const list = { isError: false, refetch: vi.fn() };
 vi.mock("@/lib/hooks", () => ({
-  useDashboards: () => ({ data: { dashboards, total: dashboards.length }, isLoading: false }),
+  useDashboards: () =>
+    list.isError
+      ? { data: undefined, isLoading: false, isError: true, refetch: list.refetch }
+      : { data: { dashboards, total: dashboards.length }, isLoading: false, isError: false, refetch: list.refetch },
   useDashboardMutations: () => ({ create: { mutateAsync, isPending: false } }),
 }));
 
@@ -43,6 +47,8 @@ describe("OverviewDashboards", () => {
   beforeEach(() => {
     push.mockReset();
     mutateAsync.mockReset();
+    list.isError = false;
+    list.refetch.mockReset();
   });
 
   it("renders the create tile, at most 3 dashboard tiles and View all", () => {
@@ -75,5 +81,15 @@ describe("OverviewDashboards", () => {
 
     expect(mutateAsync).toHaveBeenCalledWith("Q4 launch");
     expect(push).toHaveBeenCalledWith("/dashboard/analytics/dashboards/9");
+  });
+
+  it("shows an error with Retry when the list fails", async () => {
+    list.isError = true;
+    const user = userEvent.setup();
+    render(<OverviewDashboards />);
+    expect(screen.getByText("Couldn't load dashboards.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Create dashboard" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(list.refetch).toHaveBeenCalled();
   });
 });

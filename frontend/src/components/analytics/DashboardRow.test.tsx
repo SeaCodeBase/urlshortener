@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { Dashboard, DashboardFilter } from "@/types";
 import { DEFAULT_LAYOUT } from "./modules";
-import { DashboardRow } from "./DashboardRow";
+import { DashboardRow, filterSummary } from "./DashboardRow";
 
 const update = vi.fn();
 const duplicate = vi.fn();
@@ -112,5 +112,19 @@ describe("DashboardRow", () => {
     await user.click(screen.getByRole("button", { name: "More" }));
     await user.click(await screen.findByRole("menuitem", { name: /Duplicate/ }));
     expect(duplicate).toHaveBeenCalledWith(3);
+  });
+});
+
+describe("filterSummary", () => {
+  it("counts the filter ids", () => {
+    expect(filterSummary({ type: "all" })).toBe("Showing data for all links and QR Codes");
+    expect(filterSummary({ type: "links", ids: [1] })).toBe("Showing data for 1 link");
+    expect(filterSummary({ type: "qr", ids: [4, 5] })).toBe("Showing data for 2 QR Codes");
+  });
+
+  it("reads a filter whose ids were all deleted as 0", () => {
+    expect(filterSummary({ type: "links", ids: [] })).toBe("Showing data for 0 links");
+    // The API omits an empty ids array.
+    expect(filterSummary({ type: "qr" } as DashboardFilter)).toBe("Showing data for 0 QR Codes");
   });
 });

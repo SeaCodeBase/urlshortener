@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Link, QrCode } from "@/types";
+import type { DashboardFilter, Link, QrCode } from "@/types";
 import { DashboardFilterDialog } from "./DashboardFilterDialog";
 
 let links: Partial<Link>[] = [];
@@ -75,5 +75,14 @@ describe("DashboardFilterDialog", () => {
     await user.click(screen.getByRole("radio", { name: "All" }));
     await user.click(screen.getByRole("button", { name: "Apply filters" }));
     expect(onApply).toHaveBeenCalledWith({ type: "all" });
+  });
+
+  it("treats a filter whose ids were all deleted as nothing selected", () => {
+    render(
+      <DashboardFilterDialog open onOpenChange={vi.fn()} value={{ type: "links" } as DashboardFilter} onApply={vi.fn()} />,
+    );
+    expect(screen.getByRole("radio", { name: "Links" })).toBeChecked();
+    expect(screen.getByText("0/200 selected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply filters" })).toBeDisabled();
   });
 });
