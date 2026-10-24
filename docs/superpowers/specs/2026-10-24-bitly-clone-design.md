@@ -345,3 +345,12 @@ uploads:
 - PDF downloads replaced by CSV.
 - Favicon via Google's favicon service (config toggle `ui.favicon_service` to disable for offline installs).
 - Routes are flat (`/dashboard/...`) with the group in a header, not in the path.
+
+## 11. Decisions after the builder check
+
+1. **In-place upgrades are required.** Production (url.wzq.io) runs on a persistent MariaDB volume, so `docker-entrypoint-initdb.d` will not run new files. The backend gets a minimal migration runner: table `schema_migrations(version VARCHAR(64) PRIMARY KEY, applied_at)`; on startup it applies every `migrations/NNN_*.sql` not yet recorded, in order, each file in one transaction where MariaDB allows it (DDL is not transactional; files must be written idempotently with `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`). `001_init.sql` is recorded as applied when its tables already exist. Existing domains are backfilled with `verification_status='ok'`.
+2. **Multi-user stays.** Each registered user is their own account (organization) with one or more groups; `allow_registration` keeps its meaning. All new tables are scoped by `user_id`/`group_id` and every endpoint checks ownership. Page slugs and domains are unique globally. "Created by" filters show the single owner.
+3. **QR codes always own a link.** Creating a QR code creates a link row with `source='qr'` (random back-half). If "Share as a short link" is on, the link gets `source='link'` and the QR is attached to it. Links with `source='qr'` or `source='page'` are excluded from the Links list, search, export and checklist; they appear only through their QR code / page. A link's "engagements" = all clicks regardless of source (clicks + scans + page button clicks), matching Bitly; stats endpoints accept `source=` to split them. Deleting a QR code deletes its `source='qr'` link; deleting a link deletes its attached QR.
+4. **A domain belongs to at most one group** (`domains.group_id NULL` = usable by all of the user's groups). The add-domain flow offers "All groups" or one group.
+5. **Campaign membership is metadata.** Adding an existing link to a channel never rewrites its destination. "Auto-add UTM parameters" only applies when a new link is created from inside a campaign/channel ("Create link" in the channel card) and is applied before shortening. A link may belong to several campaigns/channels.
+6. **No stored screenshots.** The reference walkthrough lives in §3 and §5 (labels, layouts, menus) of this document; reviewers check against those texts.
