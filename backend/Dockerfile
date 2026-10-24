@@ -18,7 +18,8 @@ WORKDIR /app
 COPY --from=builder /app/server .
 COPY --from=builder /app/migrations ./migrations
 
-RUN addgroup -g 1001 appgroup && adduser -u 1001 -G appgroup -D appuser
+RUN addgroup -g 1001 appgroup && adduser -u 1001 -G appgroup -D appuser \
+    && mkdir -p /app/uploads && chown appuser:appgroup /app/uploads
 USER appuser
 
 EXPOSE 8080

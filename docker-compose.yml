@@ -7,7 +7,8 @@ services:
       - "0.0.0.0:8081:8081"  # API server
     volumes:
       - ./backend/config.docker.yaml:/app/config.yaml:ro
-      - ./backend/data:/app/data:ro
+      - ./backend/data:/app/data:ro      # GeoIP database (read-only)
+      - uploads:/app/uploads              # uploads.path (writable, owned by appuser)
     depends_on:
       mariadb:
         condition: service_healthy
@@ -36,7 +37,9 @@ services:
   mariadb:
     image: mariadb:10.11
     volumes:
-      - ./backend/migrations:/docker-entrypoint-initdb.d
+      # Only the baseline schema is loaded on first boot; the backend applies
+      # 002+ itself at startup and records them in schema_migrations.
+      - ./backend/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
     environment:
       - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
       - MYSQL_DATABASE=urlshortener
@@ -58,3 +61,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+volumes:
+  uploads:

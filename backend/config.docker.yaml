@@ -1,4 +1,5 @@
 # Docker configuration for URL Shortener
+# Mounted read-only at /app/config.yaml by docker-compose.yml
 
 server:
   redirect_port: "8080"  # Port for redirect server (public)
@@ -9,38 +10,36 @@ server:
     - "http://127.0.0.1:3000"
 
 database:
-  host: "mariadb"
-  port: "3306"
-  user: "urlshortener"
-  password: "urlshortener_pass"
-  name: "urlshortener"
-  migrations_path: "migrations"  # directory of NNN_*.sql files applied on startup
+  host: "mariadb"                # MariaDB service name in docker-compose
+  port: "3306"                   # MariaDB port
+  user: "urlshortener"           # Must match MYSQL_USER in docker-compose.yml
+  password: "urlshortener_pass"  # Must match DB_PASSWORD in .env
+  name: "urlshortener"           # Must match MYSQL_DATABASE in docker-compose.yml
+  migrations_path: "migrations"  # Directory of NNN_*.sql files applied on startup (copied into the image)
 
 redis:
-  host: "redis"
-  port: "6379"
-  password: ""
+  host: "redis"   # Redis service name in docker-compose
+  port: "6379"    # Redis port
+  password: ""    # Redis password (empty = no auth)
 
 jwt:
-  secret: "dev-jwt-secret-change-in-production"
+  secret: "dev-jwt-secret-change-in-production"  # REQUIRED - signing key for session JWTs; change it
 
 webauthn:
-  rp_id: "localhost"
-  rp_origin: "http://localhost:3000"
+  rp_id: "localhost"                  # Passkey relying-party ID (the UI's hostname, no scheme/port)
+  rp_origin: "http://localhost:3000"  # Exact origin the UI is served from
 
 urls:
   base_url: "http://localhost:8080"       # Public URL of the redirect server (short links)
   frontend_url: "http://localhost:3000"   # Public URL of the web UI (links back to the app)
-  redirect_host: ""   # Hostname custom domains CNAME to (default: host of base_url)
-  redirect_ip: ""     # IP for custom apex domain A records (empty = not shown)
+  redirect_host: "localhost"  # Hostname custom domains CNAME to (default: host of base_url)
+  redirect_ip: ""             # IP for custom apex domain A records (empty = not shown)
 
 geoip:
-  path: "/app/data/GeoLite2-City.mmdb"
+  path: "/app/data/GeoLite2-City.mmdb"  # MaxMind GeoIP2 City database (empty = GeoIP disabled)
 
 ui:
-  # Show link favicons via Google's favicon service; set false for offline installs
-  favicon_service: true
+  favicon_service: true  # Show link favicons via Google's favicon service; false for offline installs
 
 uploads:
-  # Directory for user-uploaded files (QR logos, page images, ...)
-  path: "/app/data/uploads"
+  path: "/app/uploads"  # Directory for user-uploaded files; backed by the writable "uploads" volume
