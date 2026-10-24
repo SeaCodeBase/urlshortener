@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { LinkStatsV2 } from "@/types";
-import { buildStatsCsv, csvCell } from "./csv";
+import type { LinkStatsV2, PageStats } from "@/types";
+import { buildPageStatsCsv, buildStatsCsv, csvCell } from "./csv";
 
 const stats: LinkStatsV2 = {
   from: "2026-10-01",
@@ -80,3 +80,42 @@ describe("buildStatsCsv", () => {
   });
 });
 
+
+describe("buildPageStatsCsv", () => {
+  const page: PageStats = {
+    from: "2026-10-01",
+    to: "2026-10-24",
+    unit: "day",
+    total_views_all_time: 40,
+    total_views: 9,
+    prev_total_views: 0,
+    change_pct: null,
+    series: [{ date: "2026-10-24", clicks: 9 }],
+    prev_series: [],
+    referrers: [{ referrer: "", clicks: 9, percentage: 100, prev_clicks: 0 }],
+    devices: [{ key: "mobile", clicks: 9, percentage: 100, prev_clicks: 0 }],
+    countries: [{ code: "US", name: "United States", clicks: 9, percentage: 100, prev_clicks: 0 }],
+    cities: [{ name: "Austin", country: "US", clicks: 9, percentage: 100, prev_clicks: 0 }],
+    blocks: [{ block_id: 5, title: "=Menu", link_id: 9, short_url: "http://sho.rt/abc", clicks: 4 }],
+  };
+
+  it("writes the page sections in order with escaped values", () => {
+    const lines = buildPageStatsCsv(page, { rangeLabel: "Last 30 days" }).split("\n");
+    const titles = ["Summary", "Views over time", "Link clicks", "Referrers", "Devices", "Countries", "Cities"];
+    const idx = titles.map((t) => lines.indexOf(t));
+    expect(idx.every((i) => i >= 0)).toBe(true);
+    expect([...idx].sort((a, b) => a - b)).toEqual(idx);
+    expect(lines[0]).toBe("Summary");
+    expect(lines).toContain("Range,2026-10-01 to 2026-10-24");
+    expect(lines).toContain("Total views,40");
+    expect(lines).toContain("Views (Last 30 days),9");
+    expect(lines).toContain("Date,Views");
+    expect(lines).toContain("2026-10-24,9");
+    expect(lines).toContain("Block,Short URL,Clicks");
+    expect(lines).toContain("'=Menu,http://sho.rt/abc,4");
+    expect(lines).toContain("Direct,9,100");
+    expect(lines).toContain("Mobile,9,100");
+    expect(lines).toContain("United States,US,9,100");
+    expect(lines).toContain("Austin,US,9,100");
+  });
+});

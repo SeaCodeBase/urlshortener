@@ -1,4 +1,4 @@
-import type { LinkStatsV2 } from '@/types'
+import type { LinkStatsV2, PageStats } from '@/types'
 
 /** Leading characters that make spreadsheets treat a cell as a formula. */
 const FORMULA_START = /^[=+\-@\t\r]/
@@ -54,5 +54,27 @@ export function buildStatsCsv(
   }
   section('Browsers', ['Browser', n, '%'], stats.browsers.map((d) => [d.key || 'Unknown', d.clicks, pct(d.percentage)]))
   section('Operating systems', ['Operating system', n, '%'], stats.os.map((d) => [d.key || 'Unknown', d.clicks, pct(d.percentage)]))
+  return lines.join('\n') + '\n'
+}
+
+/** CSV of a page's loaded stats (Track tab): views per section, plus link-block clicks. */
+export function buildPageStatsCsv(stats: PageStats, opts: { rangeLabel: string }): string {
+  const lines: string[] = []
+  const section = (title: string, header: string[], rows: (string | number)[][]) => {
+    if (lines.length) lines.push('')
+    lines.push(csvCell(title), csvRow(header))
+    for (const r of rows) lines.push(csvRow(r))
+  }
+  section('Summary', ['Metric', 'Value'], [
+    ['Range', `${stats.from} to ${stats.to}`],
+    ['Total views', stats.total_views_all_time],
+    [`Views (${opts.rangeLabel})`, stats.total_views],
+  ])
+  section('Views over time', ['Date', 'Views'], stats.series.map((p) => [p.date, p.clicks]))
+  section('Link clicks', ['Block', 'Short URL', 'Clicks'], stats.blocks.map((b) => [b.title, b.short_url, b.clicks]))
+  section('Referrers', ['Referrer', 'Views', '%'], stats.referrers.map((r) => [r.referrer || 'Direct', r.clicks, pct(r.percentage)]))
+  section('Devices', ['Device', 'Views', '%'], stats.devices.map((d) => [cap(d.key), d.clicks, pct(d.percentage)]))
+  section('Countries', ['Country', 'Code', 'Views', '%'], stats.countries.map((c) => [c.name, c.code, c.clicks, pct(c.percentage)]))
+  section('Cities', ['City', 'Country', 'Views', '%'], stats.cities.map((c) => [c.name, c.country, c.clicks, pct(c.percentage)]))
   return lines.join('\n') + '\n'
 }

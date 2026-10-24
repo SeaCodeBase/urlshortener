@@ -1,23 +1,28 @@
 'use client'
 
-import { Suspense } from 'react'
+import { Suspense, useState } from 'react'
 import NextLink from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { EmptyState } from '@/components/common/EmptyState'
 import { BuildTab } from '@/components/pages/BuildTab'
+import { DesignTab } from '@/components/pages/DesignTab'
 import { EditorTopBar, PAGES_HREF } from '@/components/pages/EditorTopBar'
 import { PhonePreview } from '@/components/pages/PhonePreview'
+import { TrackTab } from '@/components/pages/TrackTab'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApiError } from '@/lib/api'
 import { usePage } from '@/lib/hooks'
-import type { Page } from '@/types'
+import type { Page, PageDesign } from '@/types'
 
 const TABS = ['build', 'design', 'track'] as const
 type EditorTab = (typeof TABS)[number]
 
 const parseTab = (v: string | null): EditorTab => (TABS.includes(v as EditorTab) ? (v as EditorTab) : 'build')
+
+/** Designs are small plain objects with a fixed key order from the same producers. */
+const sameDesign = (a: PageDesign, b: PageDesign) => JSON.stringify(a) === JSON.stringify(b)
 
 function EditorSkeleton() {
   return (
@@ -41,6 +46,10 @@ function Editor({ page }: { page: Page }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const tab = parseTab(searchParams.get('tab'))
+  // Unsaved Design-tab edits shown in the preview until the server page catches up.
+  const [designOverride, setDesignOverride] = useState<PageDesign | null>(null)
+  if (designOverride && sameDesign(designOverride, page.design)) setDesignOverride(null)
+  const previewPage = designOverride ? { ...page, design: designOverride } : page
 
   function setTab(next: string) {
     const sp = new URLSearchParams(searchParams.toString())
@@ -64,14 +73,14 @@ function Editor({ page }: { page: Page }) {
             <BuildTab page={page} />
           </TabsContent>
           <TabsContent value="design" className="pt-4">
-            <div>Design</div>
+            <DesignTab page={page} onDesignChange={setDesignOverride} />
           </TabsContent>
           <TabsContent value="track" className="pt-4">
-            <div>Track</div>
+            <TrackTab pageId={page.id} />
           </TabsContent>
         </Tabs>
         <aside className="sticky top-6 hidden self-start lg:block" aria-label="Page preview">
-          <PhonePreview page={page} />
+          <PhonePreview page={previewPage} />
         </aside>
       </div>
     </div>
