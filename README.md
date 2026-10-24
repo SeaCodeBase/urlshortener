@@ -76,6 +76,36 @@ Every configuration key is documented in `backend/config.example.yaml`.
   serves it at `/uploads/{name}`. With Docker, `uploads.path` is
   `/app/uploads`, backed by the writable `uploads` volume.
 
+### Analytics (Phase 3)
+
+- **Pages** — `/dashboard/analytics` (performance overview + dashboards
+  preview), `/dashboard/analytics/dashboards` (list: rename, duplicate,
+  delete) and `/dashboard/analytics/dashboards/[id]` (modules, change
+  visualization, reorder, filter, date range, previous-period comparison,
+  Download CSV). Link details has **Compare to a link**.
+- **Dashboards** are per group and store a name, `date_range`
+  (`today`, `last_7_days`, `last_30_days`, `last_60_days`, `last_90_days`),
+  a `filter` and a module `layout`. Custom ranges are URL-only and not saved.
+  Each group gets a **Default** dashboard, created on the first list call; it
+  can be renamed but deleting it returns `409`. Dashboards of another group
+  return `404`.
+- **Filter** — `{"type":"all"}`, `{"type":"links","ids":[...]}` or
+  `{"type":"qr","ids":[...]}` (1–200 ids from the group, otherwise `400`).
+  `links` counts clicks of those links except QR scans; `qr` counts the scans
+  of the selected codes. Links owned by a QR code (`source='qr'`) count as QR
+  items, not as links.
+- **Endpoints** (group-scoped, `/api/analytics`) — `GET /overview`,
+  `GET/POST /dashboards`, `GET/PATCH/DELETE /dashboards/{id}`,
+  `POST /dashboards/{id}/duplicate`, `GET /dashboards/{id}/data` and
+  `GET /dashboards/{id}/export`. `/data` takes `from`, `to` and
+  `compare=previous|none`; the dashboard's stored filter is always used, and
+  without `from`/`to` a 30-day default window applies.
+  `GET /api/links/{id}/stats?compare_link={id}` adds the comparison link's
+  series to the link stats (QR stats ignore it).
+- **Export** — `/export` returns a zip with `summary.csv`, `top.csv`,
+  `engagements_over_time.csv`, `devices.csv`, `referrers.csv`,
+  `locations.csv` and `links_and_qr_codes.csv`.
+
 ### Upgrading an existing install
 
 - Database migrations run **automatically at backend startup**. Applied
@@ -95,6 +125,8 @@ Every configuration key is documented in `backend/config.example.yaml`.
   delete or re-code the duplicates, then restart the backend (the runner
   re-applies the pending file).
 - `005_qr_codes.sql` creates the `qr_codes` and `qr_tags` tables in place.
+- `006_dashboards.sql` creates the `dashboards` table in place (idempotent,
+  applied by the startup migrator; no manual SQL needed).
 - With Docker, MariaDB only loads `001_init.sql` on first boot; later
   migrations always come from the backend image (`/app/migrations`).
 
