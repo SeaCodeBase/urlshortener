@@ -45,7 +45,7 @@ export function QrReadyDialog({
                     View code details
                   </Link>
                 </Button>
-                <QrDownloadMenu qr={qr} />
+                <QrDownloadMenu qr={qr} label="Download" />
               </div>
             </div>
           </>

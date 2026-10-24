@@ -18,8 +18,11 @@ const FORMATS: { value: QrImageFormat; label: string }[] = [
   { value: 'jpeg', label: 'JPG' },
 ]
 
-/** Download icon button with a PNG / SVG / JPG menu; renders the stored design client-side. */
-export function QrDownloadMenu({ qr }: { qr: QrCode }) {
+/**
+ * Download button with a PNG / SVG / JPG menu; renders the stored design client-side.
+ * Icon-only unless `label` is given (then the text is shown next to the icon).
+ */
+export function QrDownloadMenu({ qr, label }: { qr: QrCode; label?: string }) {
   function download(format: QrImageFormat) {
     downloadQr(qr, format).catch(() => toast.error("Couldn't download the QR Code"))
   }
@@ -27,9 +30,16 @@ export function QrDownloadMenu({ qr }: { qr: QrCode }) {
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="secondary" size="icon-sm" aria-label="Download" className="size-8">
-          <Download className="size-4" />
-        </Button>
+        {label ? (
+          <Button type="button">
+            <Download className="size-4" />
+            {label}
+          </Button>
+        ) : (
+          <Button type="button" variant="secondary" size="icon-sm" aria-label="Download" className="size-8">
+            <Download className="size-4" />
+          </Button>
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-32">
         {FORMATS.map((f) => (

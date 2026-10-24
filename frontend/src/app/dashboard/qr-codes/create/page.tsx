@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState, type FormEvent } from 'react'
+import { Suspense, useEffect, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
@@ -44,7 +44,7 @@ function CreateQrFlow() {
   const designId = positiveId(params.get('design'))
   const createQr = useCreateQrCode()
   const linkQuery = useLink(linkId)
-  const { data: designSource } = useQrCode(designId)
+  const { data: designSource, isError: designFailed } = useQrCode(designId)
   const { data: domains } = useDomains()
   const groupDefaultDomainId = useGroupDefaultDomainId(usableDomains(domains, useActiveGroupId()))
 
@@ -59,6 +59,16 @@ function CreateQrFlow() {
   if (designSource && !designSeeded) {
     setDesignSeeded(true)
     setDesign(normalizeQrDesign(designSource.render_customizations))
+  }
+
+  useEffect(() => {
+    if (designFailed) toast.error("Couldn't load the design to start from")
+  }, [designFailed])
+
+  /** User edits win over a `?design=` response that arrives later. */
+  function changeDesign(next: QrDesign) {
+    setDesignSeeded(true)
+    setDesign(next)
   }
 
   const attachedLink = linkId ? linkQuery.data : undefined
@@ -116,8 +126,7 @@ function CreateQrFlow() {
     return input
   }
 
-  async function create(e: FormEvent) {
-    e.preventDefault()
+  async function create() {
     if (createQr.isPending) return
     const input = buildInput()
     try {
@@ -129,6 +138,7 @@ function CreateQrFlow() {
       if (err instanceof ApiError && err.status === 409 && draft.shareAsLink && !attachedLink) {
         setErrors({ backHalf: message })
         setStep(1)
+        return
       }
       toast.error(message)
     }
@@ -173,9 +183,9 @@ function CreateQrFlow() {
           </div>
         </form>
       ) : (
-        <form onSubmit={create} noValidate>
+        <div>
           <div className="pb-24">
-            <QrDesigner design={design} onChange={setDesign} data={previewData} />
+            <QrDesigner design={design} onChange={changeDesign} data={previewData} />
           </div>
           <div className="sticky bottom-0 -mx-4 border-t border-border bg-background px-4 py-3">
             <div className="flex justify-between gap-3">
@@ -184,13 +194,13 @@ function CreateQrFlow() {
               </Button>
               <div className="flex gap-3">
                 {cancel}
-                <Button type="submit" disabled={createQr.isPending}>
+                <Button type="button" onClick={create} disabled={createQr.isPending}>
                   {createQr.isPending ? 'Creating…' : 'Create your code'}
                 </Button>
               </div>
             </div>
           </div>
-        </form>
+        </div>
       )}
       <QrReadyDialog
         open={created !== null}

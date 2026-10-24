@@ -1,6 +1,6 @@
 'use client'
 
-import { useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { HEX_RE, QR_COLORS } from '@/components/links/LinkForm'
 import { QrPreview } from '@/components/qr/QrPreview'
@@ -48,6 +48,11 @@ const ERROR_CORRECTIONS: { value: QrErrorCorrection; label: string }[] = [
 ]
 export const QR_BACKGROUNDS = ['#FFFFFF', '#F4F6FA', '#FFF8E1', '#E8F5E9', '#E3F2FD']
 const MAX_FRAME_TEXT = 24
+
+/** Enter in a designer text field must not submit an enclosing form (and create the code). */
+function blockEnter(e: KeyboardEvent<HTMLInputElement>) {
+  if (e.key === 'Enter') e.preventDefault()
+}
 
 function DesignSection({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -139,6 +144,7 @@ function ColorPicker({
           className="w-28"
           value={hex}
           maxLength={7}
+          onKeyDown={blockEnter}
           onChange={(e) => {
             const v = e.target.value
             setHex(v)
@@ -164,13 +170,18 @@ export function QrDesigner({
   const id = useId()
   const upload = useUploadImage()
   const set = (patch: Partial<QrDesign>) => onChange({ ...design, ...patch })
+  // The latest design, so an upload that finishes later doesn't revert edits made meanwhile.
+  const latest = useRef(design)
+  useEffect(() => {
+    latest.current = design
+  }, [design])
   const hasText = design.frame === 'text-bottom' || design.frame === 'text-top'
 
   async function uploadLogo(file: File | undefined) {
     if (!file) return
     try {
       const res = await upload.mutateAsync(file)
-      set({ logo: res.url })
+      onChange({ ...latest.current, logo: res.url })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't upload the logo")
     }
@@ -246,6 +257,7 @@ export function QrDesigner({
                 className="sm:w-72"
                 value={design.frame_text}
                 maxLength={MAX_FRAME_TEXT}
+                onKeyDown={blockEnter}
                 onChange={(e) => set({ frame_text: e.target.value })}
               />
             </div>
