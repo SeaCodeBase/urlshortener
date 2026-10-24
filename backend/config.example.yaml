@@ -30,10 +30,21 @@ webauthn:
   rp_origin: "http://localhost:3000"
 
 urls:
-  base_url: "http://localhost:8080"
+  base_url: "http://localhost:8080"       # Public URL of the redirect server (short links)
+  frontend_url: "http://localhost:3000"   # Public URL of the web UI (links back to the app)
+  redirect_host: ""   # Hostname custom domains CNAME to (default: host of base_url)
+  redirect_ip: ""     # IP for custom apex domain A records (empty = not shown)
 
 geoip:
   # Path to MaxMind GeoIP2 City database (.mmdb file)
   # Download from: https://www.maxmind.com/en/geoip2-databases
   # Leave empty to disable GeoIP lookups
   path: ""
+
+ui:
+  # Show link favicons via Google's favicon service; set false for offline installs
+  favicon_service: true
+
+uploads:
+  # Directory for user-uploaded files (QR logos, page images, ...)
+  path: "data/uploads"

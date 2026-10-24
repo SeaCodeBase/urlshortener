@@ -117,8 +117,7 @@ func main() {
 	clickService := service.NewClickService(rdb)
 
 	// Redirect handler
-	// TODO(task5): use cfg.URLs.FrontendURL
-	redirectHandler := handler.NewRedirectHandler(redirectService, clickService, domainRepo, cfg.JWT.Secret, cfg.URLs.BaseURL)
+	redirectHandler := handler.NewRedirectHandler(redirectService, clickService, domainRepo, cfg.JWT.Secret, cfg.URLs.FrontendURL)
 
 	// Redirect Router (public, minimal - for URL redirects)
 	redirectRouter := gin.New()

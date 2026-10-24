@@ -3,6 +3,7 @@ package config
 
 import (
 	"errors"
+	"net/url"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -48,7 +49,29 @@ type WebAuthnConfig struct {
 
 // URLsConfig holds URL-related configuration
 type URLsConfig struct {
+	// BaseURL is the public URL of the redirect server (short links).
 	BaseURL string `yaml:"base_url"`
+	// FrontendURL is the public URL of the web UI (used for links back to the app).
+	FrontendURL string `yaml:"frontend_url"`
+	// RedirectHost is the hostname custom domains should CNAME to.
+	// Defaults to the host of BaseURL.
+	RedirectHost string `yaml:"redirect_host"`
+	// RedirectIP is the IP custom apex domains should point an A record at.
+	// Empty means "not advertised".
+	RedirectIP string `yaml:"redirect_ip"`
+}
+
+// UIConfig holds settings that affect what the web UI renders.
+type UIConfig struct {
+	// FaviconService enables favicons via Google's favicon service.
+	// nil (unset) defaults to true; set false for offline installs.
+	FaviconService *bool `yaml:"favicon_service"`
+}
+
+// UploadsConfig holds settings for user-uploaded files.
+type UploadsConfig struct {
+	// Path is the directory where uploaded files are stored.
+	Path string `yaml:"path"`
 }
 
 // GeoIPConfig holds GeoIP database configuration
@@ -65,6 +88,8 @@ type Config struct {
 	WebAuthn WebAuthnConfig `yaml:"webauthn"`
 	URLs     URLsConfig     `yaml:"urls"`
 	GeoIP    GeoIPConfig    `yaml:"geoip"`
+	UI       UIConfig       `yaml:"ui"`
+	Uploads  UploadsConfig  `yaml:"uploads"`
 }
 
 // LoadFromYAML loads configuration from a YAML file
@@ -144,6 +169,21 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.URLs.BaseURL == "" {
 		cfg.URLs.BaseURL = "http://localhost:8080"
+	}
+	if cfg.URLs.FrontendURL == "" {
+		cfg.URLs.FrontendURL = "http://localhost:3000"
+	}
+	if cfg.URLs.RedirectHost == "" {
+		if u, err := url.Parse(cfg.URLs.BaseURL); err == nil {
+			cfg.URLs.RedirectHost = u.Hostname()
+		}
+	}
+	if cfg.UI.FaviconService == nil {
+		enabled := true
+		cfg.UI.FaviconService = &enabled
+	}
+	if cfg.Uploads.Path == "" {
+		cfg.Uploads.Path = "data/uploads"
 	}
 	if cfg.WebAuthn.RPID == "" {
 		cfg.WebAuthn.RPID = "localhost"

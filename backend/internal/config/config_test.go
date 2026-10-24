@@ -118,3 +118,51 @@ jwt:
 	assert.Equal(t, "localhost", cfg.WebAuthn.RPID)
 	assert.Equal(t, "http://localhost:3000", cfg.WebAuthn.RPOrigin)
 }
+
+func TestApplyDefaults_URLs(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		cfg := &Config{}
+		applyDefaults(cfg)
+
+		assert.Equal(t, "http://localhost:8080", cfg.URLs.BaseURL)
+		assert.Equal(t, "http://localhost:3000", cfg.URLs.FrontendURL)
+		assert.Equal(t, "localhost", cfg.URLs.RedirectHost)
+		assert.Equal(t, "", cfg.URLs.RedirectIP)
+		require.NotNil(t, cfg.UI.FaviconService)
+		assert.True(t, *cfg.UI.FaviconService)
+		assert.Equal(t, "data/uploads", cfg.Uploads.Path)
+	})
+
+	t.Run("redirect host derived from base url", func(t *testing.T) {
+		cfg := &Config{URLs: URLsConfig{BaseURL: "https://sho.rt:8443/x"}}
+		applyDefaults(cfg)
+		assert.Equal(t, "sho.rt", cfg.URLs.RedirectHost)
+	})
+
+	t.Run("explicit values kept", func(t *testing.T) {
+		content := `
+jwt:
+  secret: "minimum-required-secret-for-test!"
+urls:
+  base_url: "https://s.example.com"
+  frontend_url: "https://app.example.com"
+  redirect_host: "cname.example.com"
+  redirect_ip: "203.0.113.7"
+ui:
+  favicon_service: false
+uploads:
+  path: "/var/lib/us/uploads"
+`
+		configPath := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+		cfg, err := LoadFromYAML(configPath)
+		require.NoError(t, err)
+		assert.Equal(t, "https://app.example.com", cfg.URLs.FrontendURL)
+		assert.Equal(t, "cname.example.com", cfg.URLs.RedirectHost)
+		assert.Equal(t, "203.0.113.7", cfg.URLs.RedirectIP)
+		require.NotNil(t, cfg.UI.FaviconService)
+		assert.False(t, *cfg.UI.FaviconService)
+		assert.Equal(t, "/var/lib/us/uploads", cfg.Uploads.Path)
+	})
+}
