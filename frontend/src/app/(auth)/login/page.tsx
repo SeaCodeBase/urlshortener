@@ -3,18 +3,28 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { startAuthentication } from '@simplewebauthn/browser'
+import { KeyRound } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth'
 import { api } from '@/lib/api'
+import { useMeta } from '@/lib/hooks'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { startAuthentication } from '@simplewebauthn/browser'
-import { Key } from 'lucide-react'
+
+function FormError({ message }: { message: string }) {
+  if (!message) return null
+  return (
+    <p role="alert" className="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
+      {message}
+    </p>
+  )
+}
 
 export default function LoginPage() {
   const router = useRouter()
   const { setAuth } = useAuthStore()
+  const { data: meta } = useMeta()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -106,95 +116,74 @@ export default function LoginPage() {
 
   if (requiresPasskey) {
     return (
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-            <Key className="h-6 w-6 text-primary" />
-          </div>
-          <CardTitle>Verify your identity</CardTitle>
-          <CardDescription>
-            Use your passkey to complete login
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {error && (
-            <div className="bg-red-50 text-red-500 p-3 rounded-md text-sm">
-              {error}
-            </div>
-          )}
-          <Button
-            onClick={handlePasskeyVerify}
-            disabled={verifyingPasskey}
-            className="w-full bg-primary hover:bg-primary/90"
-          >
-            {verifyingPasskey ? 'Verifying...' : 'Use Passkey'}
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setRequiresPasskey(false)
-              setUserId(null)
-              setError('')
-            }}
-            className="w-full"
-          >
-            Go back
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="space-y-6">
+        <div className="flex size-12 items-center justify-center rounded-full bg-primary/10">
+          <KeyRound className="size-6 text-primary" aria-hidden />
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-[32px] leading-10 font-semibold text-foreground">Verify it&apos;s you</h1>
+          <p className="text-base text-muted-foreground">Use your passkey to finish signing in.</p>
+        </div>
+        <FormError message={error} />
+        <Button onClick={handlePasskeyVerify} disabled={verifyingPasskey} className="w-full">
+          {verifyingPasskey ? 'Verifying...' : 'Continue with passkey'}
+        </Button>
+        <Button
+          variant="link"
+          className="w-full"
+          onClick={() => {
+            setRequiresPasskey(false)
+            setUserId(null)
+            setError('')
+          }}
+        >
+          Back
+        </Button>
+      </div>
     )
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Login</CardTitle>
-        <CardDescription>Enter your credentials to access your account</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="p-3 text-sm text-red-500 bg-red-50 rounded-md">
-              {error}
-            </div>
-          )}
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              placeholder="you@example.com"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="••••••••"
-            />
-          </div>
-          <Button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-primary hover:bg-primary/90"
-          >
-            {loading ? 'Signing in...' : 'Sign in'}
-          </Button>
-        </form>
-        <p className="mt-4 text-center text-sm text-gray-600">
-          Don&apos;t have an account?{' '}
-          <Link href="/register" className="text-primary hover:underline">
-            Register
-          </Link>
-        </p>
-      </CardContent>
-    </Card>
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <h1 className="text-[32px] leading-10 font-semibold text-foreground">Log in and start sharing</h1>
+        {meta?.allow_registration !== false && (
+          <p className="text-base text-muted-foreground">
+            Don&apos;t have an account?{' '}
+            <Link href="/register" className="font-semibold text-primary hover:underline">
+              Sign up
+            </Link>
+          </p>
+        )}
+      </div>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <FormError message={error} />
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="password">Password</Label>
+          <Input
+            id="password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </div>
+        <Button type="submit" disabled={loading} className="w-full">
+          {loading ? 'Logging in...' : 'Log in'}
+        </Button>
+      </form>
+    </div>
   )
 }
