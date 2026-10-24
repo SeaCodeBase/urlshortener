@@ -137,4 +137,38 @@ describe("ApiClient", () => {
 
     await expect(api.deleteLink(9)).resolves.toEqual({});
   });
+  it("wraps fetch rejections as ApiError('Network error', 0)", async () => {
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    const err = await api.getTags().catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ message: "Network error", status: 0 });
+  });
+
+  it("a 401 signs the user out once and rethrows", async () => {
+    const original = useAuthStore.getState().logout;
+    const spy = vi.fn(original);
+    useAuthStore.setState({ token: "tok-123", logout: spy });
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({ error: "unauthorized" }, 401)));
+
+    const results = await Promise.allSettled([api.getTags(), api.getTags()]);
+
+    expect(results.map((r) => r.status)).toEqual(["rejected", "rejected"]);
+    expect((results[0] as PromiseRejectedResult).reason).toMatchObject({ status: 401 });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(useAuthStore.getState().token).toBeNull();
+    useAuthStore.setState({ logout: original });
+  });
+
+  it("a 401 without a token (failed login) does not sign out", async () => {
+    api.setToken(null);
+    const spy = vi.fn();
+    const original = useAuthStore.getState().logout;
+    useAuthStore.setState({ logout: spy });
+    fetchMock.mockResolvedValue(jsonResponse({ error: "invalid credentials" }, 401));
+
+    await expect(api.login("a@b.c", "x")).rejects.toMatchObject({ status: 401 });
+    expect(spy).not.toHaveBeenCalled();
+    useAuthStore.setState({ logout: original });
+  });
 });

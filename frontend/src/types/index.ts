@@ -164,7 +164,7 @@ export interface CreateLinkInput {
 
 export interface UpdateLinkInput {
   original_url?: string;
-  /** "" (or null) clears the title; omitted keeps it. */
+  /** "" clears; omitted keeps. */
   title?: string | null;
   /** RFC 3339. */
   expires_at?: string;

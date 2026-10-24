@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '@/lib/api';
+import { getQueryClient } from '@/lib/query';
 import type { Group, User } from '@/types';
 
 interface AuthState {
@@ -52,6 +53,8 @@ export const useAuthStore = create<AuthState>()(
       logout: () => {
         api.setToken(null);
         set({ user: null, token: null, activeGroupId: null, groups: [] });
+        // Drop every cached query so the next user never sees this one's data.
+        getQueryClient().clear();
       },
 
       checkAuth: async () => {
@@ -103,3 +106,5 @@ export const useAuthStore = create<AuthState>()(
 // so the store stays the single source of truth without a circular import.
 api.setGroupId(useAuthStore.getState().activeGroupId);
 useAuthStore.subscribe((state) => api.setGroupId(state.activeGroupId));
+// A 401 on any authenticated request signs the user out (once: logout clears the token).
+api.onUnauthorized(() => useAuthStore.getState().logout());

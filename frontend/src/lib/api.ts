@@ -74,14 +74,28 @@ export function buildQuery(params: object = {}): string {
 class ApiClient {
   private token: string | null = null;
   private groupId: number | null = null;
+  private unauthorizedHandler: (() => void) | null = null;
 
   setToken(token: string | null) {
     this.token = token;
   }
 
-  /** Active group sent as X-Group-ID; kept in sync by the auth store. */
+  /**
+   * Active group sent as X-Group-ID. Coupling: the auth store pushes its
+   * activeGroupId here via `useAuthStore.subscribe` (see stores/auth.ts), so
+   * this must only be called from that subscription (or tests) — setting it
+   * elsewhere would be overwritten on the next store change.
+   */
   setGroupId(groupId: number | null) {
     this.groupId = groupId;
+  }
+
+  /**
+   * Called once when a request made with a token gets a 401 (the auth store
+   * registers its logout here; it clears the token, so later 401s don't loop).
+   */
+  onUnauthorized(handler: (() => void) | null) {
+    this.unauthorizedHandler = handler;
   }
 
   /** Default headers; ones given in `extra` win. */
@@ -100,13 +114,24 @@ class ApiClient {
   }
 
   private async fetchOk(endpoint: string, options: RequestInit = {}): Promise<Response> {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers: this.headers(options.headers),
-    });
+    const hadToken = this.token != null;
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers: this.headers(options.headers),
+      });
+    } catch {
+      throw new ApiError('Network error', 0);
+    }
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       const message = typeof body?.error === 'string' && body.error ? body.error : 'Request failed';
+      // Only a token that was sent and is still current signs the user out:
+      // a failed login (no token) or a stale in-flight request doesn't.
+      if (response.status === 401 && hadToken && this.token != null) {
+        this.unauthorizedHandler?.();
+      }
       throw new ApiError(message, response.status);
     }
     return response;
