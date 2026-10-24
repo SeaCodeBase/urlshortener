@@ -18,6 +18,7 @@ import { ApiError } from '@/lib/api'
 import { useBulkLinks, useDeleteLink } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import type { Link } from '@/types'
+import { AddToPageDialog } from './AddToPageDialog'
 
 export const CANT_DELETE_MESSAGE = "This link can't be deleted. You can hide it instead."
 
@@ -52,6 +53,7 @@ export function LinkActionsMenu({
   onDeleted?: () => void
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [addToPage, setAddToPage] = useState(false)
   const bulk = useBulkLinks()
   const del = useDeleteLink()
   const deletable = isDeletable(link)
@@ -109,10 +111,10 @@ export function LinkActionsMenu({
               </NextLink>
             )}
           </DropdownMenuItem>
-          <DisabledItem tooltip="Coming soon">
+          <DropdownMenuItem onSelect={() => setAddToPage(true)}>
             <FileText />
             Add to a page
-          </DisabledItem>
+          </DropdownMenuItem>
           <DisabledItem tooltip="Coming soon">
             <Megaphone />
             Add to campaign
@@ -135,6 +137,7 @@ export function LinkActionsMenu({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+      <AddToPageDialog open={addToPage} onOpenChange={setAddToPage} link={link} />
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}

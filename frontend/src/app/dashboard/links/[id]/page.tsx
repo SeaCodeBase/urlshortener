@@ -1,12 +1,13 @@
 'use client'
 
-import { Suspense, useMemo, type ReactNode } from 'react'
+import { Suspense, useMemo, useState, type ReactNode } from 'react'
 import NextLink from 'next/link'
 import { useParams } from 'next/navigation'
 import { CornerDownRight, EyeOff, Palette, Plus, QrCode } from 'lucide-react'
 import { toast } from 'sonner'
 import { CopyButton } from '@/components/common/CopyButton'
 import { EmptyState } from '@/components/common/EmptyState'
+import { AddToPageDialog, pageLabel } from '@/components/links/AddToPageDialog'
 import { DynamicRoutingCard } from '@/components/links/DynamicRoutingCard'
 import { LinkAnalytics } from '@/components/links/LinkAnalytics'
 import { LinkDetailsHeader } from '@/components/links/LinkDetailsHeader'
@@ -15,9 +16,8 @@ import { QrDownloadMenu } from '@/components/qr/QrDownloadMenu'
 import { QrPreview } from '@/components/qr/QrPreview'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatDate, formatDateTime, formatShortUrl } from '@/lib/format'
-import { useBulkLinks, useLink, useQrCode } from '@/lib/hooks'
+import { useBulkLinks, useLink, usePages, useQrCode } from '@/lib/hooks'
 import { normalizeQrDesign } from '@/lib/qr/design'
 import type { Link } from '@/types'
 
@@ -186,28 +186,38 @@ function LinkQrCode({ link, qrId }: { link: Link; qrId: number }) {
   )
 }
 
-function PagesCard() {
+function PagesCard({ link }: { link: Link }) {
+  const [open, setOpen] = useState(false)
+  const { data } = usePages()
+  const ids = new Set(link.page_ids ?? [])
+  const pages = (data?.pages ?? []).filter((p) => ids.has(p.id))
   return (
     <section className={CARD}>
       <div className="mb-4 flex items-center justify-between gap-2">
         <h2 className="text-xl font-semibold text-foreground">Pages</h2>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span tabIndex={0}>
-              <button
-                type="button"
-                disabled
-                className="inline-flex items-center gap-1 text-sm font-semibold text-disabled-fg"
-              >
-                <Plus className="size-4" />
-                Add to a page
-              </button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>Coming soon</TooltipContent>
-        </Tooltip>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
+        >
+          <Plus className="size-4" />
+          Add to a page
+        </button>
       </div>
-      <p className="text-sm text-muted-foreground">Not on any pages yet</p>
+      {pages.length > 0 ? (
+        <ul className="space-y-1">
+          {pages.map((p) => (
+            <li key={p.id}>
+              <NextLink href={`/dashboard/pages/${p.id}`} className="text-sm font-semibold text-primary hover:underline">
+                {pageLabel(p)}
+              </NextLink>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">Not on any pages yet</p>
+      )}
+      <AddToPageDialog open={open} onOpenChange={setOpen} link={link} />
     </section>
   )
 }
@@ -254,7 +264,7 @@ export default function LinkDetailsPage() {
         <DetailsCard link={link} />
         <div className="space-y-4">
           <QrCard link={link} />
-          <PagesCard />
+          <PagesCard link={link} />
         </div>
       </div>
       <div className="mt-4">

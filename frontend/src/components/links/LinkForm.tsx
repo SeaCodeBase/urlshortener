@@ -10,12 +10,22 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ApiError } from '@/lib/api'
-import { useActiveGroupId, useCreateLink, useCreateQrCode, useDomains, useTags, useUploadImage } from '@/lib/hooks'
+import { hostOf } from '@/lib/format'
+import {
+  useActiveGroupId,
+  useCreateLink,
+  useCreateQrCode,
+  useDomains,
+  usePageMutations,
+  usePages,
+  useTags,
+  useUploadImage,
+} from '@/lib/hooks'
 import { normalizeDestination } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import { DEFAULT_QR_DESIGN, type CreateLinkInput, type Domain, type UTMParams } from '@/types'
+import { BUTTON_TITLE_MAX, NoPagesYet, PageSelect } from './AddToPageDialog'
 import { ExpirationField, minExpiration } from './ExpirationField'
 import { RoutingRulesEditor, emptyRule, toRoutingRuleInputs, type RoutingRuleDraft } from './RoutingRulesEditor'
 import {
@@ -83,6 +93,7 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
   const createLink = useCreateLink()
   const createQr = useCreateQrCode()
   const upload = useUploadImage()
+  const { addBlock } = usePageMutations()
   const { data: fetchedDomains } = useDomains()
   const { data: tagSuggestions } = useTags()
   const domains = defaultDomains ?? fetchedDomains ?? []
@@ -105,6 +116,17 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
   /** Uploaded logo URL. */
   const [qrLogo, setQrLogo] = useState<string | null>(null)
   const [qrLogoName, setQrLogoName] = useState<string | null>(null)
+
+  const [pageOn, setPageOn] = useState(false)
+  const [pageChoice, setPageChoice] = useState<string | null>(null)
+  /** null until edited: follows the destination host. */
+  const [buttonTitleEdit, setButtonTitleEdit] = useState<string | null>(null)
+  const [buttonTitleError, setButtonTitleError] = useState<string | null>(null)
+  const { data: pagesData } = usePages()
+  const pages = pagesData?.pages ?? []
+  const pageId = pageChoice ?? (pages[0] ? String(pages[0].id) : '')
+  const destinationHost = url.trim() ? hostOf(normalizeDestination(url) ?? url.trim()) : ''
+  const buttonTitle = buttonTitleEdit ?? destinationHost.slice(0, BUTTON_TITLE_MAX)
 
   const [utmOn, setUtmOn] = useState(false)
   const [utm, setUtm] = useState<UTMParams>({})
@@ -131,7 +153,7 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    if (createLink.isPending || createQr.isPending || upload.isPending) return
+    if (createLink.isPending || createQr.isPending || addBlock.isPending || upload.isPending) return
 
     const destination = normalizeDestination(url)
     if (!destination) {
@@ -155,6 +177,13 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
       expiresIso = d.toISOString()
     }
     setExpError(null)
+    const targetPage = pageOn ? pages.find((p) => String(p.id) === pageId) : undefined
+    const blockTitle = buttonTitle.trim()
+    if (targetPage && (blockTitle.length < 1 || blockTitle.length > BUTTON_TITLE_MAX)) {
+      setButtonTitleError(`Enter a button title (1–${BUTTON_TITLE_MAX} characters)`)
+      return
+    }
+    setButtonTitleError(null)
 
     const input: CreateLinkInput = {
       original_url: destination,
@@ -184,6 +213,16 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
           })
         } catch {
           toast.error("Link created, but the QR Code couldn't be created")
+        }
+      }
+      if (targetPage) {
+        try {
+          await addBlock.mutateAsync({
+            pageId: targetPage.id,
+            input: { type: 'link', link_id: link.id, content: { title: blockTitle, description: '', thumbnail_url: '' } },
+          })
+        } catch {
+          toast.error("Link created, but it couldn't be added to the page")
         }
       }
       try {
@@ -304,14 +343,35 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
               <p className="text-sm text-muted-foreground">More customizations are available after creating.</p>
             </div>
           )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="w-fit">
-                <SwitchRow label="Add to a page" checked={false} onCheckedChange={() => {}} disabled />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>Coming soon</TooltipContent>
-          </Tooltip>
+          <SwitchRow label="Add to a page" checked={pageOn} onCheckedChange={setPageOn} />
+          {pageOn && (
+            <div className="space-y-4 pl-12">
+              {pages.length === 0 ? (
+                <NoPagesYet />
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`${id}-page`}>Page</Label>
+                    <PageSelect id={`${id}-page`} pages={pages} value={pageId} onChange={setPageChoice} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`${id}-button-title`}>Button title</Label>
+                    <Input
+                      id={`${id}-button-title`}
+                      value={buttonTitle}
+                      maxLength={BUTTON_TITLE_MAX}
+                      aria-invalid={buttonTitleError ? true : undefined}
+                      onChange={(e) => {
+                        setButtonTitleEdit(e.target.value)
+                        setButtonTitleError(null)
+                      }}
+                    />
+                    {buttonTitleError && <p className="text-sm text-destructive">{buttonTitleError}</p>}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </Section>
 
         <Section title="Advanced settings">
@@ -338,8 +398,11 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
           <Button type="button" variant="secondary" asChild>
             <Link href="/dashboard/links">Cancel</Link>
           </Button>
-          <Button type="submit" disabled={createLink.isPending || createQr.isPending || upload.isPending}>
-            {createLink.isPending || createQr.isPending ? 'Creating…' : 'Create your link'}
+          <Button
+            type="submit"
+            disabled={createLink.isPending || createQr.isPending || addBlock.isPending || upload.isPending}
+          >
+            {createLink.isPending || createQr.isPending || addBlock.isPending ? 'Creating…' : 'Create your link'}
           </Button>
         </div>
       </div>

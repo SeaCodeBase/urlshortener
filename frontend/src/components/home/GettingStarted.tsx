@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { ShareDialog } from '@/components/links/ShareDialog'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
-import { useLinks, useQrCodes, useUpdateMe } from '@/lib/hooks'
+import { useLinks, usePages, useQrCodes, useUpdateMe } from '@/lib/hooks'
 import { useAuthStore } from '@/stores/auth'
 
 const CLICK_GOAL = 10
@@ -59,6 +59,7 @@ export function GettingStarted() {
   const updateMe = useUpdateMe()
   const { data } = useLinks({ limit: 100 })
   const { data: qrData } = useQrCodes({ limit: 100, archived: 'both' })
+  const { data: pagesData } = usePages()
   const [shareOpen, setShareOpen] = useState(false)
 
   if (!user || user.home_checklist_dismissed) return null
@@ -73,7 +74,8 @@ export function GettingStarted() {
   const name = user.display_name?.trim() || user.email.split('@')[0]
 
   const hasQr = (qrFirstPage?.total ?? 0) > 0
-  const steps = [total >= 1, clicks >= CLICK_GOAL, hasQr, false]
+  const hasPage = (pagesData?.total ?? 0) >= 1
+  const steps = [total >= 1, clicks >= CLICK_GOAL, hasQr, hasPage]
   const pct = Math.round((steps.filter(Boolean).length / steps.length) * 100)
 
   function dismiss() {
@@ -132,9 +134,11 @@ export function GettingStarted() {
           )}
         </Item>
         <Item done={steps[3]} title="Create a page">
-          <Link href="/dashboard/pages/new" className="font-semibold text-primary hover:underline">
-            Create a page
-          </Link>
+          {!steps[3] && (
+            <Link href="/dashboard/pages/new" className="font-semibold text-primary hover:underline">
+              Create a page
+            </Link>
+          )}
         </Item>
       </ul>
       {newest && (
