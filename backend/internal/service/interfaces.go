@@ -188,6 +188,22 @@ type DashboardService interface {
 	Delete(ctx context.Context, userID, groupID, id uint64) error
 }
 
+//go:generate mockgen -destination=mocks/mock_page_public_service.go -package=mocks . PagePublicService
+type PagePublicService interface {
+	// GetPublished returns the page's published snapshot with "slug";
+	// repository.ErrPageNotFound when the page is missing, archived, not
+	// published or has no snapshot.
+	GetPublished(ctx context.Context, slug string) (map[string]any, error)
+	// RecordView stores a view of the published page (truncated to the
+	// column widths, IP hashed with the click salt, GeoIP failures ignored);
+	// ErrPageNotFound as GetPublished.
+	RecordView(ctx context.Context, slug string, v ViewInput) error
+	// Stats returns the page's view analytics and its link blocks' page
+	// clicks for the query window; *StatsQueryError for an invalid query,
+	// ErrPageNotFound when missing or in another group.
+	Stats(ctx context.Context, groupID, pageID uint64, q StatsQuery) (*PageStats, error)
+}
+
 //go:generate mockgen -destination=mocks/mock_page_service.go -package=mocks . PageService
 type PageService interface {
 	// CheckSlug normalizes slug (trimmed, lowercase) and reports whether it

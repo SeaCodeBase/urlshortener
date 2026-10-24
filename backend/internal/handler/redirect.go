@@ -3,8 +3,6 @@ package handler
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/url"
@@ -67,9 +65,7 @@ func NewRedirectHandler(resolver LinkResolver, clicks ClickRecorder, domainRepo 
 }
 
 func (h *RedirectHandler) hashIP(ip string) string {
-	hasher := sha256.New()
-	hasher.Write([]byte(h.ipSalt + ip))
-	return hex.EncodeToString(hasher.Sum(nil))
+	return util.HashIP(h.ipSalt, ip)
 }
 
 // clickSourceFromQuery maps ?r=qr|page to a click source; anything else is a
