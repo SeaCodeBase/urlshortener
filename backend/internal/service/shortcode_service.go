@@ -18,6 +18,11 @@ const (
 	maxGenerateAttempts = 10
 )
 
+// reservedShortCodes are back-halves that collide with redirect-server routes
+// ("m" is the /m/{slug} page prefix). Matching is case-sensitive like
+// back-halves themselves.
+var reservedShortCodes = map[string]bool{"m": true}
+
 // ShortCodeRepository defines the interface for short code existence checks.
 type ShortCodeRepository interface {
 	ShortCodeExistsInDomain(ctx context.Context, domainID *uint64, code string) (bool, error)
@@ -66,9 +71,9 @@ func (s *ShortCodeServiceImpl) generateWithLength(ctx context.Context, domainID 
 }
 
 // IsValid reports whether code is a valid back-half: 1-255 characters from
-// [A-Za-z0-9_-] (case-sensitive, spec §5.3).
+// [A-Za-z0-9_-] (case-sensitive, spec §5.3) and not reserved.
 func (s *ShortCodeServiceImpl) IsValid(code string) bool {
-	if len(code) < minCodeLen || len(code) > maxCodeLen {
+	if len(code) < minCodeLen || len(code) > maxCodeLen || reservedShortCodes[code] {
 		return false
 	}
 	for _, c := range code {

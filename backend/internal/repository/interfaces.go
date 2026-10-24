@@ -213,6 +213,70 @@ type DashboardRepository interface {
 	CreatorNames(ctx context.Context, userIDs []uint64) (map[uint64]string, error)
 }
 
+// PageFilter narrows PageRepository.ListByGroup. Query matches the title or
+// slug (substring, LIKE wildcards matched literally); Archived selects
+// archived pages (true) or live ones (false).
+type PageFilter struct {
+	Query    string
+	Archived bool
+}
+
+// PageWithViews is a page with its all-time view count.
+type PageWithViews struct {
+	model.Page
+	Views int64 `db:"views" json:"views"`
+}
+
+// PageRepository stores link-in-bio pages and their blocks. Group scoping and
+// block ownership checks are the caller's job: lookups by ID do not check the
+// group or the page.
+//
+//go:generate mockgen -destination=mocks/mock_page_repo.go -package=mocks . PageRepository
+type PageRepository interface {
+	// Create inserts the page and sets ID, status and timestamps;
+	// ErrPageSlugTaken when the slug exists (case-insensitively).
+	Create(ctx context.Context, p *model.Page) error
+	// GetByID returns the page; ErrPageNotFound.
+	GetByID(ctx context.Context, id uint64) (*model.Page, error)
+	// GetBySlug returns the page (case-insensitive match); ErrPageNotFound.
+	GetBySlug(ctx context.Context, slug string) (*model.Page, error)
+	// SlugExists reports whether any page has the slug (case-insensitive).
+	SlugExists(ctx context.Context, slug string) (bool, error)
+	// ListByGroup returns the group's pages newest first with their view counts.
+	ListByGroup(ctx context.Context, groupID uint64, f PageFilter) ([]PageWithViews, error)
+	// Update writes title, description, avatar_url and design; ErrPageNotFound.
+	Update(ctx context.Context, p *model.Page) error
+	// SetArchived sets the archived flag; ErrPageNotFound.
+	SetArchived(ctx context.Context, id uint64, archived bool) error
+	// Publish sets status 'published', published_content and published_at;
+	// ErrPageNotFound.
+	Publish(ctx context.Context, id uint64, content model.JSONMap, at time.Time) error
+	// Delete removes the page with its blocks and views; ErrPageNotFound.
+	Delete(ctx context.Context, id uint64) error
+	// ListBlocks returns the page's blocks ordered by position, id.
+	ListBlocks(ctx context.Context, pageID uint64) ([]model.PageBlock, error)
+	// GetBlock returns the block; ErrBlockNotFound.
+	GetBlock(ctx context.Context, id uint64) (*model.PageBlock, error)
+	// CreateBlock appends the block (position = current max + 1, 0 for the
+	// first) and sets ID, Position and timestamps.
+	CreateBlock(ctx context.Context, b *model.PageBlock) error
+	// UpdateBlock writes content, is_active and is_pinned; ErrBlockNotFound.
+	UpdateBlock(ctx context.Context, b *model.PageBlock) error
+	// DeleteBlock removes the block; ErrBlockNotFound.
+	DeleteBlock(ctx context.Context, id uint64) error
+	// ReorderBlocks sets each block's position to its index in ids, in one
+	// transaction. ids must be exactly the page's block ids (a permutation);
+	// otherwise ErrInvalidBlockOrder and nothing changes.
+	ReorderBlocks(ctx context.Context, pageID uint64, ids []uint64) error
+	// PagesForLinks maps each link id to the distinct, ascending ids of the
+	// non-archived pages with a block referencing it; links without such a
+	// page are absent.
+	PagesForLinks(ctx context.Context, linkIDs []uint64) (map[uint64][]uint64, error)
+	// MaxBlockUpdatedAt returns the latest updated_at of the page's blocks,
+	// nil when the page has none.
+	MaxBlockUpdatedAt(ctx context.Context, pageID uint64) (*time.Time, error)
+}
+
 //go:generate mockgen -destination=mocks/mock_activity_repo.go -package=mocks . ActivityRepository
 type ActivityRepository interface {
 	// Insert stores the entry and fills ID and CreatedAt.

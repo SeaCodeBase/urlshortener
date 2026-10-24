@@ -30,6 +30,19 @@ func (m *mockShortCodeRepository) ShortCodeExistsInDomain(ctx context.Context, d
 	return m.existsCodes[code], nil
 }
 
+// "m" is the redirect server's /m/{slug} page prefix and cannot be a back-half.
+func TestShortCodeService_IsValid_RejectsReserved(t *testing.T) {
+	svc := service.NewShortCodeService(newMockRepo())
+	if svc.IsValid("m") {
+		t.Errorf(`IsValid("m") = true, want false (reserved)`)
+	}
+	for _, code := range []string{"M", "m1", "mm", "menu"} {
+		if !svc.IsValid(code) {
+			t.Errorf("IsValid(%q) = false, want true", code)
+		}
+	}
+}
+
 func TestShortCodeService_IsValid(t *testing.T) {
 	svc := service.NewShortCodeService(newMockRepo())
 
