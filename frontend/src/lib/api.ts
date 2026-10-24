@@ -21,6 +21,8 @@ import type {
   LinkStatsV2,
   Meta,
   Passkey,
+  RoutingRuleInput,
+  RoutingRulesResponse,
   SearchResponse,
   TagsResponse,
   TagType,
@@ -253,6 +255,15 @@ class ApiClient {
   async exportLinks(params: LinkFilters = {}): Promise<Blob> {
     const response = await this.fetchOk(`/api/links/export${buildQuery(params)}`);
     return response.blob();
+  }
+
+  async getRoutingRules(id: number) {
+    return this.request<RoutingRulesResponse>(`/api/links/${id}/routing-rules`);
+  }
+
+  /** Replaces the link's routing rules (order = priority). */
+  async setRoutingRules(id: number, rules: RoutingRuleInput[]) {
+    return this.send<RoutingRulesResponse>('PUT', `/api/links/${id}/routing-rules`, { routing_rules: rules });
   }
 
   async getLinkStats(id: number, query: LinkStatsQuery = {}) {

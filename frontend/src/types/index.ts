@@ -72,6 +72,11 @@ export interface RoutingRuleInput {
   country_exclude: string[];
 }
 
+/** GET/PUT /links/:id/routing-rules. */
+export interface RoutingRulesResponse {
+  routing_rules: RoutingRule[];
+}
+
 export interface LinkHistoryEntry {
   id: number;
   short_url: string;

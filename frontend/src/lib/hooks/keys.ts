@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth';
 export const queryKeys = {
   links: (groupId: number | null, params: LinkListParams) => ['links', groupId, params] as const,
   link: (id: number) => ['link', id] as const,
+  routingRules: (id: number) => ['link', id, 'routing-rules'] as const,
   linkStats: (id: number, query: LinkStatsQuery) => ['link', id, 'stats', query] as const,
   tags: (groupId: number | null, type: TagType) => ['tags', groupId, type] as const,
   groups: ['groups'] as const,

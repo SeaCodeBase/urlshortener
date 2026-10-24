@@ -2,6 +2,7 @@ export { queryKeys, useActiveGroupId } from './keys';
 export { useLinks, useCreateLink, useDeleteLink, useBulkLinks, type UseLinksParams } from './useLinks';
 export { useLink, useUpdateLink, useEditBackHalf, useSetLinkTags } from './useLink';
 export { useLinkStats } from './useLinkStats';
+export { useRoutingRules, useSetRoutingRules } from './useRoutingRules';
 export { useTags } from './useTags';
 export { useGroups, useCreateGroup, useUpdateGroup } from './useGroups';
 export { useDomains, useCreateDomain, useVerifyDomain, useUpdateDomain, useDeleteDomain } from './useDomains';

@@ -41,7 +41,16 @@ function DisabledItem({ tooltip, children }: { tooltip: string; children: ReactN
 }
 
 /** "⋯" menu on a link card (spec §5.2). */
-export function LinkActionsMenu({ link, triggerClassName }: { link: Link; triggerClassName?: string }) {
+export function LinkActionsMenu({
+  link,
+  triggerClassName,
+  onDeleted,
+}: {
+  link: Link
+  triggerClassName?: string
+  /** Called after a successful delete (e.g. to leave the details page). */
+  onDeleted?: () => void
+}) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const bulk = useBulkLinks()
   const del = useDeleteLink()
@@ -63,6 +72,7 @@ export function LinkActionsMenu({ link, triggerClassName }: { link: Link; trigge
       () => {
         toast.success('Link deleted')
         setConfirmDelete(false)
+        onDeleted?.()
       },
       (err: unknown) => {
         toast.error(err instanceof ApiError ? err.message : "Couldn't delete the link")

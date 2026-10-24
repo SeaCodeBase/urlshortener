@@ -1,0 +1,114 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
+import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { LinkStatsQuery, LinkStatsV2 } from "@/types";
+import { LinkAnalytics } from "./LinkAnalytics";
+
+let search = new URLSearchParams();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
+  usePathname: () => "/dashboard/links/7",
+  useSearchParams: () => search,
+}));
+
+const fixture: LinkStatsV2 = {
+  from: "2026-09-25",
+  to: "2026-10-24",
+  unit: "day",
+  total_all_time: 1240,
+  total_range: 120,
+  prev_total_range: 99,
+  change_pct: 21.2,
+  series: [
+    { date: "2026-10-23", clicks: 50 },
+    { date: "2026-10-24", clicks: 70 },
+  ],
+  prev_series: [
+    { date: "2026-08-26", clicks: 40 },
+    { date: "2026-08-27", clicks: 59 },
+  ],
+  countries: [{ code: "US", name: "United States", clicks: 80, percentage: 66.7, prev_clicks: 60 }],
+  cities: [{ name: "Austin", country: "US", clicks: 80, percentage: 66.7, prev_clicks: 60 }],
+  referrers: [{ referrer: "google.com", clicks: 120, percentage: 100, prev_clicks: 100 }],
+  devices: [{ key: "mobile", clicks: 70, percentage: 58.3, prev_clicks: 50 }],
+  browsers: [{ key: "Chrome", clicks: 120, percentage: 100, prev_clicks: 100 }],
+  os: [{ key: "iOS", clicks: 120, percentage: 100, prev_clicks: 100 }],
+};
+
+const useLinkStats = vi.fn();
+vi.mock("@/lib/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/hooks")>()),
+  useLinkStats: (id: number, query: LinkStatsQuery) => useLinkStats(id, query),
+}));
+
+function wrap(ui: ReactNode) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
+
+describe("LinkAnalytics", () => {
+  beforeEach(() => {
+    search = new URLSearchParams();
+    useLinkStats.mockReset();
+  });
+
+  it("renders the controls and every module with defaults", () => {
+    useLinkStats.mockReturnValue({ data: { ...fixture, change_pct: null }, isLoading: false });
+    wrap(<LinkAnalytics linkId={7} destination="https://example.com/a/b" />);
+
+    expect(screen.getByRole("heading", { name: "Link analytics - example.com" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Last 30 days/ })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Comparison" })).toHaveTextContent("No comparison");
+    expect(screen.getByRole("combobox", { name: "Source" })).toHaveTextContent("All engagements");
+    expect(screen.getByRole("button", { name: "Download CSV" })).toBeInTheDocument();
+
+    for (const title of [
+      "Engagements over time",
+      "Locations",
+      "Referrers",
+      "Devices",
+      "Browsers",
+      "Operating systems",
+    ]) {
+      expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
+    }
+    expect(screen.getByText("Total engagements")).toBeInTheDocument();
+    expect(screen.getByText("Engagements (Last 30 days)")).toBeInTheDocument();
+    expect(screen.getByText("1,240")).toBeInTheDocument();
+    expect(screen.queryByText("+21.2%")).not.toBeInTheDocument();
+
+    const [id, query] = useLinkStats.mock.calls[0];
+    expect(id).toBe(7);
+    expect(query).toMatchObject({ compare: "none", source: "all", unit: "day" });
+  });
+
+  it("shows the ▲ change badge when comparing to the previous period", () => {
+    search = new URLSearchParams("compare=previous");
+    useLinkStats.mockReturnValue({ data: fixture, isLoading: false });
+    wrap(<LinkAnalytics linkId={7} destination="https://example.com" />);
+
+    expect(screen.getByRole("combobox", { name: "Comparison" })).toHaveTextContent("Previous period");
+    const badge = screen.getByText("+21.2%");
+    // The badge is "▲" (aria-hidden) followed by the signed percentage.
+    expect(badge).toHaveTextContent("▲+21.2%");
+    expect(useLinkStats.mock.calls[0][1]).toMatchObject({ compare: "previous" });
+  });
+
+  it("uses hourly buckets for a range of two days or less", () => {
+    search = new URLSearchParams("from=2026-10-23&to=2026-10-24");
+    useLinkStats.mockReturnValue({ data: fixture, isLoading: false });
+    wrap(<LinkAnalytics linkId={7} destination="https://example.com" />);
+    expect(useLinkStats.mock.calls[0][1]).toMatchObject({ from: "2026-10-23", to: "2026-10-24", unit: "hour" });
+    expect(screen.queryByRole("button", { name: /Last 30 days/ })).not.toBeInTheDocument();
+  });
+
+  it("shows the empty message in each module when there is no data", () => {
+    useLinkStats.mockReturnValue({
+      data: { ...fixture, series: [], countries: [], cities: [], referrers: [], devices: [], browsers: [], os: [] },
+      isLoading: false,
+    });
+    wrap(<LinkAnalytics linkId={7} destination="https://example.com" />);
+    expect(screen.getAllByText("No data for this period.")).toHaveLength(6);
+  });
+});

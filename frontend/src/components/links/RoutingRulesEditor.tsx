@@ -7,7 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import type { RoutingRuleInput } from '@/types'
+import type { RoutingRule, RoutingRuleInput } from '@/types'
 
 export const MAX_ROUTING_RULES = 20
 
@@ -45,6 +45,37 @@ export function toRoutingRuleInputs(rules: RoutingRuleDraft[]): RoutingRuleInput
         country_exclude: r.exclude ? countries : [],
       }
     })
+}
+
+const DEVICE_VALUES: readonly Device[] = ['mobile', 'tablet', 'desktop']
+const OS_VALUES: readonly OS[] = ['ios', 'android']
+
+/** A saved rule → editor draft (the editor holds one device and one OS per rule). */
+export function fromRoutingRule(rule: Pick<RoutingRule, 'long_url' | 'device_match' | 'os_match' | 'country_match' | 'country_exclude'>): RoutingRuleDraft {
+  const device = (rule.device_match ?? []).find((d) => DEVICE_VALUES.includes(d as Device)) as Device | undefined
+  const os = (rule.os_match ?? []).find((o) => OS_VALUES.includes(o as OS)) as OS | undefined
+  const excluded = rule.country_exclude ?? []
+  const exclude = excluded.length > 0
+  return {
+    long_url: rule.long_url,
+    device: device ?? 'any',
+    os: os ?? 'any',
+    countries: (exclude ? excluded : rule.country_match ?? []).join(', '),
+    exclude,
+  }
+}
+
+const OS_LABELS: Record<string, string> = { ios: 'iOS', android: 'Android' }
+
+/** `mobile · iOS · US`, `not US, CA`, or `any visitor` when the rule has no conditions. */
+export function describeRoutingRule(rule: Pick<RoutingRule, 'device_match' | 'os_match' | 'country_match' | 'country_exclude'>): string {
+  const parts = [
+    ...(rule.device_match ?? []),
+    ...(rule.os_match ?? []).map((o) => OS_LABELS[o] ?? o),
+  ]
+  if (rule.country_match?.length) parts.push(rule.country_match.join(', '))
+  if (rule.country_exclude?.length) parts.push(`not ${rule.country_exclude.join(', ')}`)
+  return parts.length ? parts.join(' · ') : 'any visitor'
 }
 
 const DEVICES: { value: Device; label: string }[] = [
