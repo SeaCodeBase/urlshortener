@@ -109,6 +109,65 @@ Every configuration key is documented in `backend/config.example.yaml`.
   `engagements_over_time.csv`, `devices.csv`, `referrers.csv`,
   `locations.csv` and `links_and_qr_codes.csv`.
 
+### Pages — link-in-bio (Phase 4)
+
+- **Frontend routes** — `/dashboard/pages` (list: search, archived filter,
+  Draft/Published badge, views), `/dashboard/pages/new` (claim a URL, pick a
+  template) and `/dashboard/pages/[id]` (editor with **Build · Design ·
+  Track** tabs). The public page is `/m/[slug]`, server-rendered; its
+  server-side fetch uses the `BACKEND_URL` env var (default
+  `http://localhost:8081`). The shareable URL is `{urls.base_url}/m/{slug}`;
+  the redirect server answers `GET`/`HEAD /m/{slug}` with a 302 to
+  `{frontend_url}/m/{slug}` (no lookup — the frontend 404s unknown slugs).
+- **Add to a page** — link details (Pages card), the link actions menu, the
+  Links list cards and the create/edit link form can add a link to a page as
+  a link block; Home's getting-started checklist points at Pages.
+- **Slugs** — 3–40 chars, `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, globally unique
+  and case-insensitive (stored lowercase). Reserved: `api`, `admin`, `m`,
+  `dashboard`, `login`, `register`, `static`, `assets`, `health`. `m` is
+  also reserved as a **short-link back-half** (existing links named `m` keep
+  working but new ones are rejected), because `/m/` is the page prefix.
+- **Templates** — `POST /api/pages` takes `template` = `scratch` (default),
+  `classic`, `bold` or `minimal`; it sets the initial design, and the
+  non-scratch templates add a sample "Welcome" text block.
+- **Design JSON** — `{"theme", "background": {"type": "solid|gradient",
+  "color", "color2"}, "text_color", "button": {"style": "fill|outline",
+  "radius": "square|rounded|pill", "color", "text_color"}, "font":
+  "inter|serif|mono"}`; colours are `#RRGGBB`, `theme` is one of `classic`,
+  `bold`, `minimal`, `dark`, `sunset`. The shape is validated, otherwise
+  stored as sent.
+- **Block content JSON** — `link`: `{title (1–80), description (≤160),
+  thumbnail_url}` plus `link_id` (a `source='link'` link of the same group)
+  or `new_link: {original_url, title?}` to create one on the fly;
+  `text`: `{heading (≤120), body (≤1000)}` (at least one); `image`:
+  `{url, alt (≤120)}`; `social`: `{items: [{platform, url}]}`, 1–10 items,
+  platform `instagram|x|facebook|tiktok|youtube|linkedin|email|website`.
+  Deleting a link deletes its blocks.
+- **Draft vs published** — edits only change the draft. `POST
+  /api/pages/{id}/publish` writes a snapshot (`published_content`) and sets
+  `published_at`; `has_unpublished_changes` is true for a draft or when the
+  page or any block changed after the last publish. The public endpoint
+  serves only the snapshot (active blocks, pinned first, link blocks carry
+  `short_url` with `?r=page`); a draft or never-published page is `404`.
+- **Endpoints** (group-scoped, `/api/pages`) — `GET /` (`?q`,
+  `?archived=on|off`), `POST /`, `GET /check-slug?slug=` (`available`,
+  `reason` = `""|invalid|reserved|taken`), `GET/PUT/PATCH/DELETE /{id}`
+  (`PATCH {archived}`), `POST /{id}/publish`, `POST /{id}/blocks`,
+  `PUT/DELETE /{id}/blocks/{bid}`, `PUT /{id}/blocks/reorder` (`{ids}` must
+  be exactly the page's block ids) and `GET /{id}/stats`. Pages and blocks
+  of another group return `404`.
+- **Public endpoints** (no auth) — `GET /api/public/pages/{slug}` and
+  `POST /api/public/pages/{slug}/view` (`204`; optional `{"referrer"}` body,
+  preferred over the `Referer` header; the IP is hashed with the click salt;
+  views are not de-duplicated).
+- **Stats** — `GET /api/pages/{id}/stats` takes the link-stats parameters
+  (`from`, `to`, `unit`, `compare`) and returns views over time, referrers,
+  devices, countries, cities and `blocks[]` with `clicks` = clicks with
+  `source='page'` on the block's link in the window. Views come from
+  `page_views`.
+- **Links** — every link JSON object has `page_ids` (non-archived pages
+  whose blocks reference it).
+
 ### Upgrading an existing install
 
 - Database migrations run **automatically at backend startup**. Applied
@@ -130,6 +189,9 @@ Every configuration key is documented in `backend/config.example.yaml`.
 - `005_qr_codes.sql` creates the `qr_codes` and `qr_tags` tables in place.
 - `006_dashboards.sql` creates the `dashboards` table in place (idempotent,
   applied by the startup migrator; no manual SQL needed).
+- `007_pages.sql` creates the `pages`, `page_blocks` and `page_views`
+  tables in place (idempotent, applied by the startup migrator; no manual
+  SQL needed). Short code `m` is now reserved for new links.
 - With Docker, MariaDB only loads `001_init.sql` on first boot; later
   migrations always come from the backend image (`/app/migrations`).
 
