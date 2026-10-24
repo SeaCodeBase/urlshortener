@@ -19,8 +19,9 @@ export function useSetRoutingRules() {
       api.setRoutingRules(id, rules).then((r) => r.routing_rules),
     onSuccess: (rules, { id }) => {
       qc.setQueryData(queryKeys.routingRules(id), rules);
-      // The link payload embeds routing_rules too.
-      qc.invalidateQueries({ queryKey: queryKeys.link(id) });
+      // The link payload embeds routing_rules too; exact so the stats queries aren't refetched.
+      qc.invalidateQueries({ queryKey: queryKeys.link(id), exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.routingRules(id), exact: true });
     },
   });
 }

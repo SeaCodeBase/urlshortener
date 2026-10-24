@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ApiError } from "@/lib/api";
 import type { LinkStatsQuery, LinkStatsV2 } from "@/types";
 import { LinkAnalytics } from "./LinkAnalytics";
 
@@ -110,5 +111,23 @@ describe("LinkAnalytics", () => {
     });
     wrap(<LinkAnalytics linkId={7} destination="https://example.com" />);
     expect(screen.getAllByText("No data for this period.")).toHaveLength(6);
+  });
+
+  it("shows an error card with Retry when the stats fail to load", () => {
+    const refetch = vi.fn();
+    useLinkStats.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new ApiError("range too long", 400),
+      refetch,
+    });
+    wrap(<LinkAnalytics linkId={7} destination="https://example.com" />);
+    expect(screen.getByText("Couldn't load analytics")).toBeInTheDocument();
+    expect(screen.getByText("range too long")).toBeInTheDocument();
+    expect(screen.queryByText("No data for this period.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Locations" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 });

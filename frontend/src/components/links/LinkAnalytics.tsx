@@ -3,9 +3,9 @@
 import { useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { differenceInCalendarDays, format, isValid, parseISO, subDays } from 'date-fns'
-import { Calendar, ChevronDown, Download } from 'lucide-react'
+import { AlertCircle, Calendar, ChevronDown, Download } from 'lucide-react'
 import { BreakdownTable, type BreakdownRow } from '@/components/charts/BreakdownTable'
-import { DeviceBarChart, capitalize } from '@/components/charts/DeviceBarChart'
+import { DeviceBarChart } from '@/components/charts/DeviceBarChart'
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart'
 import { DateRangeDialog } from '@/components/common/DateRangeDialog'
 import { StatCard } from '@/components/common/StatCard'
@@ -13,9 +13,14 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ApiError } from '@/lib/api'
+import { buildStatsCsv } from '@/lib/csv'
 import { formatNumber } from '@/lib/format'
 import { useLinkStats } from '@/lib/hooks'
 import type { LinkStatsQuery, LinkStatsV2, StatsSource, StatsUnit } from '@/types'
+
+/** Backend limit on a stats range. */
+export const MAX_RANGE_DAYS = 366
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const DAY = 'yyyy-MM-dd'
@@ -97,34 +102,6 @@ function hostOf(url: string): string {
   }
 }
 
-function csvCell(v: string | number): string {
-  const s = String(v)
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
-
-/** CSV of the loaded stats: one titled section per module, separated by blank lines. */
-export function buildStatsCsv(stats: LinkStatsV2, label: string): string {
-  const lines: string[] = []
-  const section = (title: string, header: string[], rows: (string | number)[][]) => {
-    if (lines.length) lines.push('')
-    lines.push(csvCell(title), header.map(csvCell).join(','))
-    for (const r of rows) lines.push(r.map(csvCell).join(','))
-  }
-  section('Summary', ['Metric', 'Value'], [
-    ['Range', `${stats.from} to ${stats.to}`],
-    ['Total engagements', stats.total_all_time],
-    [`Engagements (${label})`, stats.total_range],
-  ])
-  section('Engagements over time', ['Date', 'Engagements'], stats.series.map((p) => [p.date, p.clicks]))
-  section('Countries', ['Country', 'Code', 'Engagements', '%'], stats.countries.map((c) => [c.name, c.code, c.clicks, c.percentage.toFixed(1)]))
-  section('Cities', ['City', 'Country', 'Engagements', '%'], stats.cities.map((c) => [c.name, c.country, c.clicks, c.percentage.toFixed(1)]))
-  section('Referrers', ['Referrer', 'Engagements', '%'], stats.referrers.map((r) => [r.referrer || 'Direct', r.clicks, r.percentage.toFixed(1)]))
-  section('Devices', ['Device', 'Engagements', '%'], stats.devices.map((d) => [capitalize(d.key), d.clicks, d.percentage.toFixed(1)]))
-  section('Browsers', ['Browser', 'Engagements', '%'], stats.browsers.map((d) => [d.key || 'Unknown', d.clicks, d.percentage.toFixed(1)]))
-  section('Operating systems', ['Operating system', 'Engagements', '%'], stats.os.map((d) => [d.key || 'Unknown', d.clicks, d.percentage.toFixed(1)]))
-  return lines.join('\n') + '\n'
-}
-
 function downloadCsv(filename: string, csv: string) {
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const a = document.createElement('a')
@@ -165,7 +142,7 @@ export function LinkAnalytics({ linkId, destination }: { linkId: number; destina
   const comparing = state.compare === 'previous'
   const label = rangeLabel(state)
   const query: LinkStatsQuery = { ...range, unit, compare: state.compare, source: state.source }
-  const { data: stats, isLoading } = useLinkStats(linkId, query)
+  const { data: stats, isLoading, isError, error, refetch, isFetching } = useLinkStats(linkId, query)
   const loading = isLoading && !stats
 
   function update(patch: Partial<AnalyticsUrlState>) {
@@ -247,7 +224,7 @@ export function LinkAnalytics({ linkId, destination }: { linkId: number; destina
           aria-label="Download CSV"
           className="ml-auto"
           disabled={!stats}
-          onClick={() => stats && downloadCsv(`link-${linkId}-analytics-${range.from}-${range.to}.csv`, buildStatsCsv(stats, label))}
+          onClick={() => stats && downloadCsv(`link-${linkId}-analytics-${range.from}-${range.to}.csv`, buildStatsCsv(stats, { rangeLabel: label }))}
         >
           <Download className="size-5" />
         </Button>
@@ -257,11 +234,25 @@ export function LinkAnalytics({ linkId, destination }: { linkId: number; destina
         open={dateOpen}
         onOpenChange={setDateOpen}
         title="Select date range"
+        maxDays={MAX_RANGE_DAYS}
         value={{ from: parseISO(range.from), to: parseISO(range.to) }}
         onApply={(r) => update({ from: format(r.from, DAY), to: format(r.to, DAY) })}
         onClear={state.from ? () => update({ from: null, to: null }) : undefined}
       />
 
+      {isError && !stats ? (
+        <div role="alert" className="flex flex-col items-center gap-3 rounded-xl bg-card px-8 py-12 text-center">
+          <AlertCircle className="size-8 text-destructive" aria-hidden />
+          <h3 className="text-lg font-semibold text-foreground">Couldn&apos;t load analytics</h3>
+          <p className="text-sm text-muted-foreground">
+            {error instanceof ApiError || error instanceof Error ? error.message : 'Something went wrong.'}
+          </p>
+          <Button type="button" variant="secondary" disabled={isFetching} onClick={() => refetch()}>
+            Retry
+          </Button>
+        </div>
+      ) : (
+        <>
       <div className="grid gap-4 md:grid-cols-2">
         {loading ? (
           <>
@@ -338,6 +329,8 @@ export function LinkAnalytics({ linkId, destination }: { linkId: number; destina
           <BreakdownTable labelHeader="Operating system" rows={keyRows(stats?.os ?? [])} compare={comparing} />
         )}
       </Module>
+        </>
+      )}
     </section>
   )
 }

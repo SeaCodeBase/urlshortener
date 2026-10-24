@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { endOfDay, format, isValid, parse, startOfDay, subDays, subHours, subMonths } from 'date-fns'
+import { differenceInCalendarDays, endOfDay, format, isValid, parse, startOfDay, subDays, subHours, subMonths } from 'date-fns'
 import type { DateRange as DayPickerRange } from 'react-day-picker'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
@@ -50,6 +50,8 @@ export interface DateRangeDialogProps {
   value: DateRange | null
   onApply: (range: DateRange) => void
   onClear?: () => void
+  /** Longest selectable range in days (inclusive); Apply is disabled beyond it. */
+  maxDays?: number
 }
 
 /** Created-date picker: start/end inputs, two-month range calendar, preset chips (spec §5.2). */
@@ -60,6 +62,7 @@ export function DateRangeDialog({
   value,
   onApply,
   onClear,
+  maxDays,
 }: DateRangeDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -71,6 +74,7 @@ export function DateRangeDialog({
         {/* Mounted only while open, so the draft resets from `value` each time the dialog opens. */}
         <DateRangeBody
           value={value}
+          maxDays={maxDays}
           onCancel={() => onOpenChange(false)}
           onApply={(r) => {
             onApply(r)
@@ -92,11 +96,13 @@ export function DateRangeDialog({
 
 function DateRangeBody({
   value,
+  maxDays,
   onCancel,
   onApply,
   onClear,
 }: {
   value: DateRange | null
+  maxDays?: number
   onCancel: () => void
   onApply: (range: DateRange) => void
   onClear?: () => void
@@ -135,7 +141,9 @@ function DateRangeBody({
     setTo(d ? endOfDay(d) : undefined)
   }
 
-  const valid = !!from && !!to && from.getTime() <= to.getTime()
+  const ordered = !!from && !!to && from.getTime() <= to.getTime()
+  const tooLong = ordered && maxDays != null && differenceInCalendarDays(to!, from!) + 1 > maxDays
+  const valid = ordered && !tooLong
 
   return (
     <>
@@ -192,6 +200,7 @@ function DateRangeBody({
           </button>
         ))}
       </div>
+      {tooLong && <p className="text-sm text-destructive">Select up to {maxDays} days</p>}
       <DialogFooter className="items-center sm:justify-between">
         <div>
           {onClear && (

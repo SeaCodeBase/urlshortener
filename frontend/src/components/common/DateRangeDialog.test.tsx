@@ -29,4 +29,15 @@ describe("DateRangeDialog", () => {
     render(<DateRangeDialog open onOpenChange={vi.fn()} value={null} onApply={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
   });
+
+  it("maxDays disables Apply and explains the limit for longer ranges", () => {
+    render(<DateRangeDialog open onOpenChange={vi.fn()} value={null} onApply={vi.fn()} maxDays={366} />);
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "01/01/2025" } });
+    fireEvent.change(screen.getByLabelText("End date"), { target: { value: "10/24/2026" } });
+    expect(screen.getByText("Select up to 366 days")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "10/24/2025" } });
+    expect(screen.queryByText("Select up to 366 days")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
+  });
 });
