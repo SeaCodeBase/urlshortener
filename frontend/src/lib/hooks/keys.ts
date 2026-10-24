@@ -1,4 +1,13 @@
-import type { ActivityParams, LinkListParams, LinkStatsQuery, QrListParams, TagType, TodayRange } from '@/types';
+import type {
+  ActivityParams,
+  DashboardDataQuery,
+  DashboardSort,
+  LinkListParams,
+  LinkStatsQuery,
+  QrListParams,
+  TagType,
+  TodayRange,
+} from '@/types';
 import { useAuthStore } from '@/stores/auth';
 
 /**
@@ -22,6 +31,10 @@ export const queryKeys = {
   activity: (groupId: number | null, params: ActivityParams) => ['activity', groupId, params] as const,
   search: (groupId: number | null, q: string) => ['search', groupId, q] as const,
   today: (groupId: number | null, range: TodayRange) => ['analytics', 'today', groupId, range] as const,
+  overview: (groupId: number | null) => ['analytics', 'overview', groupId] as const,
+  dashboards: (groupId: number | null, sort: DashboardSort) => ['dashboards', groupId, sort] as const,
+  dashboard: (id: number) => ['dashboard', id] as const,
+  dashboardData: (id: number, query: DashboardDataQuery) => ['dashboard', id, 'data', query] as const,
   meta: ['meta'] as const,
 };
 

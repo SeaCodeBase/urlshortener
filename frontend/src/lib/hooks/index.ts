@@ -14,5 +14,7 @@ export { useTokens, useCreateToken, useRevokeToken } from './useTokens';
 export { useActivity } from './useActivity';
 export { useSearch } from './useSearch';
 export { useTodayStats } from './useTodayStats';
+export { useAnalyticsOverview } from './useAnalytics';
+export { useDashboards, useDashboard, useDashboardData, useDashboardMutations } from './useDashboards';
 export { useMeta } from './useMeta';
 export { useUpdateMe, useUpdateEmail } from './useAccount';

@@ -35,6 +35,7 @@ const fixture: LinkStatsV2 = {
   devices: [{ key: "mobile", clicks: 70, percentage: 58.3, prev_clicks: 50 }],
   browsers: [{ key: "Chrome", clicks: 120, percentage: 100, prev_clicks: 100 }],
   os: [{ key: "iOS", clicks: 120, percentage: 100, prev_clicks: 100 }],
+  compare_link: null,
 };
 
 const useLinkStats = vi.fn();

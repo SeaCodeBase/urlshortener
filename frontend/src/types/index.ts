@@ -353,6 +353,8 @@ export interface LinkStatsQuery {
   unit?: StatsUnit;
   compare?: "previous" | "none";
   source?: StatsSource;
+  /** Id of another link of the group whose series is returned as `compare_link`. */
+  compare_link?: number;
 }
 
 export interface SeriesPoint {
@@ -408,6 +410,17 @@ export interface LinkStatsV2 {
   devices: KeyStat[];
   browsers: KeyStat[];
   os: KeyStat[];
+  /** Present when `compare_link` was requested; same window/unit/source. */
+  compare_link: CompareLinkStats | null;
+}
+
+/** GET /links/:id/stats?compare_link=ID: the other link's series. */
+export interface CompareLinkStats {
+  id: number;
+  title: string;
+  short_url: string;
+  total_range: number;
+  series: SeriesPoint[];
 }
 
 /** @deprecated alias kept for older imports; use LinkStatsV2. */
@@ -418,6 +431,132 @@ export type TodayRange = "today" | "7d" | "30d";
 export interface TodayStatsResponse {
   engagements: number;
   range: TodayRange;
+}
+
+// ---------------------------------------------------------------- Analytics dashboards
+
+export type DashboardDateRange = "today" | "last_7_days" | "last_30_days" | "last_60_days" | "last_90_days";
+
+export type DashboardFilter =
+  | { type: "all" }
+  | { type: "links"; ids: number[] }
+  | { type: "qr"; ids: number[] };
+
+export type ModuleKey = "top_day" | "top_location" | "over_time" | "devices" | "referrers" | "locations" | "items";
+export type ModuleViz = "scorecard" | "line" | "bar" | "table" | "doughnut";
+
+export interface DashboardModule {
+  key: ModuleKey;
+  viz: ModuleViz;
+}
+
+/** Each of the seven module keys exactly once, in display order. */
+export interface DashboardLayout {
+  modules: DashboardModule[];
+}
+
+export interface Dashboard {
+  id: number;
+  group_id: number;
+  name: string;
+  is_default: boolean;
+  date_range: DashboardDateRange;
+  filter: DashboardFilter;
+  layout: DashboardLayout;
+  created_by: { id: number; name: string };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DashboardsListResponse {
+  dashboards: Dashboard[];
+  total: number;
+}
+
+export type DashboardSort = "created" | "modified" | "name";
+
+/** PATCH /analytics/dashboards/:id: only the fields sent change. */
+export interface DashboardPatch {
+  name?: string;
+  date_range?: DashboardDateRange;
+  filter?: DashboardFilter;
+  layout?: DashboardLayout;
+}
+
+export interface DashboardDataQuery {
+  /** YYYY-MM-DD (UTC). */
+  from?: string;
+  /** YYYY-MM-DD (UTC). */
+  to?: string;
+  compare?: "previous" | "none";
+  unit?: StatsUnit;
+}
+
+export type DashboardExportQuery = Omit<DashboardDataQuery, "unit">;
+
+/** A link or QR code row of an analytics item list. */
+export interface AnalyticsItem {
+  type: "link" | "qr";
+  /** Link id for `link`, QR code id for `qr`. */
+  id: number;
+  link_id: number;
+  title: string;
+  short_url: string;
+  clicks: number;
+  percentage: number;
+  prev_clicks: number;
+}
+
+export interface TopDayStat {
+  date: string;
+  count: number;
+  prev_count: number;
+  change_pct: number | null;
+}
+
+export interface TopLocationStat {
+  code: string;
+  name: string;
+  count: number;
+}
+
+/** GET /analytics/dashboards/:id/data. */
+export interface DashboardData {
+  from: string;
+  to: string;
+  unit: StatsUnit;
+  compare: boolean;
+  total: number;
+  prev_total: number;
+  /** null when the previous total is 0 or there is no comparison. */
+  change_pct: number | null;
+  /** null when total is 0. */
+  top_day: TopDayStat | null;
+  /** null when there are no countries. */
+  top_location: TopLocationStat | null;
+  series: SeriesPoint[];
+  prev_series: SeriesPoint[];
+  devices: KeyStat[];
+  referrers: ReferrerStat[];
+  countries: CountryStat[];
+  cities: CityStat[];
+  items: AnalyticsItem[];
+}
+
+export interface OverviewWeek {
+  from: string;
+  to: string;
+  total: number;
+  series: SeriesPoint[];
+}
+
+/** GET /analytics/overview. */
+export interface AnalyticsOverview {
+  this_week: OverviewWeek;
+  last_week: OverviewWeek;
+  change_pct: number | null;
+  /** Top 5 items over the last 30 days. */
+  top_performing: AnalyticsItem[];
 }
 
 export interface SearchResponse {

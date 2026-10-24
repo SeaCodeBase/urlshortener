@@ -18,6 +18,7 @@ const stats: LinkStatsV2 = {
   devices: [],
   browsers: [{ key: "@SUM(A1)", clicks: 5, percentage: 100, prev_clicks: 0 }],
   os: [],
+  compare_link: null,
 };
 
 describe("csvCell", () => {

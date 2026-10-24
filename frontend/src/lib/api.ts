@@ -1,6 +1,7 @@
 import type {
   ActivityListResponse,
   ActivityParams,
+  AnalyticsOverview,
   AuthResponse,
   BulkLinksInput,
   BulkLinksResponse,
@@ -10,6 +11,13 @@ import type {
   CreateLinkInput,
   CreateTokenInput,
   CreateTokenResponse,
+  Dashboard,
+  DashboardData,
+  DashboardDataQuery,
+  DashboardExportQuery,
+  DashboardPatch,
+  DashboardSort,
+  DashboardsListResponse,
   Domain,
   DomainsListResponse,
   EditBackHalfInput,
@@ -330,6 +338,48 @@ class ApiClient {
   // Group-level analytics, tags, search, activity
   async getTodayStats(range: TodayRange = 'today') {
     return this.request<TodayStatsResponse>(`/api/analytics/today${buildQuery({ range })}`);
+  }
+
+  /** This week vs last week (rolling 7 days) and the top 5 items of the last 30 days. */
+  async getAnalyticsOverview() {
+    return this.request<AnalyticsOverview>('/api/analytics/overview');
+  }
+
+  /** The group's dashboards; the first call creates the "Default" one. */
+  async listDashboards(sort: DashboardSort = 'created') {
+    return this.request<DashboardsListResponse>(`/api/analytics/dashboards${buildQuery({ sort })}`);
+  }
+
+  async getDashboard(id: number) {
+    return this.request<Dashboard>(`/api/analytics/dashboards/${id}`);
+  }
+
+  async createDashboard(name: string) {
+    return this.send<Dashboard>('POST', '/api/analytics/dashboards', { name });
+  }
+
+  /** 400 on an invalid filter/layout. */
+  async updateDashboard(id: number, patch: DashboardPatch) {
+    return this.send<Dashboard>('PATCH', `/api/analytics/dashboards/${id}`, patch);
+  }
+
+  async duplicateDashboard(id: number) {
+    return this.send<Dashboard>('POST', `/api/analytics/dashboards/${id}/duplicate`);
+  }
+
+  /** Rejects with ApiError status 409 for the Default dashboard. */
+  async deleteDashboard(id: number) {
+    return this.send<void>('DELETE', `/api/analytics/dashboards/${id}`);
+  }
+
+  async getDashboardData(id: number, query: DashboardDataQuery = {}) {
+    return this.request<DashboardData>(`/api/analytics/dashboards/${id}/data${buildQuery(query)}`);
+  }
+
+  /** The seven module CSVs as a zip file. */
+  async exportDashboard(id: number, query: DashboardExportQuery = {}): Promise<Blob> {
+    const response = await this.fetchOk(`/api/analytics/dashboards/${id}/export${buildQuery(query)}`);
+    return response.blob();
   }
 
   async getTags(type: TagType = 'link') {
