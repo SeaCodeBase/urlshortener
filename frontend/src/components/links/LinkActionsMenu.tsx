@@ -139,7 +139,11 @@ export function LinkActionsMenu({
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title="Delete link?"
-        description="This permanently deletes the link and its click data."
+        description={
+          link.qr_code_id
+            ? 'This permanently deletes the link, its click data and its QR Code.'
+            : 'This permanently deletes the link and its click data.'
+        }
         confirmLabel="Delete"
         destructive
         loading={del.isPending}

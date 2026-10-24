@@ -58,7 +58,7 @@ export function GettingStarted() {
   const user = useAuthStore((s) => s.user)
   const updateMe = useUpdateMe()
   const { data } = useLinks({ limit: 100 })
-  const { data: qrData } = useQrCodes({ limit: 1 })
+  const { data: qrData } = useQrCodes({ limit: 100, archived: 'both' })
   const [shareOpen, setShareOpen] = useState(false)
 
   if (!user || user.home_checklist_dismissed) return null
@@ -66,10 +66,13 @@ export function GettingStarted() {
   const firstPage = data?.pages[0]
   const total = firstPage?.total ?? 0
   const newest = firstPage?.links[0]
-  const clicks = firstPage?.links.reduce((sum, l) => sum + l.total_clicks, 0) ?? 0
+  const linkClicks = firstPage?.links.reduce((sum, l) => sum + l.total_clicks, 0) ?? 0
+  const qrFirstPage = qrData?.pages[0]
+  const scans = qrFirstPage?.qr_codes.reduce((sum, q) => sum + q.total_scans, 0) ?? 0
+  const clicks = linkClicks + scans
   const name = user.display_name?.trim() || user.email.split('@')[0]
 
-  const hasQr = (qrData?.pages[0]?.total ?? 0) > 0
+  const hasQr = (qrFirstPage?.total ?? 0) > 0
   const steps = [total >= 1, clicks >= CLICK_GOAL, hasQr, false]
   const pct = Math.round((steps.filter(Boolean).length / steps.length) * 100)
 

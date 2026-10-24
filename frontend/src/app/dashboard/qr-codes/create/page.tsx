@@ -158,7 +158,10 @@ function CreateQrFlow() {
     )
   }
 
-  const previewData = attachedLink?.short_url ?? normalizeDestination(draft.destination) ?? PREVIEW_PLACEHOLDER
+  // An attached link encodes its QR URL (short URL + ?r=qr), as the saved code will.
+  const previewData = attachedLink
+    ? `${attachedLink.short_url}?r=qr`
+    : (normalizeDestination(draft.destination) ?? PREVIEW_PLACEHOLDER)
   const cancel = (
     <Button type="button" variant="secondary" asChild>
       <Link href="/dashboard/qr-codes">Cancel</Link>

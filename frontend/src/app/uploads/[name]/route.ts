@@ -20,5 +20,6 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     const value = upstream.headers.get(header)
     if (value != null) headers.set(header, value)
   }
+  headers.set('X-Content-Type-Options', 'nosniff')
   return new Response(upstream.body, { status: upstream.status, headers })
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, type ReactNode } from 'react'
+import { Suspense, useMemo, type ReactNode } from 'react'
 import NextLink from 'next/link'
 import { useParams } from 'next/navigation'
 import { CornerDownRight, EyeOff, Palette, Plus, QrCode } from 'lucide-react'
@@ -125,7 +125,12 @@ function DetailsCard({ link }: { link: Link }) {
 }
 
 function QrCard({ link }: { link: Link }) {
-  if (link.qr_code_id) return <LinkQrCode qrId={link.qr_code_id} />
+  if (link.qr_code_id) return <LinkQrCode link={link} qrId={link.qr_code_id} />
+  return <CreateQrCard link={link} />
+}
+
+/** No QR Code yet (or it can't be loaded): "+ Create QR Code". */
+function CreateQrCard({ link }: { link: Link }) {
   return (
     <section className={CARD}>
       <div className="mb-4 flex items-center justify-between gap-2">
@@ -149,15 +154,18 @@ function QrCard({ link }: { link: Link }) {
 }
 
 /** The link's QR Code: preview, Download and Customize. */
-function LinkQrCode({ qrId }: { qrId: number }) {
-  const { data: qr } = useQrCode(qrId)
+function LinkQrCode({ link, qrId }: { link: Link; qrId: number }) {
+  const { data: qr, isError } = useQrCode(qrId)
+  const customizations = qr?.render_customizations
+  const design = useMemo(() => normalizeQrDesign(customizations), [customizations])
+  if (isError) return <CreateQrCard link={link} />
   return (
     <section className={CARD}>
       <h2 className="mb-4 text-xl font-semibold text-foreground">QR Code</h2>
       <div className="flex flex-wrap items-center gap-6">
         {qr ? (
           <NextLink href={`/dashboard/qr-codes/${qrId}`} aria-label="View QR Code">
-            <QrPreview design={normalizeQrDesign(qr.render_customizations)} data={qr.qr_url} size={120} />
+            <QrPreview design={design} data={qr.qr_url} size={120} />
           </NextLink>
         ) : (
           <Skeleton className="size-[120px] rounded-lg" />

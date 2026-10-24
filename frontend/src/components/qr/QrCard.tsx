@@ -9,7 +9,7 @@ import { QrPreview } from '@/components/qr/QrPreview'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { formatDate, formatNumber, formatShortUrl } from '@/lib/format'
+import { formatDate, formatNumber, formatShortUrl, hostOf } from '@/lib/format'
 import { useSetQrTags } from '@/lib/hooks'
 import { normalizeQrDesign } from '@/lib/qr/design'
 import { cn } from '@/lib/utils'
@@ -20,14 +20,6 @@ import { QrDownloadMenu } from './QrDownloadMenu'
 /** "1 scan" / "3 scans". */
 export function scansLabel(n: number): string {
   return `${formatNumber(n)} ${n === 1 ? 'scan' : 'scans'}`
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host
-  } catch {
-    return url
-  }
 }
 
 export interface QrCardProps {

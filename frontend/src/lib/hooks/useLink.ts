@@ -21,6 +21,8 @@ export function useUpdateLink() {
       qc.invalidateQueries({ queryKey: ['links'] });
       qc.invalidateQueries({ queryKey: queryKeys.link(id) });
       if (data.tags) qc.invalidateQueries({ queryKey: ['tags'] });
+      qc.invalidateQueries({ queryKey: ['qr-codes'] });
+      qc.invalidateQueries({ queryKey: ['qr-code'] });
     },
   });
 }

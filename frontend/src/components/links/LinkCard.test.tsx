@@ -92,6 +92,17 @@ describe("LinkCard", () => {
     expect(within(menu).queryByRole("menuitem", { name: "Create QR Code" })).not.toBeInTheDocument();
   });
 
+  it.each([
+    ["without", base, "This permanently deletes the link and its click data."],
+    ["with", { ...base, qr_code_id: 9 }, "This permanently deletes the link, its click data and its QR Code."],
+  ])("delete confirmation copy %s a QR Code", async (_label, link, copy) => {
+    wrap(<LinkCard link={link} selected={false} onSelectedChange={vi.fn()} />);
+    const { user, menu } = await openMenu();
+    await user.click(within(menu).getByRole("menuitem", { name: "Delete" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText(copy)).toBeInTheDocument();
+  });
+
   it("offers Show link for hidden links", async () => {
     wrap(<LinkCard link={{ ...base, archived: true }} selected={false} onSelectedChange={vi.fn()} />);
     const { menu } = await openMenu();

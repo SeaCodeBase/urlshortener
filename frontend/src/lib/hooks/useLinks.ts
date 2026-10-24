@@ -36,6 +36,8 @@ export function useDeleteLink() {
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ['links'] });
       qc.removeQueries({ queryKey: queryKeys.link(id) });
+      qc.invalidateQueries({ queryKey: ['qr-codes'] });
+      qc.invalidateQueries({ queryKey: ['qr-code'] });
     },
   });
 }

@@ -4,17 +4,10 @@ import NextLink from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Palette, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { hostOf } from '@/lib/format'
 import type { QrCode } from '@/types'
 import { QrActionsMenu } from './QrActionsMenu'
 import { QrDownloadMenu } from './QrDownloadMenu'
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname
-  } catch {
-    return url
-  }
-}
 
 /** QR Code details title row: back, title; ⋯ menu, Edit, Customize and Download on the right. */
 export function QrDetailsHeader({ qr }: { qr: QrCode }) {

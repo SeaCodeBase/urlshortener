@@ -42,3 +42,12 @@ export function pct(part: number, total: number): string {
 export function formatShortUrl(url: string): string {
   return url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
 }
+
+/** `https://example.com/a?b` → `example.com`; returns the input when it isn't a URL. */
+export function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}

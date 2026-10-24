@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApiError } from '@/lib/api'
 import { buildStatsCsv } from '@/lib/csv'
 import { downloadBlob } from '@/lib/download'
-import { formatNumber } from '@/lib/format'
+import { formatNumber, hostOf } from '@/lib/format'
 import { useLinkStats, useQrStats } from '@/lib/hooks'
 import type { LinkStatsQuery, LinkStatsV2, StatsSource, StatsUnit } from '@/types'
 
@@ -93,14 +93,6 @@ export function flagEmoji(code: string): string {
   const c = code.toUpperCase()
   if (!/^[A-Z]{2}$/.test(c)) return ''
   return String.fromCodePoint(...[...c].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65))
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname
-  } catch {
-    return url
-  }
 }
 
 function Module({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
