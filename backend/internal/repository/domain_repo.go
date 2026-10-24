@@ -17,6 +17,9 @@ var (
 	ErrDomainExists   = errors.New("domain already exists")
 )
 
+const domainColumns = `id, user_id, group_id, domain, verification_token, verification_status, verification_error,
+	verified_at, last_checked_at, root_redirect, not_found_redirect, created_at`
+
 // Compile-time check: DomainRepositoryImpl implements DomainRepository
 var _ DomainRepository = (*DomainRepositoryImpl)(nil)
 
@@ -55,7 +58,7 @@ func (r *DomainRepositoryImpl) Create(ctx context.Context, domain *model.Domain)
 
 func (r *DomainRepositoryImpl) GetByID(ctx context.Context, id uint64) (*model.Domain, error) {
 	var domain model.Domain
-	query := `SELECT id, user_id, domain, created_at FROM domains WHERE id = ?`
+	query := `SELECT ` + domainColumns + ` FROM domains WHERE id = ?`
 	err := r.db.GetContext(ctx, &domain, query, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrDomainNotFound
@@ -72,7 +75,7 @@ func (r *DomainRepositoryImpl) GetByID(ctx context.Context, id uint64) (*model.D
 
 func (r *DomainRepositoryImpl) GetByDomain(ctx context.Context, domainName string) (*model.Domain, error) {
 	var domain model.Domain
-	query := `SELECT id, user_id, domain, created_at FROM domains WHERE domain = ?`
+	query := `SELECT ` + domainColumns + ` FROM domains WHERE domain = ?`
 	err := r.db.GetContext(ctx, &domain, query, domainName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrDomainNotFound
@@ -89,7 +92,7 @@ func (r *DomainRepositoryImpl) GetByDomain(ctx context.Context, domainName strin
 
 func (r *DomainRepositoryImpl) ListByUserID(ctx context.Context, userID uint64) ([]*model.Domain, error) {
 	var domains []*model.Domain
-	query := `SELECT id, user_id, domain, created_at FROM domains WHERE user_id = ? ORDER BY created_at DESC`
+	query := `SELECT ` + domainColumns + ` FROM domains WHERE user_id = ? ORDER BY created_at DESC`
 	err := r.db.SelectContext(ctx, &domains, query, userID)
 	if err != nil {
 		logger.Error(ctx, "domain-repo: failed to list domains by user ID",

@@ -27,8 +27,8 @@ func (r *ClickRepositoryImpl) BatchInsert(ctx context.Context, clicks []model.Cl
 
 	// INSERT IGNORE skips rows with invalid link_id (e.g., deleted links still in Redis queue)
 	// This prevents the entire batch from failing due to a few invalid records
-	query := `INSERT IGNORE INTO clicks (link_id, clicked_at, ip_hash, ip_address, user_agent, referrer, country, city, device_type, browser, utm_source, utm_medium, utm_campaign)
-			  VALUES (:link_id, :clicked_at, :ip_hash, :ip_address, :user_agent, :referrer, :country, :city, :device_type, :browser, :utm_source, :utm_medium, :utm_campaign)`
+	query := `INSERT IGNORE INTO clicks (link_id, clicked_at, ip_hash, ip_address, user_agent, referrer, country, city, device_type, browser, os, source, utm_source, utm_medium, utm_campaign)
+			  VALUES (:link_id, :clicked_at, :ip_hash, :ip_address, :user_agent, :referrer, :country, :city, :device_type, :browser, :os, :source, :utm_source, :utm_medium, :utm_campaign)`
 
 	_, err := r.db.NamedExecContext(ctx, query, clicks)
 	if err != nil {

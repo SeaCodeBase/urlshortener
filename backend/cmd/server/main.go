@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"net/url"
 	"sync"
 
 	"github.com/SeaCodeBase/urlshortener/internal/cache"
@@ -78,6 +79,7 @@ func main() {
 	passkeyRepo := repository.NewPasskeyRepository(db)
 	domainRepo := repository.NewDomainRepository(db)
 	groupRepo := repository.NewGroupRepository(db)
+	routingRuleRepo := repository.NewRoutingRuleRepository(db)
 	apiTokenRepo := repository.NewAPITokenRepository(db)
 
 	// Start click flusher worker
@@ -96,7 +98,11 @@ func main() {
 	if err != nil {
 		logger.Fatal(ctx, "failed to create passkey service", zap.Error(err))
 	}
-	redirectService := service.NewRedirectService(linkRepo, domainRepo, rdb)
+	baseHost := ""
+	if u, err := url.Parse(cfg.URLs.BaseURL); err == nil {
+		baseHost = u.Hostname()
+	}
+	redirectService := service.NewRedirectService(linkRepo, domainRepo, routingRuleRepo, rdb, baseHost)
 
 	// Setup handlers
 	authHandler := handler.NewAuthHandler(authService, passkeyService, cfg)
@@ -111,17 +117,19 @@ func main() {
 	clickService := service.NewClickService(rdb)
 
 	// Redirect handler
-	redirectHandler := handler.NewRedirectHandler(redirectService, clickService, cfg.JWT.Secret)
+	// TODO(task5): use cfg.URLs.FrontendURL
+	redirectHandler := handler.NewRedirectHandler(redirectService, clickService, domainRepo, cfg.JWT.Secret, cfg.URLs.BaseURL)
 
 	// Redirect Router (public, minimal - for URL redirects)
 	redirectRouter := gin.New()
 	redirectRouter.Use(gin.Recovery())
 	redirectRouter.Use(otelgin.Middleware("redirect-server"))
 	redirectRouter.Use(middleware.LogMiddleware())
-	redirectRouter.GET("/:code", redirectHandler.Redirect)
 	redirectRouter.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "server": "redirect"})
 	})
+	redirectRouter.GET("/", redirectHandler.Root)
+	redirectRouter.GET("/:code", redirectHandler.Redirect)
 
 	// API Router (authenticated, full functionality)
 	apiRouter := gin.New()

@@ -7,25 +7,54 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/SeaCodeBase/urlshortener/internal/model"
+	"github.com/SeaCodeBase/urlshortener/internal/repository"
 	"github.com/SeaCodeBase/urlshortener/internal/service"
+	"github.com/SeaCodeBase/urlshortener/internal/util"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
-type RedirectHandler struct {
-	redirectService *service.RedirectService
-	clickService    *service.ClickService
-	ipSalt          string
+// LinkResolver resolves a host+short code to a link (service.RedirectService).
+type LinkResolver interface {
+	Resolve(ctx context.Context, host, code string) (*service.ResolvedLink, error)
 }
 
-func NewRedirectHandler(redirectService *service.RedirectService, clickService *service.ClickService, ipSalt string) *RedirectHandler {
+// ClickRecorder buffers click events (service.ClickService).
+type ClickRecorder interface {
+	RecordClick(ctx context.Context, ev service.ClickEvent) error
+}
+
+const (
+	titleNotFound   = "Link not found"
+	messageNotFound = "The link you followed doesn't exist or may have been removed."
+	titleExpired    = "This link has expired"
+	messageExpired  = "The link you followed is no longer active because it has expired."
+	titleInactive   = "This link is no longer available"
+	messageInactive = "The link you followed has been disabled by its owner."
+)
+
+type RedirectHandler struct {
+	resolver    LinkResolver
+	clicks      ClickRecorder
+	domainRepo  repository.DomainRepository
+	routing     *service.RoutingService
+	ipSalt      string
+	frontendURL string
+}
+
+func NewRedirectHandler(resolver LinkResolver, clicks ClickRecorder, domainRepo repository.DomainRepository, ipSalt, frontendURL string) *RedirectHandler {
 	return &RedirectHandler{
-		redirectService: redirectService,
-		clickService:    clickService,
-		ipSalt:          ipSalt,
+		resolver:    resolver,
+		clicks:      clicks,
+		domainRepo:  domainRepo,
+		routing:     service.NewRoutingService(),
+		ipSalt:      ipSalt,
+		frontendURL: frontendURL,
 	}
 }
 
@@ -35,51 +64,112 @@ func (h *RedirectHandler) hashIP(ip string) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
+// clickSourceFromQuery maps ?r=qr|page to a click source; anything else is a
+// plain link click.
+func clickSourceFromQuery(r string) string {
+	switch r {
+	case model.LinkSourceQR, model.LinkSourcePage:
+		return r
+	}
+	return model.LinkSourceLink
+}
+
 func (h *RedirectHandler) Redirect(c *gin.Context) {
 	code := c.Param("code")
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid short code"})
+		renderErrorPage(c, http.StatusNotFound, titleNotFound, messageNotFound, h.frontendURL)
 		return
 	}
 
-	host := c.Request.Host
-	originalURL, linkID, err := h.redirectService.Resolve(c.Request.Context(), host, code)
-	if errors.Is(err, service.ErrLinkNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "link not found"})
+	res, err := h.resolver.Resolve(c.Request.Context(), c.Request.Host, code)
+	switch {
+	case errors.Is(err, service.ErrLinkNotFound):
+		if res != nil && res.ExpiredRedirect != "" {
+			c.Redirect(http.StatusFound, res.ExpiredRedirect)
+			return
+		}
+		renderErrorPage(c, http.StatusNotFound, titleNotFound, messageNotFound, h.frontendURL)
 		return
-	}
-	if errors.Is(err, service.ErrLinkExpired) || errors.Is(err, service.ErrLinkInactive) {
-		c.JSON(http.StatusGone, gin.H{"error": "link is no longer available"})
+	case errors.Is(err, service.ErrLinkExpired):
+		if res != nil && res.ExpiredRedirect != "" {
+			c.Redirect(http.StatusFound, res.ExpiredRedirect)
+			return
+		}
+		renderErrorPage(c, http.StatusGone, titleExpired, messageExpired, h.frontendURL)
 		return
-	}
-	if err != nil {
+	case errors.Is(err, service.ErrLinkInactive):
+		renderErrorPage(c, http.StatusGone, titleInactive, messageInactive, h.frontendURL)
+		return
+	case err != nil:
+		logger.Error(c.Request.Context(), "redirect: failed to resolve link",
+			zap.String("code", code),
+			zap.Error(err),
+		)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve link"})
 		return
 	}
 
-	// Record click event asynchronously
+	// Capture request data now: gin reuses the context after the handler returns.
+	clientIP := c.ClientIP()
+	userAgent := c.GetHeader("User-Agent")
+	event := service.ClickEvent{
+		LinkID:      res.LinkID,
+		ClickedAt:   time.Now().UTC(),
+		IPHash:      h.hashIP(clientIP),
+		IPAddress:   clientIP,
+		UserAgent:   userAgent,
+		Referrer:    c.GetHeader("Referer"),
+		Source:      clickSourceFromQuery(c.Query("r")),
+		UTMSource:   c.Query("utm_source"),
+		UTMMedium:   c.Query("utm_medium"),
+		UTMCampaign: c.Query("utm_campaign"),
+	}
+
+	target := res.LongURL
+	// Only links with dynamic routing rules pay for synchronous UA/GeoIP parsing.
+	if len(res.Rules) > 0 {
+		ua := util.ParseUserAgent(userAgent)
+		geo := util.LookupIP(c.Request.Context(), clientIP)
+		if url, ok := h.routing.Pick(res.Rules, service.RoutingRequest{
+			DeviceType: ua.DeviceType,
+			OS:         ua.OS,
+			Country:    geo.Country,
+		}); ok {
+			target = url
+		}
+	}
+
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-
-		event := service.ClickEvent{
-			LinkID:      linkID,
-			ClickedAt:   time.Now().UTC(),
-			IPHash:      h.hashIP(c.ClientIP()),
-			IPAddress:   c.ClientIP(),
-			UserAgent:   c.GetHeader("User-Agent"),
-			Referrer:    c.GetHeader("Referer"),
-			UTMSource:   c.Query("utm_source"),
-			UTMMedium:   c.Query("utm_medium"),
-			UTMCampaign: c.Query("utm_campaign"),
-		}
-		if err := h.clickService.RecordClick(ctx, event); err != nil {
+		if err := h.clicks.RecordClick(ctx, event); err != nil {
 			logger.Warn(ctx, "failed to record click",
-				zap.Uint64("link_id", linkID),
+				zap.Uint64("link_id", event.LinkID),
 				zap.Error(err),
 			)
 		}
 	}()
 
-	c.Redirect(http.StatusFound, originalURL)
+	c.Redirect(http.StatusFound, target)
+}
+
+// Root serves GET / : a custom domain with root_redirect gets a 302 there,
+// anything else the "Link not found" page.
+func (h *RedirectHandler) Root(c *gin.Context) {
+	host := c.Request.Host
+	if i := strings.LastIndex(host, ":"); i != -1 {
+		host = host[:i]
+	}
+	domain, err := h.domainRepo.GetByDomain(c.Request.Context(), host)
+	if err != nil && !errors.Is(err, repository.ErrDomainNotFound) {
+		logger.Warn(c.Request.Context(), "redirect: failed to look up domain for root",
+			zap.String("host", host),
+			zap.Error(err),
+		)
+	}
+	if err == nil && domain.RootRedirect != nil && *domain.RootRedirect != "" {
+		c.Redirect(http.StatusFound, *domain.RootRedirect)
+		return
+	}
+	renderErrorPage(c, http.StatusNotFound, titleNotFound, messageNotFound, h.frontendURL)
 }

@@ -241,19 +241,19 @@ func (h *LinkHandler) Update(c *gin.Context) {
 
 	domainMap := h.loadDomainMap(ctx, userID)
 
-	// Invalidate cache for custom domain links
-	// Note: Default domain links cannot be reliably invalidated as the host varies
+	// Invalidate the cached redirect for the default domain and, when the link
+	// lives on a custom domain, for that host too.
+	domainName := ""
 	if link.DomainID != nil {
-		if domain, ok := domainMap[*link.DomainID]; ok {
-			if err := h.redirectService.InvalidateCache(ctx, domain, link.ShortCode); err != nil {
-				logger.Warn(ctx, "update-link: failed to invalidate cache",
-					zap.Uint64("link_id", link.ID),
-					zap.String("short_code", link.ShortCode),
-					zap.String("domain", domain),
-					zap.Error(err),
-				)
-			}
-		}
+		domainName = domainMap[*link.DomainID]
+	}
+	if err := h.redirectService.InvalidateLink(ctx, link, domainName); err != nil {
+		logger.Warn(ctx, "update-link: failed to invalidate cache",
+			zap.Uint64("link_id", link.ID),
+			zap.String("short_code", link.ShortCode),
+			zap.String("domain", domainName),
+			zap.Error(err),
+		)
 	}
 
 	c.JSON(http.StatusOK, h.toResponse(link, domainMap))

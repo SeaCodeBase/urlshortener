@@ -70,8 +70,8 @@ func (f *ClickFlusher) flush() {
 		events, err := f.rdb.LRange(ctx, bufferKey, 0, int64(f.batchSize-1)).Result()
 		if err != nil {
 			logger.Error(ctx, "failed to get click events from buffer",
-			zap.Error(err),
-		)
+				zap.Error(err),
+			)
 			return
 		}
 
@@ -85,8 +85,8 @@ func (f *ClickFlusher) flush() {
 			var event service.ClickEvent
 			if err := json.Unmarshal([]byte(eventData), &event); err != nil {
 				logger.Warn(ctx, "failed to unmarshal click event",
-				zap.Error(err),
-			)
+					zap.Error(err),
+				)
 				continue
 			}
 
@@ -107,6 +107,8 @@ func (f *ClickFlusher) flush() {
 				City:        geoResult.City,
 				DeviceType:  uaResult.DeviceType,
 				Browser:     uaResult.Browser,
+				OS:          uaResult.OS,
+				Source:      clickSource(event.Source),
 				UTMSource:   event.UTMSource,
 				UTMMedium:   event.UTMMedium,
 				UTMCampaign: event.UTMCampaign,
@@ -117,8 +119,8 @@ func (f *ClickFlusher) flush() {
 		// Insert into database
 		if err := f.clickRepo.BatchInsert(ctx, clicks); err != nil {
 			logger.Error(ctx, "failed to batch insert clicks",
-			zap.Error(err),
-		)
+				zap.Error(err),
+			)
 			return
 		}
 
@@ -137,4 +139,14 @@ func (f *ClickFlusher) flush() {
 			return // No more events to process
 		}
 	}
+}
+
+// clickSource normalises a buffered event's source; events buffered before
+// sources existed (or with unexpected values) count as plain link clicks.
+func clickSource(s string) string {
+	switch s {
+	case model.LinkSourceQR, model.LinkSourcePage:
+		return s
+	}
+	return model.LinkSourceLink
 }

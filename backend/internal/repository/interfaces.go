@@ -87,6 +87,15 @@ type DomainRepository interface {
 	Delete(ctx context.Context, id uint64) error
 }
 
+//go:generate mockgen -destination=mocks/mock_routing_rule_repo.go -package=mocks . RoutingRuleRepository
+type RoutingRuleRepository interface {
+	// ListByLinkID returns the link's dynamic routing rules ordered by position.
+	ListByLinkID(ctx context.Context, linkID uint64) ([]model.RoutingRule, error)
+	// ReplaceForLink atomically replaces the link's rules with rules, assigning
+	// Position from the slice index (nil/empty clears them).
+	ReplaceForLink(ctx context.Context, linkID uint64, rules []model.RoutingRule) error
+}
+
 //go:generate mockgen -destination=mocks/mock_click_repo.go -package=mocks . ClickRepository
 type ClickRepository interface {
 	BatchInsert(ctx context.Context, clicks []model.Click) error

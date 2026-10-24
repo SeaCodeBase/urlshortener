@@ -2,10 +2,18 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/SeaCodeBase/urlshortener/internal/model"
+	"github.com/SeaCodeBase/urlshortener/internal/repository"
+	"github.com/SeaCodeBase/urlshortener/internal/repository/mocks"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/mock/gomock"
 )
 
 func TestInvalidateCache(t *testing.T) {
@@ -92,5 +100,147 @@ func TestInvalidateCache_NonExistentKey(t *testing.T) {
 	err = s.InvalidateCache(ctx, "nonexistent.com", "missing")
 	if err != nil {
 		t.Errorf("InvalidateCache should not error for non-existent key: %v", err)
+	}
+}
+
+type redirectFixture struct {
+	svc     *RedirectService
+	links   *mocks.MockLinkRepository
+	domains *mocks.MockDomainRepository
+	rules   *mocks.MockRoutingRuleRepository
+	mr      *miniredis.Miniredis
+}
+
+func newRedirectFixture(t *testing.T) *redirectFixture {
+	t.Helper()
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(mr.Close)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	ctrl := gomock.NewController(t)
+	f := &redirectFixture{
+		links:   mocks.NewMockLinkRepository(ctrl),
+		domains: mocks.NewMockDomainRepository(ctrl),
+		rules:   mocks.NewMockRoutingRuleRepository(ctrl),
+		mr:      mr,
+	}
+	f.svc = NewRedirectService(f.links, f.domains, f.rules, rdb, "sho.rt")
+	return f
+}
+
+func TestRedirectService_ArchivedStillRedirects(t *testing.T) {
+	f := newRedirectFixture(t)
+	ctx := context.Background()
+
+	rule := model.RoutingRule{ID: 1, LinkID: 7, LongURL: "https://ios.example.com", OSMatch: model.StringList{"ios"}}
+	f.domains.EXPECT().GetByDomain(gomock.Any(), "sho.rt").Return(nil, repository.ErrDomainNotFound).Times(1)
+	f.links.EXPECT().GetByDomainAndShortCode(gomock.Any(), nil, "abc").Return(&model.Link{
+		ID: 7, ShortCode: "abc", OriginalURL: "https://example.com/archived", IsActive: true, Archived: true,
+	}, nil).Times(1)
+	f.rules.EXPECT().ListByLinkID(gomock.Any(), uint64(7)).Return([]model.RoutingRule{rule}, nil).Times(1)
+
+	// First call: DB; second call: served from cache (mocks allow one call each).
+	for i := 0; i < 2; i++ {
+		res, err := f.svc.Resolve(ctx, "sho.rt:8080", "abc")
+		if err != nil {
+			t.Fatalf("call %d: archived link must still redirect, got %v", i, err)
+		}
+		if res.LinkID != 7 || res.LongURL != "https://example.com/archived" || res.DomainID != nil {
+			t.Fatalf("call %d: unexpected resolved link %+v", i, res)
+		}
+		if len(res.Rules) != 1 || res.Rules[0].LongURL != rule.LongURL {
+			t.Fatalf("call %d: expected routing rules to be returned, got %+v", i, res.Rules)
+		}
+	}
+
+	cached, err := f.mr.Get(linkCacheKeyPrefix + "sho.rt:abc")
+	if err != nil {
+		t.Fatalf("expected cache entry under v2 key: %v", err)
+	}
+	for _, field := range []string{`"archived":true`, `"rules":[`} {
+		if !strings.Contains(cached, field) {
+			t.Errorf("cache JSON %s missing %s", cached, field)
+		}
+	}
+}
+
+func TestRedirectService_ExpiredUsesDomain404(t *testing.T) {
+	f := newRedirectFixture(t)
+	ctx := context.Background()
+
+	notFound := "https://brand.example.com/oops"
+	f.domains.EXPECT().GetByDomain(gomock.Any(), "go.brand.com").
+		Return(&model.Domain{ID: 3, Domain: "go.brand.com", NotFoundRedirect: &notFound}, nil).Times(1)
+	domainID := uint64(3)
+	f.links.EXPECT().GetByDomainAndShortCode(gomock.Any(), &domainID, "old").Return(&model.Link{
+		ID: 9, ShortCode: "old", OriginalURL: "https://example.com/old", IsActive: true, DomainID: &domainID,
+		ExpiresAt: model.NullTime{NullTime: sql.NullTime{Time: time.Now().Add(-time.Hour), Valid: true}},
+	}, nil).Times(1)
+	f.rules.EXPECT().ListByLinkID(gomock.Any(), uint64(9)).Return(nil, nil).Times(1)
+
+	for i := 0; i < 2; i++ {
+		res, err := f.svc.Resolve(ctx, "go.brand.com", "old")
+		if !errors.Is(err, ErrLinkExpired) {
+			t.Fatalf("call %d: expected ErrLinkExpired, got %v", i, err)
+		}
+		if res == nil || res.ExpiredRedirect != notFound {
+			t.Fatalf("call %d: expected ExpiredRedirect %q, got %+v", i, notFound, res)
+		}
+	}
+
+	cached, _ := f.mr.Get(linkCacheKeyPrefix + "go.brand.com:old")
+	for _, field := range []string{`"expires_at":`, `"not_found_redirect":"` + notFound + `"`} {
+		if !strings.Contains(cached, field) {
+			t.Errorf("cache JSON %s missing %s", cached, field)
+		}
+	}
+}
+
+func TestRedirectService_NotFoundAndInactive(t *testing.T) {
+	f := newRedirectFixture(t)
+	ctx := context.Background()
+
+	f.domains.EXPECT().GetByDomain(gomock.Any(), gomock.Any()).Return(nil, repository.ErrDomainNotFound).AnyTimes()
+	f.links.EXPECT().GetByDomainAndShortCode(gomock.Any(), nil, "nope").Return(nil, repository.ErrLinkNotFound)
+	f.links.EXPECT().GetByDomainAndShortCode(gomock.Any(), nil, "off").
+		Return(&model.Link{ID: 2, OriginalURL: "https://example.com", IsActive: false}, nil)
+	f.rules.EXPECT().ListByLinkID(gomock.Any(), uint64(2)).Return(nil, nil)
+
+	if _, err := f.svc.Resolve(ctx, "sho.rt", "nope"); !errors.Is(err, ErrLinkNotFound) {
+		t.Fatalf("expected ErrLinkNotFound, got %v", err)
+	}
+	if _, err := f.svc.Resolve(ctx, "sho.rt", "off"); !errors.Is(err, ErrLinkInactive) {
+		t.Fatalf("expected ErrLinkInactive, got %v", err)
+	}
+}
+
+func TestRedirectService_InvalidateLink(t *testing.T) {
+	f := newRedirectFixture(t)
+	ctx := context.Background()
+
+	f.mr.Set(linkCacheKeyPrefix+"sho.rt:abc", "{}")
+	f.mr.Set(linkCacheKeyPrefix+"go.brand.com:abc", "{}")
+	f.mr.Set(linkCacheKeyPrefix+"sho.rt:other", "{}")
+
+	if err := f.svc.InvalidateLink(ctx, &model.Link{ShortCode: "abc"}, "go.brand.com"); err != nil {
+		t.Fatalf("InvalidateLink: %v", err)
+	}
+	if f.mr.Exists(linkCacheKeyPrefix+"sho.rt:abc") || f.mr.Exists(linkCacheKeyPrefix+"go.brand.com:abc") {
+		t.Error("expected default and custom domain keys to be deleted")
+	}
+	if !f.mr.Exists(linkCacheKeyPrefix + "sho.rt:other") {
+		t.Error("unrelated key must survive")
+	}
+
+	f.mr.Set(linkCacheKeyPrefix+"sho.rt:abc", "{}")
+	if err := f.svc.InvalidateLink(ctx, &model.Link{ShortCode: "abc"}, ""); err != nil {
+		t.Fatalf("InvalidateLink default: %v", err)
+	}
+	if f.mr.Exists(linkCacheKeyPrefix + "sho.rt:abc") {
+		t.Error("expected default-domain key to be deleted")
 	}
 }

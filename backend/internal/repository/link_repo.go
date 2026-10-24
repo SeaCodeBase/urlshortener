@@ -172,11 +172,11 @@ func (r *LinkRepositoryImpl) GetByDomainAndShortCode(ctx context.Context, domain
 	var err error
 
 	if domainID == nil {
-		query = `SELECT id, user_id, group_id, short_code, original_url, title, expires_at, is_active, domain_id, created_at, updated_at
+		query = `SELECT id, user_id, group_id, short_code, original_url, title, expires_at, is_active, archived, domain_id, created_at, updated_at
 				 FROM links WHERE domain_id IS NULL AND short_code = ?`
 		err = r.db.GetContext(ctx, &link, query, code)
 	} else {
-		query = `SELECT id, user_id, group_id, short_code, original_url, title, expires_at, is_active, domain_id, created_at, updated_at
+		query = `SELECT id, user_id, group_id, short_code, original_url, title, expires_at, is_active, archived, domain_id, created_at, updated_at
 				 FROM links WHERE domain_id = ? AND short_code = ?`
 		err = r.db.GetContext(ctx, &link, query, *domainID, code)
 	}
