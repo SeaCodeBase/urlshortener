@@ -244,6 +244,31 @@ type ClickRepository interface {
 	Breakdown(ctx context.Context, linkIDs []uint64, from, to time.Time, facet string, limit int, source string) ([]Row, error)
 	// TotalAllTime counts every click of the links.
 	TotalAllTime(ctx context.Context, linkIDs []uint64, source string) (int64, error)
+	// CountScope counts the scope's clicks in the date range.
+	CountScope(ctx context.Context, scope ClickScope, from, to time.Time) (int64, error)
+	// SeriesScope is Series over a scope (zero-filled, same unit keys).
+	SeriesScope(ctx context.Context, scope ClickScope, from, to time.Time, unit string) ([]Bucket, error)
+	// BreakdownScope is Breakdown over a scope.
+	BreakdownScope(ctx context.Context, scope ClickScope, from, to time.Time, facet string, limit int) ([]Row, error)
+	// ItemsScope counts the scope's clicks per (link, source), most first, at
+	// most limit rows.
+	ItemsScope(ctx context.Context, scope ClickScope, from, to time.Time, limit int) ([]ItemCount, error)
+}
+
+// ClickScope selects clicks for analytics. LinkIDs == nil means every link of
+// GroupID; a non-nil LinkIDs means exactly those links (empty → no clicks).
+// Source is "" (all), "link", "qr", "page" or "not_qr" (every source but qr).
+type ClickScope struct {
+	GroupID uint64
+	LinkIDs []uint64
+	Source  string
+}
+
+// ItemCount is one (link, source) click total.
+type ItemCount struct {
+	LinkID uint64 `db:"link_id"`
+	Source string `db:"source"`
+	Count  int64  `db:"cnt"`
 }
 
 // Bucket is one point of a click time series.

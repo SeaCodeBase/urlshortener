@@ -199,3 +199,99 @@ func TestClickRepository_Breakdown_Device(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, rows)
 }
+
+func TestClickRepo_Scope_GroupVsIDs(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	f := newClickFixture(t, db)
+	ctx := context.Background()
+
+	f.insert(t,
+		model.Click{LinkID: f.linkA, ClickedAt: day(10, 1)},
+		model.Click{LinkID: f.linkA, ClickedAt: day(11, 2), Source: "qr"},
+		model.Click{LinkID: f.linkB, ClickedAt: day(11, 3)},
+		model.Click{LinkID: f.linkB, ClickedAt: day(12, 4), Source: "page"},
+		model.Click{LinkID: f.foreignLink, ClickedAt: day(11, 5)},
+		model.Click{LinkID: f.foreignLink, ClickedAt: day(11, 6)},
+		model.Click{LinkID: f.linkA, ClickedAt: day(13, 0)}, // after range
+	)
+
+	count := func(scope repository.ClickScope) int64 {
+		t.Helper()
+		n, err := f.repo.CountScope(ctx, scope, date(10), date(12))
+		require.NoError(t, err)
+		return n
+	}
+
+	// Group scope counts only the group's links.
+	assert.Equal(t, int64(4), count(repository.ClickScope{GroupID: f.groupID}))
+	assert.Equal(t, int64(2), count(repository.ClickScope{GroupID: f.otherGroup}))
+	// Id scope counts exactly the listed links.
+	assert.Equal(t, int64(4), count(repository.ClickScope{LinkIDs: []uint64{f.linkB, f.foreignLink}}))
+	assert.Equal(t, int64(2), count(repository.ClickScope{LinkIDs: []uint64{f.linkA}}))
+	// Source filters.
+	assert.Equal(t, int64(3), count(repository.ClickScope{GroupID: f.groupID, Source: "not_qr"}))
+	assert.Equal(t, int64(1), count(repository.ClickScope{GroupID: f.groupID, Source: "qr"}))
+	assert.Equal(t, int64(1), count(repository.ClickScope{LinkIDs: []uint64{f.linkA}, Source: "not_qr"}))
+	assert.Equal(t, int64(1), count(repository.ClickScope{GroupID: f.groupID, Source: "page"}))
+	// Empty non-nil LinkIDs means no links, even with a group set.
+	assert.Equal(t, int64(0), count(repository.ClickScope{GroupID: f.groupID, LinkIDs: []uint64{}}))
+
+	series, err := f.repo.SeriesScope(ctx, repository.ClickScope{GroupID: f.groupID, Source: "not_qr"}, date(10), date(12), "day")
+	require.NoError(t, err)
+	assert.Equal(t, []repository.Bucket{
+		{Date: "2026-10-10", Count: 1},
+		{Date: "2026-10-11", Count: 1},
+		{Date: "2026-10-12", Count: 1},
+	}, series)
+
+	empty, err := f.repo.SeriesScope(ctx, repository.ClickScope{LinkIDs: []uint64{}}, date(10), date(12), "day")
+	require.NoError(t, err)
+	assert.Equal(t, []repository.Bucket{
+		{Date: "2026-10-10", Count: 0},
+		{Date: "2026-10-11", Count: 0},
+		{Date: "2026-10-12", Count: 0},
+	}, empty)
+
+	_, err = f.repo.SeriesScope(ctx, repository.ClickScope{GroupID: f.groupID}, date(10), date(12), "week")
+	assert.Error(t, err)
+
+	rows, err := f.repo.BreakdownScope(ctx, repository.ClickScope{GroupID: f.groupID}, date(10), date(12), "referrer", 10)
+	require.NoError(t, err)
+	assert.Equal(t, []repository.Row{{Key: "Direct", Key2: "", Count: 4}}, rows)
+
+	noRows, err := f.repo.BreakdownScope(ctx, repository.ClickScope{LinkIDs: []uint64{}}, date(10), date(12), "referrer", 10)
+	require.NoError(t, err)
+	assert.Empty(t, noRows)
+
+	items, err := f.repo.ItemsScope(ctx, repository.ClickScope{LinkIDs: []uint64{}}, date(10), date(12), 10)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+}
+
+func TestClickRepo_ItemsScope_GroupsByLinkAndSource(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	f := newClickFixture(t, db)
+	ctx := context.Background()
+
+	f.insert(t,
+		model.Click{LinkID: f.linkA, ClickedAt: day(10, 1)},
+		model.Click{LinkID: f.linkA, ClickedAt: day(10, 2)},
+		model.Click{LinkID: f.linkA, ClickedAt: day(10, 3), Source: "qr"},
+		model.Click{LinkID: f.linkA, ClickedAt: day(11, 4), Source: "qr"},
+		model.Click{LinkID: f.linkA, ClickedAt: day(12, 5), Source: "qr"},
+		model.Click{LinkID: f.foreignLink, ClickedAt: day(11, 6)}, // other group
+	)
+
+	items, err := f.repo.ItemsScope(ctx, repository.ClickScope{GroupID: f.groupID}, date(10), date(12), 10)
+	require.NoError(t, err)
+	assert.Equal(t, []repository.ItemCount{
+		{LinkID: f.linkA, Source: "qr", Count: 3},
+		{LinkID: f.linkA, Source: "link", Count: 2},
+	}, items)
+
+	limited, err := f.repo.ItemsScope(ctx, repository.ClickScope{GroupID: f.groupID}, date(10), date(12), 1)
+	require.NoError(t, err)
+	assert.Equal(t, []repository.ItemCount{{LinkID: f.linkA, Source: "qr", Count: 3}}, limited)
+}

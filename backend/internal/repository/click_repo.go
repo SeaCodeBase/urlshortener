@@ -68,50 +68,69 @@ func halfOpen(from, to time.Time) (time.Time, time.Time) {
 	return utcDay(from), utcDay(to).AddDate(0, 0, 1)
 }
 
-func sourceFiltered(source string) bool { return source != "" && source != "all" }
+// sourceClause returns the source condition (with a leading AND) for a
+// source filter: "" and "all" match everything, "not_qr" excludes QR scans,
+// any other value matches that source exactly.
+func sourceClause(source string) (string, []any) {
+	switch source {
+	case "", "all":
+		return "", nil
+	case "not_qr":
+		return ` AND source <> 'qr'`, nil
+	default:
+		return ` AND source = ?`, []any{source}
+	}
+}
 
-// clickWhere builds the shared WHERE clause for link set, range and source.
-func clickWhere(linkIDs []uint64, from, to time.Time, source string) (string, []any, error) {
+// scopeWhere builds the WHERE clause for a click scope over the inclusive
+// UTC date range. Nil LinkIDs selects every link of the group; a non-nil empty
+// slice selects nothing.
+func scopeWhere(scope ClickScope, from, to time.Time) (string, []any, error) {
+	var where string
+	var args []any
+	switch {
+	case scope.LinkIDs == nil:
+		where, args = `link_id IN (SELECT id FROM links WHERE group_id = ?)`, []any{scope.GroupID}
+	case len(scope.LinkIDs) == 0:
+		where = `1 = 0`
+	default:
+		q, a, err := sqlx.In(`link_id IN (?)`, scope.LinkIDs)
+		if err != nil {
+			return "", nil, err
+		}
+		where, args = q, a
+	}
 	start, end := halfOpen(from, to)
-	where, args, err := sqlx.In(`link_id IN (?) AND clicked_at >= ? AND clicked_at < ?`, linkIDs, start, end)
-	if err != nil {
-		return "", nil, err
+	where += ` AND clicked_at >= ? AND clicked_at < ?`
+	args = append(args, start, end)
+	src, srcArgs := sourceClause(scope.Source)
+	return where + src, append(args, srcArgs...), nil
+}
+
+// linkScope adapts the link-set API, where nil and empty both mean no links.
+func linkScope(linkIDs []uint64, source string) ClickScope {
+	if linkIDs == nil {
+		linkIDs = []uint64{}
 	}
-	if sourceFiltered(source) {
-		where += ` AND source = ?`
-		args = append(args, source)
-	}
-	return where, args, nil
+	return ClickScope{LinkIDs: linkIDs, Source: source}
 }
 
 func (r *ClickRepositoryImpl) CountRange(ctx context.Context, linkIDs []uint64, from, to time.Time, source string) (int64, error) {
-	if len(linkIDs) == 0 {
-		return 0, nil
-	}
-	where, args, err := clickWhere(linkIDs, from, to, source)
+	return r.CountScope(ctx, linkScope(linkIDs, source), from, to)
+}
+
+func (r *ClickRepositoryImpl) CountRangeByGroup(ctx context.Context, groupID uint64, from, to time.Time, source string) (int64, error) {
+	return r.CountScope(ctx, ClickScope{GroupID: groupID, Source: source}, from, to)
+}
+
+func (r *ClickRepositoryImpl) CountScope(ctx context.Context, scope ClickScope, from, to time.Time) (int64, error) {
+	where, args, err := scopeWhere(scope, from, to)
 	if err != nil {
 		return 0, err
 	}
 	var n int64
 	if err := r.db.GetContext(ctx, &n, `SELECT COUNT(*) FROM clicks WHERE `+where, args...); err != nil {
-		logger.Error(ctx, "click-repo: failed to count range", zap.Int("links", len(linkIDs)), zap.Error(err))
-		return 0, err
-	}
-	return n, nil
-}
-
-func (r *ClickRepositoryImpl) CountRangeByGroup(ctx context.Context, groupID uint64, from, to time.Time, source string) (int64, error) {
-	start, end := halfOpen(from, to)
-	query := `SELECT COUNT(*) FROM clicks c JOIN links l ON l.id = c.link_id
-			  WHERE l.group_id = ? AND c.clicked_at >= ? AND c.clicked_at < ?`
-	args := []any{groupID, start, end}
-	if sourceFiltered(source) {
-		query += ` AND c.source = ?`
-		args = append(args, source)
-	}
-	var n int64
-	if err := r.db.GetContext(ctx, &n, query, args...); err != nil {
-		logger.Error(ctx, "click-repo: failed to count group range", zap.Uint64("group_id", groupID), zap.Error(err))
+		logger.Error(ctx, "click-repo: failed to count scope", zap.Uint64("group_id", scope.GroupID), zap.Int("links", len(scope.LinkIDs)), zap.Error(err))
 		return 0, err
 	}
 	return n, nil
@@ -125,10 +144,9 @@ func (r *ClickRepositoryImpl) TotalAllTime(ctx context.Context, linkIDs []uint64
 	if err != nil {
 		return 0, err
 	}
-	if sourceFiltered(source) {
-		query += ` AND source = ?`
-		args = append(args, source)
-	}
+	src, srcArgs := sourceClause(source)
+	query += src
+	args = append(args, srcArgs...)
 	var n int64
 	if err := r.db.GetContext(ctx, &n, query, args...); err != nil {
 		logger.Error(ctx, "click-repo: failed to count total", zap.Int("links", len(linkIDs)), zap.Error(err))
@@ -148,26 +166,28 @@ var seriesUnits = map[string]struct {
 }
 
 func (r *ClickRepositoryImpl) Series(ctx context.Context, linkIDs []uint64, from, to time.Time, unit, source string) ([]Bucket, error) {
+	return r.SeriesScope(ctx, linkScope(linkIDs, source), from, to, unit)
+}
+
+func (r *ClickRepositoryImpl) SeriesScope(ctx context.Context, scope ClickScope, from, to time.Time, unit string) ([]Bucket, error) {
 	u, ok := seriesUnits[unit]
 	if !ok {
 		return nil, fmt.Errorf("click-repo: unknown series unit %q", unit)
 	}
-	counts := map[string]int64{}
-	if len(linkIDs) > 0 {
-		where, args, err := clickWhere(linkIDs, from, to, source)
-		if err != nil {
-			return nil, err
-		}
-		var rows []Bucket
-		query := `SELECT DATE_FORMAT(clicked_at, '` + u.sqlFormat + `') AS bucket, COUNT(*) AS cnt
-				  FROM clicks WHERE ` + where + ` GROUP BY bucket`
-		if err := r.db.SelectContext(ctx, &rows, query, args...); err != nil {
-			logger.Error(ctx, "click-repo: failed to get series", zap.Int("links", len(linkIDs)), zap.String("unit", unit), zap.Error(err))
-			return nil, err
-		}
-		for _, row := range rows {
-			counts[row.Date] = row.Count
-		}
+	where, args, err := scopeWhere(scope, from, to)
+	if err != nil {
+		return nil, err
+	}
+	var rows []Bucket
+	query := `SELECT DATE_FORMAT(clicked_at, '` + u.sqlFormat + `') AS bucket, COUNT(*) AS cnt
+			  FROM clicks WHERE ` + where + ` GROUP BY bucket`
+	if err := r.db.SelectContext(ctx, &rows, query, args...); err != nil {
+		logger.Error(ctx, "click-repo: failed to get series", zap.Uint64("group_id", scope.GroupID), zap.Int("links", len(scope.LinkIDs)), zap.String("unit", unit), zap.Error(err))
+		return nil, err
+	}
+	counts := make(map[string]int64, len(rows))
+	for _, row := range rows {
+		counts[row.Date] = row.Count
 	}
 	start, end := halfOpen(from, to)
 	out := []Bucket{}
@@ -189,14 +209,15 @@ var breakdownColumns = map[string][2]string{
 }
 
 func (r *ClickRepositoryImpl) Breakdown(ctx context.Context, linkIDs []uint64, from, to time.Time, facet string, limit int, source string) ([]Row, error) {
+	return r.BreakdownScope(ctx, linkScope(linkIDs, source), from, to, facet, limit)
+}
+
+func (r *ClickRepositoryImpl) BreakdownScope(ctx context.Context, scope ClickScope, from, to time.Time, facet string, limit int) ([]Row, error) {
 	cols, ok := breakdownColumns[facet]
 	if !ok {
 		return nil, fmt.Errorf("click-repo: unknown breakdown facet %q", facet)
 	}
-	if len(linkIDs) == 0 {
-		return []Row{}, nil
-	}
-	where, args, err := clickWhere(linkIDs, from, to, source)
+	where, args, err := scopeWhere(scope, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -210,4 +231,21 @@ func (r *ClickRepositoryImpl) Breakdown(ctx context.Context, linkIDs []uint64, f
 		return nil, err
 	}
 	return rows, nil
+}
+
+func (r *ClickRepositoryImpl) ItemsScope(ctx context.Context, scope ClickScope, from, to time.Time, limit int) ([]ItemCount, error) {
+	where, args, err := scopeWhere(scope, from, to)
+	if err != nil {
+		return nil, err
+	}
+	query := `SELECT link_id, source, COUNT(*) AS cnt
+			  FROM clicks WHERE ` + where + `
+			  GROUP BY link_id, source ORDER BY cnt DESC, link_id ASC, source ASC LIMIT ?`
+	args = append(args, limit)
+	items := []ItemCount{}
+	if err := r.db.SelectContext(ctx, &items, query, args...); err != nil {
+		logger.Error(ctx, "click-repo: failed to get items", zap.Uint64("group_id", scope.GroupID), zap.Int("links", len(scope.LinkIDs)), zap.Error(err))
+		return nil, err
+	}
+	return items, nil
 }

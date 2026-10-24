@@ -72,6 +72,21 @@ func (mr *MockClickRepositoryMockRecorder) Breakdown(ctx, linkIDs, from, to, fac
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Breakdown", reflect.TypeOf((*MockClickRepository)(nil).Breakdown), ctx, linkIDs, from, to, facet, limit, source)
 }
 
+// BreakdownScope mocks base method.
+func (m *MockClickRepository) BreakdownScope(ctx context.Context, scope repository.ClickScope, from, to time.Time, facet string, limit int) ([]repository.Row, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BreakdownScope", ctx, scope, from, to, facet, limit)
+	ret0, _ := ret[0].([]repository.Row)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BreakdownScope indicates an expected call of BreakdownScope.
+func (mr *MockClickRepositoryMockRecorder) BreakdownScope(ctx, scope, from, to, facet, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BreakdownScope", reflect.TypeOf((*MockClickRepository)(nil).BreakdownScope), ctx, scope, from, to, facet, limit)
+}
+
 // CountRange mocks base method.
 func (m *MockClickRepository) CountRange(ctx context.Context, linkIDs []uint64, from, to time.Time, source string) (int64, error) {
 	m.ctrl.T.Helper()
@@ -102,6 +117,21 @@ func (mr *MockClickRepositoryMockRecorder) CountRangeByGroup(ctx, groupID, from,
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountRangeByGroup", reflect.TypeOf((*MockClickRepository)(nil).CountRangeByGroup), ctx, groupID, from, to, source)
 }
 
+// CountScope mocks base method.
+func (m *MockClickRepository) CountScope(ctx context.Context, scope repository.ClickScope, from, to time.Time) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountScope", ctx, scope, from, to)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountScope indicates an expected call of CountScope.
+func (mr *MockClickRepositoryMockRecorder) CountScope(ctx, scope, from, to any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountScope", reflect.TypeOf((*MockClickRepository)(nil).CountScope), ctx, scope, from, to)
+}
+
 // GetTotalByLinkID mocks base method.
 func (m *MockClickRepository) GetTotalByLinkID(ctx context.Context, linkID uint64) (int64, error) {
 	m.ctrl.T.Helper()
@@ -117,6 +147,21 @@ func (mr *MockClickRepositoryMockRecorder) GetTotalByLinkID(ctx, linkID any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTotalByLinkID", reflect.TypeOf((*MockClickRepository)(nil).GetTotalByLinkID), ctx, linkID)
 }
 
+// ItemsScope mocks base method.
+func (m *MockClickRepository) ItemsScope(ctx context.Context, scope repository.ClickScope, from, to time.Time, limit int) ([]repository.ItemCount, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ItemsScope", ctx, scope, from, to, limit)
+	ret0, _ := ret[0].([]repository.ItemCount)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ItemsScope indicates an expected call of ItemsScope.
+func (mr *MockClickRepositoryMockRecorder) ItemsScope(ctx, scope, from, to, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ItemsScope", reflect.TypeOf((*MockClickRepository)(nil).ItemsScope), ctx, scope, from, to, limit)
+}
+
 // Series mocks base method.
 func (m *MockClickRepository) Series(ctx context.Context, linkIDs []uint64, from, to time.Time, unit, source string) ([]repository.Bucket, error) {
 	m.ctrl.T.Helper()
@@ -130,6 +175,21 @@ func (m *MockClickRepository) Series(ctx context.Context, linkIDs []uint64, from
 func (mr *MockClickRepositoryMockRecorder) Series(ctx, linkIDs, from, to, unit, source any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Series", reflect.TypeOf((*MockClickRepository)(nil).Series), ctx, linkIDs, from, to, unit, source)
+}
+
+// SeriesScope mocks base method.
+func (m *MockClickRepository) SeriesScope(ctx context.Context, scope repository.ClickScope, from, to time.Time, unit string) ([]repository.Bucket, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SeriesScope", ctx, scope, from, to, unit)
+	ret0, _ := ret[0].([]repository.Bucket)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SeriesScope indicates an expected call of SeriesScope.
+func (mr *MockClickRepositoryMockRecorder) SeriesScope(ctx, scope, from, to, unit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SeriesScope", reflect.TypeOf((*MockClickRepository)(nil).SeriesScope), ctx, scope, from, to, unit)
 }
 
 // TotalAllTime mocks base method.
