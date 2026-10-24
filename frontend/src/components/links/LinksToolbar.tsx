@@ -1,98 +1,112 @@
-'use client';
+'use client'
 
-import { Search, List, LayoutGrid, Rows3 } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+import { LayoutGrid, List, Rows3 } from 'lucide-react'
+import { RadioGroup as RadioGroupPrimitive } from 'radix-ui'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { cn } from '@/lib/utils'
+import type { LinksShow, LinksView } from './linksUrlState'
 
-export type ViewMode = 'list' | 'compact' | 'grid';
-export type StatusFilter = 'all' | 'active' | 'inactive';
+export type { LinksShow, LinksView } from './linksUrlState'
 
-interface LinksToolbarProps {
-  search: string;
-  onSearchChange: (value: string) => void;
-  status: StatusFilter;
-  onStatusChange: (value: StatusFilter) => void;
-  viewMode: ViewMode;
-  onViewModeChange: (mode: ViewMode) => void;
-  selectedCount: number;
-  onBulkDelete: () => void;
+export interface LinksToolbarProps {
+  selectedCount: number
+  allSelected: boolean
+  /** Disables the select-all checkbox (e.g. nothing loaded). */
+  selectAllDisabled?: boolean
+  onToggleAll: (selected: boolean) => void
+  onExport: () => void
+  exporting?: boolean
+  /** Hide in the Active view, Unhide in the Hidden view. */
+  onHide: () => void
+  onTag: () => void
+  show: LinksShow
+  onShowChange: (show: LinksShow) => void
+  view: LinksView
+  onViewChange: (view: LinksView) => void
 }
 
+const VIEWS: { value: LinksView; label: string; icon: typeof List }[] = [
+  { value: 'compact', label: 'Compact view', icon: Rows3 },
+  { value: 'default', label: 'Default view', icon: List },
+  { value: 'grid', label: 'Grid view', icon: LayoutGrid },
+]
+
+/** Second toolbar row of the links list: selection + bulk actions, view toggle, Show select. */
 export function LinksToolbar({
-  search,
-  onSearchChange,
-  status,
-  onStatusChange,
-  viewMode,
-  onViewModeChange,
   selectedCount,
-  onBulkDelete,
+  allSelected,
+  selectAllDisabled,
+  onToggleAll,
+  onExport,
+  exporting,
+  onHide,
+  onTag,
+  show,
+  onShowChange,
+  view,
+  onViewChange,
 }: LinksToolbarProps) {
+  const none = selectedCount === 0
   return (
-    <div className="space-y-3">
-      {/* Search and Filters */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <Input
-            placeholder="Search links"
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="pl-10"
-          />
+    <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex items-center gap-4">
+        <Checkbox
+          checked={allSelected}
+          onCheckedChange={onToggleAll}
+          disabled={selectAllDisabled}
+          aria-label="Select all links"
+        />
+        <span className="text-sm text-foreground">{selectedCount} selected</span>
+        <div className="flex items-center gap-1 border-l border-border pl-3">
+          <Button type="button" variant="ghost" size="sm" onClick={onExport} disabled={exporting}>
+            Export
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={onHide} disabled={none}>
+            {show === 'hidden' ? 'Unhide' : 'Hide'}
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={onTag} disabled={none}>
+            Tag
+          </Button>
         </div>
-        <select
-          value={status}
-          onChange={(e) => onStatusChange(e.target.value as StatusFilter)}
-          className="px-3 py-2 border rounded-md text-sm bg-white"
-        >
-          <option value="all">All links</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-        </select>
       </div>
 
-      {/* Bulk Actions and View Toggle */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-500">
-            {selectedCount} selected
-          </span>
-          {selectedCount > 0 && (
-            <Button variant="ghost" size="sm" onClick={onBulkDelete} className="text-red-600">
-              Delete
-            </Button>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex border rounded-md">
-            <Button
-              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="rounded-r-none"
-              onClick={() => onViewModeChange('list')}
+      <div className="flex items-center gap-3">
+        <RadioGroupPrimitive.Root
+          value={view}
+          onValueChange={(v) => onViewChange(v as LinksView)}
+          orientation="horizontal"
+          aria-label="View"
+          className="flex items-center rounded border border-border bg-white p-0.5 dark:bg-card"
+        >
+          {VIEWS.map(({ value, label, icon: Icon }) => (
+            <RadioGroupPrimitive.Item
+              key={value}
+              value={value}
+              aria-label={label}
+              title={label}
+              className={cn(
+                'inline-flex size-8 items-center justify-center rounded text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50',
+                'data-[state=checked]:bg-accent data-[state=checked]:text-primary',
+              )}
             >
-              <List className="w-4 h-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'compact' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="rounded-none border-x"
-              onClick={() => onViewModeChange('compact')}
-            >
-              <Rows3 className="w-4 h-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="rounded-l-none"
-              onClick={() => onViewModeChange('grid')}
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
+              <Icon className="size-4" />
+            </RadioGroupPrimitive.Item>
+          ))}
+        </RadioGroupPrimitive.Root>
+
+        <Select value={show} onValueChange={(v) => onShowChange(v as LinksShow)}>
+          <SelectTrigger aria-label="Show" className="w-auto min-w-36 bg-white dark:bg-card">
+            <span className="text-muted-foreground">{'Show: '}</span>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end">
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="hidden">Hidden</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
     </div>
-  );
+  )
 }
