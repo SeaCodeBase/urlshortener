@@ -502,6 +502,8 @@ export interface AnalyticsItem {
   link_id: number;
   title: string;
   short_url: string;
+  /** Destination URL (favicon); may be absent from older responses. */
+  original_url?: string;
   clicks: number;
   percentage: number;
   prev_clicks: number;

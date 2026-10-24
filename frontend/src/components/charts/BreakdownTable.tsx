@@ -26,7 +26,8 @@ export function changeVsPrev(clicks: number, prev: number | undefined): number |
   return ((clicks - prev) / prev) * 100
 }
 
-function ChangeCell({ clicks, prev }: { clicks: number; prev?: number }) {
+/** `▲ +12.5%` / `▼ -3.0%` vs the previous count, `—` when there is none. */
+export function ChangeCell({ clicks, prev }: { clicks: number; prev?: number }) {
   const change = changeVsPrev(clicks, prev)
   if (change == null) return <span className="text-muted-foreground">—</span>
   const up = change >= 0
