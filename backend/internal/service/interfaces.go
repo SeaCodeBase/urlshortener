@@ -151,6 +151,19 @@ type StatsService interface {
 	GroupEngagements(ctx context.Context, groupID uint64, from, to time.Time) (int64, error)
 }
 
+//go:generate mockgen -destination=mocks/mock_analytics_service.go -package=mocks . AnalyticsService
+type AnalyticsService interface {
+	// Overview returns the group's last 7 days against the 7 before and its
+	// top 5 links/QR codes over the last 30 days.
+	Overview(ctx context.Context, groupID uint64) (*Overview, error)
+	// DashboardData returns the module data of filter over q's window (unit
+	// hour for ranges of at most 2 days, else day; q.Unit and q.Source are
+	// ignored); a *StatsQueryError for an invalid window.
+	DashboardData(ctx context.Context, groupID uint64, filter DashboardFilter, q StatsQuery) (*DashboardData, error)
+	// ExportZip returns a zip with one CSV per dashboard module.
+	ExportZip(ctx context.Context, groupID uint64, name string, filter DashboardFilter, q StatsQuery) ([]byte, error)
+}
+
 //go:generate mockgen -destination=mocks/mock_shortcode_service.go -package=mocks . ShortCodeService
 type ShortCodeService interface {
 	// Generate creates a unique short code within the given domain.
