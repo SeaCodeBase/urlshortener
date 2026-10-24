@@ -27,10 +27,10 @@ func NewLinkRepository(db *sqlx.DB) *LinkRepositoryImpl {
 }
 
 func (r *LinkRepositoryImpl) Create(ctx context.Context, link *model.Link) error {
-	query := `INSERT INTO links (user_id, short_code, original_url, title, expires_at, is_active, domain_id)
-			  VALUES (?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO links (user_id, group_id, short_code, original_url, title, expires_at, is_active, domain_id)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	result, err := r.db.ExecContext(ctx, query,
-		link.UserID, link.ShortCode, link.OriginalURL, link.Title, link.ExpiresAt, link.IsActive, link.DomainID)
+		link.UserID, link.GroupID, link.ShortCode, link.OriginalURL, link.Title, link.ExpiresAt, link.IsActive, link.DomainID)
 	if err != nil {
 		if strings.Contains(err.Error(), "Duplicate entry") {
 			return ErrShortCodeExists
@@ -63,7 +63,7 @@ func (r *LinkRepositoryImpl) Create(ctx context.Context, link *model.Link) error
 
 func (r *LinkRepositoryImpl) GetByID(ctx context.Context, id uint64) (*model.Link, error) {
 	var link model.Link
-	query := `SELECT id, user_id, short_code, original_url, title, expires_at, is_active, domain_id, created_at, updated_at
+	query := `SELECT id, user_id, group_id, short_code, original_url, title, expires_at, is_active, domain_id, created_at, updated_at
 			  FROM links WHERE id = ?`
 	err := r.db.GetContext(ctx, &link, query, id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -81,7 +81,7 @@ func (r *LinkRepositoryImpl) GetByID(ctx context.Context, id uint64) (*model.Lin
 
 func (r *LinkRepositoryImpl) ListByUserID(ctx context.Context, userID uint64, limit, offset int) ([]model.Link, error) {
 	var links []model.Link
-	query := `SELECT id, user_id, short_code, original_url, title, expires_at, is_active, domain_id, created_at, updated_at
+	query := `SELECT id, user_id, group_id, short_code, original_url, title, expires_at, is_active, domain_id, created_at, updated_at
 			  FROM links WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
 	err := r.db.SelectContext(ctx, &links, query, userID, limit, offset)
 	if err != nil {
@@ -172,11 +172,11 @@ func (r *LinkRepositoryImpl) GetByDomainAndShortCode(ctx context.Context, domain
 	var err error
 
 	if domainID == nil {
-		query = `SELECT id, user_id, short_code, original_url, title, expires_at, is_active, domain_id, created_at, updated_at
+		query = `SELECT id, user_id, group_id, short_code, original_url, title, expires_at, is_active, domain_id, created_at, updated_at
 				 FROM links WHERE domain_id IS NULL AND short_code = ?`
 		err = r.db.GetContext(ctx, &link, query, code)
 	} else {
-		query = `SELECT id, user_id, short_code, original_url, title, expires_at, is_active, domain_id, created_at, updated_at
+		query = `SELECT id, user_id, group_id, short_code, original_url, title, expires_at, is_active, domain_id, created_at, updated_at
 				 FROM links WHERE domain_id = ? AND short_code = ?`
 		err = r.db.GetContext(ctx, &link, query, *domainID, code)
 	}

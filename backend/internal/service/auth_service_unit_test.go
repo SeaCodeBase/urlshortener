@@ -18,7 +18,7 @@ func TestAuthServiceImpl_ChangePassword_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockUserRepo := mocks.NewMockUserRepository(ctrl)
-	svc := service.NewAuthService(mockUserRepo, "test-secret")
+	svc := service.NewAuthService(mockUserRepo, mocks.NewMockGroupRepository(ctrl), "test-secret")
 
 	oldPass := "oldpassword123"
 	hash, _ := bcrypt.GenerateFromPassword([]byte(oldPass), bcrypt.DefaultCost)
@@ -46,7 +46,7 @@ func TestAuthServiceImpl_ChangePassword_WrongPassword(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockUserRepo := mocks.NewMockUserRepository(ctrl)
-	svc := service.NewAuthService(mockUserRepo, "test-secret")
+	svc := service.NewAuthService(mockUserRepo, mocks.NewMockGroupRepository(ctrl), "test-secret")
 
 	hash, _ := bcrypt.GenerateFromPassword([]byte("correctpassword"), bcrypt.DefaultCost)
 	user := &model.User{ID: 1, Email: "test@example.com", PasswordHash: string(hash)}
@@ -69,7 +69,7 @@ func TestAuthServiceImpl_Login_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockUserRepo := mocks.NewMockUserRepository(ctrl)
-	svc := service.NewAuthService(mockUserRepo, "test-secret")
+	svc := service.NewAuthService(mockUserRepo, mocks.NewMockGroupRepository(ctrl), "test-secret")
 
 	password := "testpassword123"
 	hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -95,7 +95,7 @@ func TestAuthServiceImpl_Login_InvalidCredentials(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockUserRepo := mocks.NewMockUserRepository(ctrl)
-	svc := service.NewAuthService(mockUserRepo, "test-secret")
+	svc := service.NewAuthService(mockUserRepo, mocks.NewMockGroupRepository(ctrl), "test-secret")
 
 	mockUserRepo.EXPECT().
 		GetByEmail(gomock.Any(), "notfound@example.com").
@@ -116,7 +116,8 @@ func TestAuthServiceImpl_Register_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockUserRepo := mocks.NewMockUserRepository(ctrl)
-	svc := service.NewAuthService(mockUserRepo, "test-secret")
+	mockGroupRepo := mocks.NewMockGroupRepository(ctrl)
+	svc := service.NewAuthService(mockUserRepo, mockGroupRepo, "test-secret")
 
 	mockUserRepo.EXPECT().
 		EmailExists(gomock.Any(), "new@example.com").
@@ -128,6 +129,8 @@ func TestAuthServiceImpl_Register_Success(t *testing.T) {
 			user.ID = 1
 			return nil
 		})
+	mockGroupRepo.EXPECT().Create(gomock.Any(), gomock.Any()).Return(nil)
+	mockUserRepo.EXPECT().UpdateDefaultGroup(gomock.Any(), uint64(1), gomock.Any()).Return(nil)
 
 	input := service.RegisterInput{
 		Email:    "new@example.com",
@@ -145,7 +148,7 @@ func TestAuthServiceImpl_Register_EmailTaken(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockUserRepo := mocks.NewMockUserRepository(ctrl)
-	svc := service.NewAuthService(mockUserRepo, "test-secret")
+	svc := service.NewAuthService(mockUserRepo, mocks.NewMockGroupRepository(ctrl), "test-secret")
 
 	mockUserRepo.EXPECT().
 		EmailExists(gomock.Any(), "taken@example.com").
@@ -159,4 +162,43 @@ func TestAuthServiceImpl_Register_EmailTaken(t *testing.T) {
 	resp, err := svc.Register(context.Background(), input)
 	assert.ErrorIs(t, err, service.ErrEmailTaken)
 	assert.Nil(t, resp)
+}
+
+func TestAuthServiceImpl_Register_CreatesDefaultGroup(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mocks.NewMockUserRepository(ctrl)
+	mockGroupRepo := mocks.NewMockGroupRepository(ctrl)
+	svc := service.NewAuthService(mockUserRepo, mockGroupRepo, "test-secret")
+
+	mockUserRepo.EXPECT().EmailExists(gomock.Any(), "jane.doe@example.com").Return(false, nil)
+	gomock.InOrder(
+		mockUserRepo.EXPECT().
+			Create(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, user *model.User) error {
+				user.ID = 5
+				return nil
+			}),
+		mockGroupRepo.EXPECT().
+			Create(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, g *model.Group) error {
+				assert.Equal(t, uint64(5), g.UserID)
+				assert.Equal(t, "jane.doe", g.Name)
+				g.ID = 77
+				return nil
+			}),
+		mockUserRepo.EXPECT().UpdateDefaultGroup(gomock.Any(), uint64(5), uint64(77)).Return(nil),
+	)
+
+	resp, err := svc.Register(context.Background(), service.RegisterInput{
+		Email:    "jane.doe@example.com",
+		Password: "password123",
+	})
+	assert.NoError(t, err)
+	if assert.NotNil(t, resp) {
+		if assert.NotNil(t, resp.User.DefaultGroupID) {
+			assert.Equal(t, uint64(77), *resp.User.DefaultGroupID)
+		}
+	}
 }

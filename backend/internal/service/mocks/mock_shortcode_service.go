@@ -41,33 +41,33 @@ func (m *MockShortCodeService) EXPECT() *MockShortCodeServiceMockRecorder {
 }
 
 // Generate mocks base method.
-func (m *MockShortCodeService) Generate(ctx context.Context) (string, error) {
+func (m *MockShortCodeService) Generate(ctx context.Context, domainID *uint64) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Generate", ctx)
+	ret := m.ctrl.Call(m, "Generate", ctx, domainID)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Generate indicates an expected call of Generate.
-func (mr *MockShortCodeServiceMockRecorder) Generate(ctx any) *gomock.Call {
+func (mr *MockShortCodeServiceMockRecorder) Generate(ctx, domainID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Generate", reflect.TypeOf((*MockShortCodeService)(nil).Generate), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Generate", reflect.TypeOf((*MockShortCodeService)(nil).Generate), ctx, domainID)
 }
 
 // IsAvailable mocks base method.
-func (m *MockShortCodeService) IsAvailable(ctx context.Context, code string) (bool, error) {
+func (m *MockShortCodeService) IsAvailable(ctx context.Context, domainID *uint64, code string) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsAvailable", ctx, code)
+	ret := m.ctrl.Call(m, "IsAvailable", ctx, domainID, code)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // IsAvailable indicates an expected call of IsAvailable.
-func (mr *MockShortCodeServiceMockRecorder) IsAvailable(ctx, code any) *gomock.Call {
+func (mr *MockShortCodeServiceMockRecorder) IsAvailable(ctx, domainID, code any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAvailable", reflect.TypeOf((*MockShortCodeService)(nil).IsAvailable), ctx, code)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAvailable", reflect.TypeOf((*MockShortCodeService)(nil).IsAvailable), ctx, domainID, code)
 }
 
 // IsValid mocks base method.

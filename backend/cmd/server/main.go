@@ -77,6 +77,7 @@ func main() {
 	clickRepo := repository.NewClickRepository(db)
 	passkeyRepo := repository.NewPasskeyRepository(db)
 	domainRepo := repository.NewDomainRepository(db)
+	groupRepo := repository.NewGroupRepository(db)
 
 	// Start click flusher worker
 	clickFlusher := worker.NewClickFlusher(rdb, clickRepo)
@@ -84,7 +85,7 @@ func main() {
 	defer clickFlusher.Stop()
 
 	// Setup services
-	authService := service.NewAuthService(userRepo, cfg.JWT.Secret)
+	authService := service.NewAuthService(userRepo, groupRepo, cfg.JWT.Secret)
 	shortCodeSvc := service.NewShortCodeService(linkRepo)
 	linkService := service.NewLinkService(linkRepo, shortCodeSvc)
 	statsService := service.NewStatsService(clickRepo, linkRepo)

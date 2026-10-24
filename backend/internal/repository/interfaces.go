@@ -14,6 +14,20 @@ type UserRepository interface {
 	EmailExists(ctx context.Context, email string) (bool, error)
 	UpdatePassword(ctx context.Context, userID uint64, passwordHash string) error
 	UpdateDisplayName(ctx context.Context, userID uint64, displayName string) error
+	UpdateDefaultGroup(ctx context.Context, userID, groupID uint64) error
+	// UpdateAccount sets account_name and/or home_checklist_dismissed; a nil
+	// argument leaves that column unchanged.
+	UpdateAccount(ctx context.Context, userID uint64, accountName *string, dismissed *bool) error
+}
+
+//go:generate mockgen -destination=mocks/mock_group_repo.go -package=mocks . GroupRepository
+type GroupRepository interface {
+	Create(ctx context.Context, group *model.Group) error
+	GetByID(ctx context.Context, id uint64) (*model.Group, error)
+	ListByUserID(ctx context.Context, userID uint64) ([]model.Group, error)
+	// Update writes name and default_domain_id (nil clears it).
+	Update(ctx context.Context, group *model.Group) error
+	CountByUserID(ctx context.Context, userID uint64) (int, error)
 }
 
 //go:generate mockgen -destination=mocks/mock_link_repo.go -package=mocks . LinkRepository

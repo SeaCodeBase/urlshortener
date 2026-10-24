@@ -100,6 +100,34 @@ func (mr *MockUserRepositoryMockRecorder) GetByID(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MockUserRepository)(nil).GetByID), ctx, id)
 }
 
+// UpdateAccount mocks base method.
+func (m *MockUserRepository) UpdateAccount(ctx context.Context, userID uint64, accountName *string, dismissed *bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateAccount", ctx, userID, accountName, dismissed)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateAccount indicates an expected call of UpdateAccount.
+func (mr *MockUserRepositoryMockRecorder) UpdateAccount(ctx, userID, accountName, dismissed any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateAccount", reflect.TypeOf((*MockUserRepository)(nil).UpdateAccount), ctx, userID, accountName, dismissed)
+}
+
+// UpdateDefaultGroup mocks base method.
+func (m *MockUserRepository) UpdateDefaultGroup(ctx context.Context, userID, groupID uint64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateDefaultGroup", ctx, userID, groupID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateDefaultGroup indicates an expected call of UpdateDefaultGroup.
+func (mr *MockUserRepositoryMockRecorder) UpdateDefaultGroup(ctx, userID, groupID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateDefaultGroup", reflect.TypeOf((*MockUserRepository)(nil).UpdateDefaultGroup), ctx, userID, groupID)
+}
+
 // UpdateDisplayName mocks base method.
 func (m *MockUserRepository) UpdateDisplayName(ctx context.Context, userID uint64, displayName string) error {
 	m.ctrl.T.Helper()

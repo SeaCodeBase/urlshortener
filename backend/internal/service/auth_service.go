@@ -24,12 +24,14 @@ var _ AuthService = (*AuthServiceImpl)(nil)
 
 type AuthServiceImpl struct {
 	userRepo  repository.UserRepository
+	groupRepo repository.GroupRepository
 	jwtSecret []byte
 }
 
-func NewAuthService(userRepo repository.UserRepository, jwtSecret string) *AuthServiceImpl {
+func NewAuthService(userRepo repository.UserRepository, groupRepo repository.GroupRepository, jwtSecret string) *AuthServiceImpl {
 	return &AuthServiceImpl{
 		userRepo:  userRepo,
+		groupRepo: groupRepo,
 		jwtSecret: []byte(jwtSecret),
 	}
 }
@@ -87,6 +89,12 @@ func (s *AuthServiceImpl) Register(ctx context.Context, input RegisterInput) (*A
 		)
 		return nil, err
 	}
+
+	group, err := createDefaultGroup(ctx, s.groupRepo, s.userRepo, user)
+	if err != nil {
+		return nil, err
+	}
+	user.DefaultGroupID = &group.ID
 
 	token, err := s.generateToken(user.ID)
 	if err != nil {

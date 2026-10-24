@@ -14,7 +14,7 @@ func TestAuthService_Register(t *testing.T) {
 	defer db.Close()
 
 	userRepo := repository.NewUserRepository(db)
-	authService := service.NewAuthService(userRepo, "test-secret")
+	authService := service.NewAuthService(userRepo, repository.NewGroupRepository(db), "test-secret")
 
 	ctx := context.Background()
 	input := service.RegisterInput{
@@ -41,7 +41,7 @@ func TestAuthService_Login(t *testing.T) {
 	defer db.Close()
 
 	userRepo := repository.NewUserRepository(db)
-	authService := service.NewAuthService(userRepo, "test-secret")
+	authService := service.NewAuthService(userRepo, repository.NewGroupRepository(db), "test-secret")
 
 	ctx := context.Background()
 
@@ -73,7 +73,7 @@ func TestAuthService_Login_InvalidPassword(t *testing.T) {
 	defer db.Close()
 
 	userRepo := repository.NewUserRepository(db)
-	authService := service.NewAuthService(userRepo, "test-secret")
+	authService := service.NewAuthService(userRepo, repository.NewGroupRepository(db), "test-secret")
 
 	ctx := context.Background()
 
@@ -101,7 +101,7 @@ func TestAuthService_ValidateToken(t *testing.T) {
 	defer db.Close()
 
 	userRepo := repository.NewUserRepository(db)
-	authService := service.NewAuthService(userRepo, "test-secret")
+	authService := service.NewAuthService(userRepo, repository.NewGroupRepository(db), "test-secret")
 
 	ctx := context.Background()
 
@@ -128,7 +128,7 @@ func TestAuthService_ChangePassword(t *testing.T) {
 	defer db.Close()
 
 	userRepo := repository.NewUserRepository(db)
-	authService := service.NewAuthService(userRepo, "test-secret")
+	authService := service.NewAuthService(userRepo, repository.NewGroupRepository(db), "test-secret")
 
 	ctx := context.Background()
 
@@ -175,7 +175,7 @@ func TestAuthService_ChangePassword_WrongOldPassword(t *testing.T) {
 	defer db.Close()
 
 	userRepo := repository.NewUserRepository(db)
-	authService := service.NewAuthService(userRepo, "test-secret")
+	authService := service.NewAuthService(userRepo, repository.NewGroupRepository(db), "test-secret")
 
 	ctx := context.Background()
 

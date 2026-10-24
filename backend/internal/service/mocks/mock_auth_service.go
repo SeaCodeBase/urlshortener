@@ -56,6 +56,21 @@ func (mr *MockAuthServiceMockRecorder) ChangePassword(ctx, userID, input any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChangePassword", reflect.TypeOf((*MockAuthService)(nil).ChangePassword), ctx, userID, input)
 }
 
+// GenerateToken mocks base method.
+func (m *MockAuthService) GenerateToken(userID uint64) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GenerateToken", userID)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GenerateToken indicates an expected call of GenerateToken.
+func (mr *MockAuthServiceMockRecorder) GenerateToken(userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateToken", reflect.TypeOf((*MockAuthService)(nil).GenerateToken), userID)
+}
+
 // GetUserByID mocks base method.
 func (m *MockAuthService) GetUserByID(ctx context.Context, userID uint64) (*model.User, error) {
 	m.ctrl.T.Helper()
@@ -99,6 +114,20 @@ func (m *MockAuthService) Register(ctx context.Context, input service.RegisterIn
 func (mr *MockAuthServiceMockRecorder) Register(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Register", reflect.TypeOf((*MockAuthService)(nil).Register), ctx, input)
+}
+
+// UpdateDisplayName mocks base method.
+func (m *MockAuthService) UpdateDisplayName(ctx context.Context, userID uint64, displayName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateDisplayName", ctx, userID, displayName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateDisplayName indicates an expected call of UpdateDisplayName.
+func (mr *MockAuthServiceMockRecorder) UpdateDisplayName(ctx, userID, displayName any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateDisplayName", reflect.TypeOf((*MockAuthService)(nil).UpdateDisplayName), ctx, userID, displayName)
 }
 
 // ValidateToken mocks base method.

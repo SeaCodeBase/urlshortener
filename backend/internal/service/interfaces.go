@@ -18,6 +18,18 @@ type AuthService interface {
 	GenerateToken(userID uint64) (string, error)
 }
 
+//go:generate mockgen -destination=mocks/mock_group_service.go -package=mocks . GroupService
+type GroupService interface {
+	Create(ctx context.Context, userID uint64, name string) (*model.Group, error)
+	List(ctx context.Context, userID uint64) ([]model.Group, error)
+	Get(ctx context.Context, userID, groupID uint64) (*model.Group, error)
+	Update(ctx context.Context, userID, groupID uint64, input UpdateGroupInput) (*model.Group, error)
+	// ResolveActive returns the group a request acts on: the group named by
+	// the X-Group-ID header when given (must be owned by userID), otherwise
+	// the user's default group, created lazily when missing.
+	ResolveActive(ctx context.Context, userID uint64, headerGroupID *uint64) (*model.Group, error)
+}
+
 //go:generate mockgen -destination=mocks/mock_link_service.go -package=mocks . LinkService
 type LinkService interface {
 	Create(ctx context.Context, userID uint64, input CreateLinkInput) (*model.Link, error)

@@ -89,6 +89,15 @@ func Migrate(ctx context.Context, db *sqlx.DB, dir string) ([]string, error) {
 // SplitStatements splits a migration file into statements. A statement ends
 // at a line whose last non-blank character is ';'. Lines that start with
 // "--" are dropped; inline comments are left for the server to ignore.
+//
+// The splitter is line-based and does not parse SQL, so migration files must
+// follow these authoring rules:
+//   - every statement ends with ';' as the last character of a line;
+//   - no trailing "-- comment" after the ';' on the same line (the line would
+//     no longer end in ';' and the statement would merge with the next one);
+//   - no "/* ... */" block comments and no "#" comments;
+//   - no line inside a string literal may end with ';' (it would split the
+//     statement in the middle of the literal).
 func SplitStatements(sql string) []string {
 	var stmts []string
 	var cur []string

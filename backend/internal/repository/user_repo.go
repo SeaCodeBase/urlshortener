@@ -53,7 +53,7 @@ func (r *UserRepositoryImpl) Create(ctx context.Context, user *model.User) error
 
 func (r *UserRepositoryImpl) GetByEmail(ctx context.Context, email string) (*model.User, error) {
 	var user model.User
-	query := `SELECT id, email, display_name, password_hash, created_at, updated_at FROM users WHERE email = ?`
+	query := `SELECT id, email, display_name, password_hash, default_group_id, account_name, home_checklist_dismissed, created_at, updated_at FROM users WHERE email = ?`
 	err := r.db.GetContext(ctx, &user, query, email)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
@@ -70,7 +70,7 @@ func (r *UserRepositoryImpl) GetByEmail(ctx context.Context, email string) (*mod
 
 func (r *UserRepositoryImpl) GetByID(ctx context.Context, id uint64) (*model.User, error) {
 	var user model.User
-	query := `SELECT id, email, display_name, password_hash, created_at, updated_at FROM users WHERE id = ?`
+	query := `SELECT id, email, display_name, password_hash, default_group_id, account_name, home_checklist_dismissed, created_at, updated_at FROM users WHERE id = ?`
 	err := r.db.GetContext(ctx, &user, query, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
@@ -132,6 +132,80 @@ func (r *UserRepositoryImpl) UpdateDisplayName(ctx context.Context, userID uint6
 			zap.Error(err),
 		)
 		return err
+	}
+	return nil
+}
+
+func (r *UserRepositoryImpl) UpdateDefaultGroup(ctx context.Context, userID, groupID uint64) error {
+	query := `UPDATE users SET default_group_id = ?, updated_at = NOW() WHERE id = ?`
+	result, err := r.db.ExecContext(ctx, query, groupID, userID)
+	if err != nil {
+		logger.Error(ctx, "user-repo: failed to update default group",
+			zap.Uint64("user_id", userID),
+			zap.Uint64("group_id", groupID),
+			zap.Error(err),
+		)
+		return err
+	}
+	return r.requireUpdated(ctx, result, userID)
+}
+
+func (r *UserRepositoryImpl) UpdateAccount(ctx context.Context, userID uint64, accountName *string, dismissed *bool) error {
+	sets := []string{}
+	args := []interface{}{}
+	if accountName != nil {
+		sets = append(sets, "account_name = ?")
+		args = append(args, *accountName)
+	}
+	if dismissed != nil {
+		sets = append(sets, "home_checklist_dismissed = ?")
+		args = append(args, *dismissed)
+	}
+	if len(sets) == 0 {
+		return r.requireExists(ctx, userID)
+	}
+	query := `UPDATE users SET ` + strings.Join(sets, ", ") + `, updated_at = NOW() WHERE id = ?`
+	args = append(args, userID)
+	result, err := r.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		logger.Error(ctx, "user-repo: failed to update account",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
+		return err
+	}
+	return r.requireUpdated(ctx, result, userID)
+}
+
+// requireUpdated maps "0 rows affected" to ErrUserNotFound. MariaDB reports
+// 0 affected rows when an UPDATE matches a row but changes nothing (e.g. the
+// same values within the same second), so existence is re-checked first.
+func (r *UserRepositoryImpl) requireUpdated(ctx context.Context, result sql.Result, userID uint64) error {
+	rows, err := result.RowsAffected()
+	if err != nil {
+		logger.Error(ctx, "user-repo: failed to get rows affected",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
+		return err
+	}
+	if rows > 0 {
+		return nil
+	}
+	return r.requireExists(ctx, userID)
+}
+
+func (r *UserRepositoryImpl) requireExists(ctx context.Context, userID uint64) error {
+	var count int
+	if err := r.db.GetContext(ctx, &count, `SELECT COUNT(*) FROM users WHERE id = ?`, userID); err != nil {
+		logger.Error(ctx, "user-repo: failed to check user existence",
+			zap.Uint64("user_id", userID),
+			zap.Error(err),
+		)
+		return err
+	}
+	if count == 0 {
+		return ErrUserNotFound
 	}
 	return nil
 }
