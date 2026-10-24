@@ -13,12 +13,15 @@ export function LinkReadyDialog({
   onOpenChange,
   link,
   showCreateQr = false,
+  qrId,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   link: { id: number; short_url: string } | null
   /** Adds a "Create QR Code" button (the "Also create a QR Code" checkbox was on). */
   showCreateQr?: boolean
+  /** The link's QR Code (created alongside it): shows "View QR Code" instead of "Create QR Code". */
+  qrId?: number
 }) {
   async function copy() {
     if (!link) return
@@ -43,7 +46,14 @@ export function LinkReadyDialog({
               {formatShortUrl(link.short_url)}
             </div>
             <div className="flex flex-wrap justify-end gap-2">
-              {showCreateQr && (
+              {qrId != null ? (
+                <Button variant="outline" asChild>
+                  <Link href={`/dashboard/qr-codes/${qrId}`}>
+                    <QrCode className="size-4" />
+                    View QR Code
+                  </Link>
+                </Button>
+              ) : showCreateQr && (
                 <Button variant="outline" asChild>
                   <Link href={`/dashboard/qr-codes/create?link=${link.id}`}>
                     <QrCode className="size-4" />

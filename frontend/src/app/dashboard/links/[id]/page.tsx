@@ -3,7 +3,7 @@
 import { Suspense, type ReactNode } from 'react'
 import NextLink from 'next/link'
 import { useParams } from 'next/navigation'
-import { CornerDownRight, EyeOff, Plus, QrCode } from 'lucide-react'
+import { CornerDownRight, EyeOff, Palette, Plus, QrCode } from 'lucide-react'
 import { toast } from 'sonner'
 import { CopyButton } from '@/components/common/CopyButton'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -11,11 +11,14 @@ import { DynamicRoutingCard } from '@/components/links/DynamicRoutingCard'
 import { LinkAnalytics } from '@/components/links/LinkAnalytics'
 import { LinkDetailsHeader } from '@/components/links/LinkDetailsHeader'
 import { TagEditor } from '@/components/links/TagEditor'
+import { QrDownloadMenu } from '@/components/qr/QrDownloadMenu'
+import { QrPreview } from '@/components/qr/QrPreview'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatDate, formatDateTime, formatShortUrl } from '@/lib/format'
-import { useBulkLinks, useLink } from '@/lib/hooks'
+import { useBulkLinks, useLink, useQrCode } from '@/lib/hooks'
+import { normalizeQrDesign } from '@/lib/qr/design'
 import type { Link } from '@/types'
 
 const CARD = 'rounded-xl bg-card pt-4 pr-4 pb-6 pl-8'
@@ -121,13 +124,14 @@ function DetailsCard({ link }: { link: Link }) {
   )
 }
 
-function QrCard({ linkId }: { linkId: number }) {
+function QrCard({ link }: { link: Link }) {
+  if (link.qr_code_id) return <LinkQrCode qrId={link.qr_code_id} />
   return (
     <section className={CARD}>
       <div className="mb-4 flex items-center justify-between gap-2">
         <h2 className="text-xl font-semibold text-foreground">QR Code</h2>
         <NextLink
-          href={`/dashboard/qr-codes/create?link=${linkId}`}
+          href={`/dashboard/qr-codes/create?link=${link.id}`}
           className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
         >
           <Plus className="size-4" />
@@ -139,6 +143,36 @@ function QrCard({ linkId }: { linkId: number }) {
         aria-hidden
       >
         <QrCode className="size-10" />
+      </div>
+    </section>
+  )
+}
+
+/** The link's QR Code: preview, Download and Customize. */
+function LinkQrCode({ qrId }: { qrId: number }) {
+  const { data: qr } = useQrCode(qrId)
+  return (
+    <section className={CARD}>
+      <h2 className="mb-4 text-xl font-semibold text-foreground">QR Code</h2>
+      <div className="flex flex-wrap items-center gap-6">
+        {qr ? (
+          <NextLink href={`/dashboard/qr-codes/${qrId}`} aria-label="View QR Code">
+            <QrPreview design={normalizeQrDesign(qr.render_customizations)} data={qr.qr_url} size={120} />
+          </NextLink>
+        ) : (
+          <Skeleton className="size-[120px] rounded-lg" />
+        )}
+        {qr && (
+          <div className="flex flex-wrap gap-2">
+            <QrDownloadMenu qr={qr} label="Download" />
+            <Button variant="outline" asChild>
+              <NextLink href={`/dashboard/qr-codes/${qrId}/customize`}>
+                <Palette className="size-4" />
+                Customize
+              </NextLink>
+            </Button>
+          </div>
+        )}
       </div>
     </section>
   )
@@ -211,7 +245,7 @@ export default function LinkDetailsPage() {
       <div className="grid gap-4 lg:grid-cols-3">
         <DetailsCard link={link} />
         <div className="space-y-4">
-          <QrCard linkId={link.id} />
+          <QrCard link={link} />
           <PagesCard />
         </div>
       </div>

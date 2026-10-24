@@ -12,10 +12,10 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ApiError } from '@/lib/api'
-import { useActiveGroupId, useCreateLink, useDomains, useTags } from '@/lib/hooks'
+import { useActiveGroupId, useCreateLink, useCreateQrCode, useDomains, useTags, useUploadImage } from '@/lib/hooks'
 import { normalizeDestination } from '@/lib/url'
 import { cn } from '@/lib/utils'
-import type { CreateLinkInput, Domain, UTMParams } from '@/types'
+import { DEFAULT_QR_DESIGN, type CreateLinkInput, type Domain, type UTMParams } from '@/types'
 import { ExpirationField, minExpiration } from './ExpirationField'
 import { RoutingRulesEditor, emptyRule, toRoutingRuleInputs, type RoutingRuleDraft } from './RoutingRulesEditor'
 import {
@@ -29,7 +29,8 @@ import { UtmBuilder, cleanUtm, rememberUtm } from './UtmBuilder'
 
 export const QR_COLORS = ['#000000', '#D93025', '#F3A33B', '#1E8E3E', '#61B3DE', '#2A5BD7', '#8C6BE0', '#D64680']
 export const HEX_RE = /^#[0-9A-Fa-f]{6}$/
-const PENDING_QR_KEY = 'pending-qr'
+const LOGO_TYPES = ['image/png', 'image/jpeg']
+const MAX_LOGO_BYTES = 5 * 1024 * 1024
 
 export function Section({ title, children }: { title: string; children: ReactNode }) {
   const [open, setOpen] = useState(true)
@@ -80,6 +81,8 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
   const id = useId()
   const router = useRouter()
   const createLink = useCreateLink()
+  const createQr = useCreateQrCode()
+  const upload = useUploadImage()
   const { data: fetchedDomains } = useDomains()
   const { data: tagSuggestions } = useTags()
   const domains = defaultDomains ?? fetchedDomains ?? []
@@ -99,7 +102,9 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
   const [qrOn, setQrOn] = useState(false)
   const [qrColor, setQrColor] = useState(QR_COLORS[0])
   const [qrHex, setQrHex] = useState(QR_COLORS[0])
+  /** Uploaded logo URL. */
   const [qrLogo, setQrLogo] = useState<string | null>(null)
+  const [qrLogoName, setQrLogoName] = useState<string | null>(null)
 
   const [utmOn, setUtmOn] = useState(false)
   const [utm, setUtm] = useState<UTMParams>({})
@@ -109,9 +114,24 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
   const [routingOn, setRoutingOn] = useState(false)
   const [rules, setRules] = useState<RoutingRuleDraft[]>([emptyRule()])
 
+  async function uploadLogo(file: File | undefined) {
+    if (!file) return
+    if (!LOGO_TYPES.includes(file.type) || file.size > MAX_LOGO_BYTES) {
+      toast.error('Logo must be a PNG or JPEG up to 5 MB')
+      return
+    }
+    try {
+      const res = await upload.mutateAsync(file)
+      setQrLogo(res.url)
+      setQrLogoName(file.name)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't upload the logo")
+    }
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault()
-    if (createLink.isPending) return
+    if (createLink.isPending || createQr.isPending || upload.isPending) return
 
     const destination = normalizeDestination(url)
     if (!destination) {
@@ -158,9 +178,12 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
       if (input.utm) rememberUtm(input.utm)
       if (qrOn) {
         try {
-          sessionStorage.setItem(PENDING_QR_KEY, JSON.stringify({ link_id: link.id, color: qrColor, logo: qrLogo }))
+          await createQr.mutateAsync({
+            link_id: link.id,
+            render_customizations: { ...DEFAULT_QR_DESIGN, color: qrColor, logo: qrLogo },
+          })
         } catch {
-          // The QR choice is a convenience; the link exists regardless.
+          toast.error("Link created, but the QR Code couldn't be created")
         }
       }
       try {
@@ -265,10 +288,18 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
                 <Input
                   id={`${id}-logo`}
                   type="file"
-                  accept="image/png"
-                  onChange={(e) => setQrLogo(e.target.files?.[0]?.name ?? null)}
+                  accept="image/png,image/jpeg"
+                  disabled={upload.isPending}
+                  onChange={(e) => {
+                    void uploadLogo(e.target.files?.[0])
+                    e.target.value = ''
+                  }}
                 />
-                {qrLogo && <p className="text-sm text-muted-foreground">{qrLogo}</p>}
+                {upload.isPending ? (
+                  <p className="text-sm text-muted-foreground">Uploading…</p>
+                ) : (
+                  qrLogoName && <p className="text-sm text-muted-foreground">{qrLogoName}</p>
+                )}
               </div>
               <p className="text-sm text-muted-foreground">More customizations are available after creating.</p>
             </div>
@@ -307,8 +338,8 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
           <Button type="button" variant="secondary" asChild>
             <Link href="/dashboard/links">Cancel</Link>
           </Button>
-          <Button type="submit" disabled={createLink.isPending}>
-            {createLink.isPending ? 'Creating…' : 'Create your link'}
+          <Button type="submit" disabled={createLink.isPending || createQr.isPending || upload.isPending}>
+            {createLink.isPending || createQr.isPending ? 'Creating…' : 'Create your link'}
           </Button>
         </div>
       </div>

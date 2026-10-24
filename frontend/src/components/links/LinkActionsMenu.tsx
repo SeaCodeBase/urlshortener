@@ -97,10 +97,17 @@ export function LinkActionsMenu({
             </NextLink>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
-            <NextLink href={`/dashboard/qr-codes/create?link=${link.id}`}>
-              <QrCode />
-              Create QR Code
-            </NextLink>
+            {link.qr_code_id ? (
+              <NextLink href={`/dashboard/qr-codes/${link.qr_code_id}`}>
+                <QrCode />
+                View QR Code
+              </NextLink>
+            ) : (
+              <NextLink href={`/dashboard/qr-codes/create?link=${link.id}`}>
+                <QrCode />
+                Create QR Code
+              </NextLink>
+            )}
           </DropdownMenuItem>
           <DisabledItem tooltip="Coming soon">
             <FileText />

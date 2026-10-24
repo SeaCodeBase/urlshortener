@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { ShareDialog } from '@/components/links/ShareDialog'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
-import { useLinks, useUpdateMe } from '@/lib/hooks'
+import { useLinks, useQrCodes, useUpdateMe } from '@/lib/hooks'
 import { useAuthStore } from '@/stores/auth'
 
 const CLICK_GOAL = 10
@@ -58,6 +58,7 @@ export function GettingStarted() {
   const user = useAuthStore((s) => s.user)
   const updateMe = useUpdateMe()
   const { data } = useLinks({ limit: 100 })
+  const { data: qrData } = useQrCodes({ limit: 1 })
   const [shareOpen, setShareOpen] = useState(false)
 
   if (!user || user.home_checklist_dismissed) return null
@@ -68,7 +69,8 @@ export function GettingStarted() {
   const clicks = firstPage?.links.reduce((sum, l) => sum + l.total_clicks, 0) ?? 0
   const name = user.display_name?.trim() || user.email.split('@')[0]
 
-  const steps = [total >= 1, clicks >= CLICK_GOAL, false, false]
+  const hasQr = (qrData?.pages[0]?.total ?? 0) > 0
+  const steps = [total >= 1, clicks >= CLICK_GOAL, hasQr, false]
   const pct = Math.round((steps.filter(Boolean).length / steps.length) * 100)
 
   function dismiss() {
@@ -120,9 +122,11 @@ export function GettingStarted() {
           </div>
         </Item>
         <Item done={steps[2]} title="Create a QR Code">
-          <Link href="/dashboard/qr-codes/create" className="font-semibold text-primary hover:underline">
+          {!steps[2] && (
+            <Link href="/dashboard/qr-codes/create" className="font-semibold text-primary hover:underline">
             Create a QR Code
-          </Link>
+            </Link>
+          )}
         </Item>
         <Item done={steps[3]} title="Create a page">
           <Link href="/dashboard/pages/new" className="font-semibold text-primary hover:underline">

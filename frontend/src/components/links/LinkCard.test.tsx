@@ -85,6 +85,13 @@ describe("LinkCard", () => {
     expect(within(menu).getByRole("menuitem", { name: "Delete" })).not.toHaveAttribute("data-disabled");
   });
 
+  it("lists View QR Code linking to the link's QR Code", async () => {
+    wrap(<LinkCard link={{ ...base, qr_code_id: 9 }} selected={false} onSelectedChange={vi.fn()} />);
+    const { menu } = await openMenu();
+    expect(within(menu).getByRole("menuitem", { name: "View QR Code" })).toHaveAttribute("href", "/dashboard/qr-codes/9");
+    expect(within(menu).queryByRole("menuitem", { name: "Create QR Code" })).not.toBeInTheDocument();
+  });
+
   it("offers Show link for hidden links", async () => {
     wrap(<LinkCard link={{ ...base, archived: true }} selected={false} onSelectedChange={vi.fn()} />);
     const { menu } = await openMenu();
