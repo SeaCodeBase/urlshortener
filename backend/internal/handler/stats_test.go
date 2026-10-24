@@ -41,7 +41,7 @@ func TestStatsHandler_GetLinkStats_Params(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.JSONEq(t, `{"from":"","to":"","unit":"","total_all_time":9,"total_range":3,"prev_total_range":0,"change_pct":12.5,
 		"series":[],"prev_series":[],"countries":[],"cities":[],"referrers":[],"devices":[],"browsers":[],
-		"os":[{"key":"iOS","clicks":3,"percentage":100,"prev_clicks":0}]}`, w.Body.String())
+		"os":[{"key":"iOS","clicks":3,"percentage":100,"prev_clicks":0}],"compare_link":null}`, w.Body.String())
 }
 
 func TestStatsHandler_GetLinkStats_Defaults(t *testing.T) {
@@ -82,4 +82,29 @@ func TestStatsHandler_GetLinkStats_NotOwner404(t *testing.T) {
 	w := doJSON(r, http.MethodGet, "/api/links/5/stats", "")
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.JSONEq(t, `{"error":"link not found"}`, w.Body.String())
+}
+
+func TestStatsHandler_CompareLink_SameID400(t *testing.T) {
+	r, _ := newStatsRouter(t)
+	w := doJSON(r, http.MethodGet, "/api/links/5/stats?compare_link=5", "")
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.JSONEq(t, `{"error":"compare_link must differ from the link"}`, w.Body.String())
+
+	for _, q := range []string{"abc", "-1", "0"} {
+		w = doJSON(r, http.MethodGet, "/api/links/5/stats?compare_link="+q, "")
+		assert.Equal(t, http.StatusBadRequest, w.Code, q)
+		assert.JSONEq(t, `{"error":"compare_link must be a link id"}`, w.Body.String(), q)
+	}
+}
+
+func TestStatsHandler_CompareLink_Passed(t *testing.T) {
+	r, svc := newStatsRouter(t)
+	svc.EXPECT().GetLinkStats(gomock.Any(), uint64(1), uint64(5), service.StatsQuery{
+		From: d(2026, 9, 25), To: d(2026, 10, 24), Unit: "day", CompareLinkID: 9,
+	}).Return(&service.LinkStatsV2{CompareLink: &service.CompareLinkStats{ID: 9, Title: "abc",
+		ShortURL: "http://localhost:8080/abc", TotalRange: 2, Series: []service.SeriesPoint{{Date: "2026-10-01", Clicks: 2}}}}, nil)
+	w := doJSON(r, http.MethodGet, "/api/links/5/stats?compare_link=9", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(),
+		`"compare_link":{"id":9,"title":"abc","short_url":"http://localhost:8080/abc","total_range":2,"series":[{"date":"2026-10-01","clicks":2}]}`)
 }

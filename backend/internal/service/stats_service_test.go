@@ -18,15 +18,17 @@ import (
 func utcDate(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
 
 type statsFixture struct {
-	svc    *service.StatsServiceImpl
-	clicks *mocks.MockClickRepository
-	links  *mocks.MockLinkRepository
+	svc     *service.StatsServiceImpl
+	clicks  *mocks.MockClickRepository
+	links   *mocks.MockLinkRepository
+	domains *mocks.MockDomainRepository
 }
 
 func newStatsSvc(t *testing.T) *statsFixture {
 	ctrl := gomock.NewController(t)
-	f := &statsFixture{clicks: mocks.NewMockClickRepository(ctrl), links: mocks.NewMockLinkRepository(ctrl)}
-	f.svc = service.NewStatsService(f.clicks, f.links)
+	f := &statsFixture{clicks: mocks.NewMockClickRepository(ctrl), links: mocks.NewMockLinkRepository(ctrl),
+		domains: mocks.NewMockDomainRepository(ctrl)}
+	f.svc = service.NewStatsService(f.clicks, f.links, f.domains, "http://localhost:8080/")
 	f.svc.SetClock(func() time.Time { return time.Date(2026, 10, 24, 15, 4, 5, 0, time.UTC) })
 	return f
 }
@@ -188,4 +190,66 @@ func TestStatsService_GroupEngagements(t *testing.T) {
 	n, err := f.svc.GroupEngagements(context.Background(), 7, from, to)
 	require.NoError(t, err)
 	assert.Equal(t, int64(42), n)
+}
+
+func TestStatsService_CompareLink_AddsSeries(t *testing.T) {
+	f := newStatsSvc(t)
+	from, to := utcDate(2026, 10, 11), utcDate(2026, 10, 20)
+	domainID := uint64(3)
+
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(&model.Link{ID: 5, UserID: 1, GroupID: 1}, nil)
+	// The comparison link may live in another group of the same user.
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(9)).
+		Return(&model.Link{ID: 9, UserID: 1, GroupID: 2, ShortCode: "abc", DomainID: &domainID}, nil)
+	f.domains.EXPECT().GetByID(gomock.Any(), domainID).Return(&model.Domain{ID: domainID, Domain: "go.example.com"}, nil)
+	f.clicks.EXPECT().TotalAllTime(gomock.Any(), []uint64{5}, "qr").Return(int64(10), nil)
+	f.clicks.EXPECT().CountRange(gomock.Any(), []uint64{5}, from, to, "qr").Return(int64(4), nil)
+	f.clicks.EXPECT().Series(gomock.Any(), []uint64{5}, from, to, "day", "qr").Return([]repository.Bucket{{Date: "2026-10-11", Count: 4}}, nil)
+	f.clicks.EXPECT().Breakdown(gomock.Any(), []uint64{5}, from, to, gomock.Any(), 50, "qr").Return(nil, nil).Times(6)
+	// Same window, unit and source; no previous period for the comparison link.
+	f.clicks.EXPECT().CountRange(gomock.Any(), []uint64{9}, from, to, "qr").Return(int64(7), nil)
+	f.clicks.EXPECT().Series(gomock.Any(), []uint64{9}, from, to, "day", "qr").Return([]repository.Bucket{{Date: "2026-10-12", Count: 7}}, nil)
+
+	got, err := f.svc.GetLinkStats(context.Background(), 1, 5,
+		service.StatsQuery{From: from, To: to, Unit: "day", Source: "qr", CompareLinkID: 9})
+	require.NoError(t, err)
+	assert.Equal(t, &service.CompareLinkStats{
+		ID: 9, Title: "abc", ShortURL: "http://go.example.com/abc", TotalRange: 7,
+		Series: []service.SeriesPoint{{Date: "2026-10-12", Clicks: 7}},
+	}, got.CompareLink)
+	assert.Equal(t, int64(4), got.TotalRange)
+}
+
+func TestStatsService_CompareLink_TitleAndBaseShortURL(t *testing.T) {
+	f := newStatsSvc(t)
+	from, to := utcDate(2026, 10, 11), utcDate(2026, 10, 20)
+	title := "Spring sale"
+
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(&model.Link{ID: 5, UserID: 1}, nil)
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(9)).Return(&model.Link{ID: 9, UserID: 1, ShortCode: "xyz", Title: &title}, nil)
+	f.clicks.EXPECT().TotalAllTime(gomock.Any(), gomock.Any(), "").Return(int64(0), nil)
+	f.clicks.EXPECT().CountRange(gomock.Any(), gomock.Any(), from, to, "").Return(int64(0), nil).Times(2)
+	f.clicks.EXPECT().Series(gomock.Any(), gomock.Any(), from, to, "day", "").Return([]repository.Bucket{}, nil).Times(2)
+	f.clicks.EXPECT().Breakdown(gomock.Any(), []uint64{5}, from, to, gomock.Any(), 50, "").Return(nil, nil).Times(6)
+
+	got, err := f.svc.GetLinkStats(context.Background(), 1, 5, service.StatsQuery{From: from, To: to, CompareLinkID: 9})
+	require.NoError(t, err)
+	require.NotNil(t, got.CompareLink)
+	assert.Equal(t, "Spring sale", got.CompareLink.Title)
+	assert.Equal(t, "http://localhost:8080/xyz", got.CompareLink.ShortURL)
+	assert.Equal(t, []service.SeriesPoint{}, got.CompareLink.Series)
+}
+
+func TestStatsService_CompareLink_OtherOwner404(t *testing.T) {
+	f := newStatsSvc(t)
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(&model.Link{ID: 5, UserID: 1}, nil)
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(9)).Return(&model.Link{ID: 9, UserID: 2}, nil)
+
+	_, err := f.svc.GetLinkStats(context.Background(), 1, 5, service.StatsQuery{CompareLinkID: 9})
+	assert.ErrorIs(t, err, service.ErrNotLinkOwner)
+
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(&model.Link{ID: 5, UserID: 1}, nil)
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(8)).Return(nil, repository.ErrLinkNotFound)
+	_, err = f.svc.GetLinkStats(context.Background(), 1, 5, service.StatsQuery{CompareLinkID: 8})
+	assert.ErrorIs(t, err, repository.ErrLinkNotFound)
 }

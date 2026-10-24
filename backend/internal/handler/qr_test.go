@@ -326,10 +326,11 @@ func TestQRHandler_Stats_ForcesSourceQR(t *testing.T) {
 		func(_ context.Context, _, _ uint64, q service.StatsQuery) (*service.LinkStatsV2, error) {
 			assert.Equal(t, "qr", q.Source)
 			assert.Equal(t, "2026-10-01", q.From.Format("2006-01-02"))
+			assert.Zero(t, q.CompareLinkID, "QR stats ignore compare_link")
 			return &service.LinkStatsV2{From: "2026-10-01", To: "2026-10-10", Unit: "day", TotalRange: 5}, nil
 		})
 
-	w := doJSON(qr.r, http.MethodGet, "/api/qr-codes/9/stats?source=all&from=2026-10-01&to=2026-10-10", "")
+	w := doJSON(qr.r, http.MethodGet, "/api/qr-codes/9/stats?source=all&from=2026-10-01&to=2026-10-10&compare_link=4", "")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.Contains(t, w.Body.String(), `"total_range":5`)
 }

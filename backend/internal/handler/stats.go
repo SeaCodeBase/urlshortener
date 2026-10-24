@@ -72,6 +72,19 @@ func (h *StatsHandler) GetLinkStats(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	// compare_link is read here, not in parseStatsQuery, so QR stats ignore it.
+	if raw := c.Query("compare_link"); raw != "" {
+		id, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || id == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "compare_link must be a link id"})
+			return
+		}
+		if id == linkID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "compare_link must differ from the link"})
+			return
+		}
+		q.CompareLinkID = id
+	}
 
 	stats, err := h.statsService.GetLinkStats(ctx, userID, linkID, q)
 	var qe *service.StatsQueryError

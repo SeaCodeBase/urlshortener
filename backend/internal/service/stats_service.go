@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"strings"
 	"time"
 
+	"github.com/SeaCodeBase/urlshortener/internal/model"
 	"github.com/SeaCodeBase/urlshortener/internal/repository"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
 	"go.uber.org/zap"
@@ -22,16 +24,23 @@ const (
 )
 
 type StatsServiceImpl struct {
-	clickRepo repository.ClickRepository
-	linkRepo  repository.LinkRepository
-	now       func() time.Time
+	clickRepo  repository.ClickRepository
+	linkRepo   repository.LinkRepository
+	domainRepo repository.DomainRepository
+	baseURL    string
+	now        func() time.Time
 }
 
-func NewStatsService(clickRepo repository.ClickRepository, linkRepo repository.LinkRepository) *StatsServiceImpl {
+// NewStatsService builds the service; domainRepo and baseURL (config
+// urls.base_url) build the compare link's short URL like the link handlers do.
+func NewStatsService(clickRepo repository.ClickRepository, linkRepo repository.LinkRepository,
+	domainRepo repository.DomainRepository, baseURL string) *StatsServiceImpl {
 	return &StatsServiceImpl{
-		clickRepo: clickRepo,
-		linkRepo:  linkRepo,
-		now:       time.Now,
+		clickRepo:  clickRepo,
+		linkRepo:   linkRepo,
+		domainRepo: domainRepo,
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		now:        time.Now,
 	}
 }
 
@@ -41,12 +50,15 @@ func (s *StatsServiceImpl) SetClock(now func() time.Time) { s.now = now }
 // StatsQuery selects the window and filters of a stats request. From and To
 // are inclusive UTC dates; zero values default to the last 30 days ending
 // today. Unit is "day" or "hour"; Source is ""/"all", "link", "qr" or "page".
+// CompareLinkID, when non-zero, adds another of the user's links' series over
+// the same window, unit and source.
 type StatsQuery struct {
-	From    time.Time
-	To      time.Time
-	Unit    string
-	Compare bool
-	Source  string
+	From          time.Time
+	To            time.Time
+	Unit          string
+	Compare       bool
+	Source        string
+	CompareLinkID uint64
 }
 
 // StatsQueryError reports an invalid stats query; its message is user-facing.
@@ -157,6 +169,19 @@ type LinkStatsV2 struct {
 	Devices        []KeyStat      `json:"devices"`
 	Browsers       []KeyStat      `json:"browsers"`
 	OS             []KeyStat      `json:"os"`
+	// CompareLink is the "Compare to a link" series; null when not asked for.
+	CompareLink *CompareLinkStats `json:"compare_link"`
+}
+
+// CompareLinkStats is another link's engagements over the same window, unit
+// and source as the main stats (no previous period). Title falls back to the
+// short code.
+type CompareLinkStats struct {
+	ID         uint64        `json:"id"`
+	Title      string        `json:"title"`
+	ShortURL   string        `json:"short_url"`
+	TotalRange int64         `json:"total_range"`
+	Series     []SeriesPoint `json:"series"`
 }
 
 // window is an inclusive UTC date range.
@@ -178,6 +203,20 @@ func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint
 	}
 	if link.UserID != userID {
 		return nil, ErrNotLinkOwner
+	}
+	var compareLink *model.Link
+	if q.CompareLinkID != 0 {
+		compareLink, err = s.linkRepo.GetByID(ctx, q.CompareLinkID)
+		if err != nil {
+			logger.Error(ctx, "stats-service: failed to get compare link",
+				zap.Uint64("link_id", q.CompareLinkID),
+				zap.Error(err),
+			)
+			return nil, err
+		}
+		if compareLink.UserID != userID {
+			return nil, ErrNotLinkOwner
+		}
 	}
 
 	ids := []uint64{linkID}
@@ -240,7 +279,55 @@ func (s *StatsServiceImpl) GetLinkStats(ctx context.Context, userID, linkID uint
 	out.Browsers = bd["browser"].keys()
 	out.OS = bd["os"].keys()
 
+	if compareLink != nil {
+		if out.CompareLink, err = s.compareLinkStats(ctx, compareLink, cur, q); err != nil {
+			return fail("compare link stats", err)
+		}
+	}
+
 	return out, nil
+}
+
+// compareLinkStats loads the comparison link's total and series over the
+// current window with the query's unit and source.
+func (s *StatsServiceImpl) compareLinkStats(ctx context.Context, link *model.Link, cur window, q StatsQuery) (*CompareLinkStats, error) {
+	ids := []uint64{link.ID}
+	total, err := s.clickRepo.CountRange(ctx, ids, cur.from, cur.to, q.Source)
+	if err != nil {
+		return nil, err
+	}
+	series, err := s.clickRepo.Series(ctx, ids, cur.from, cur.to, q.Unit, q.Source)
+	if err != nil {
+		return nil, err
+	}
+	title := link.ShortCode
+	if link.Title != nil && *link.Title != "" {
+		title = *link.Title
+	}
+	return &CompareLinkStats{
+		ID:         link.ID,
+		Title:      title,
+		ShortURL:   ShortURL(s.baseURL, link, s.linkDomainName(ctx, link)),
+		TotalRange: total,
+		Series:     toSeries(series),
+	}, nil
+}
+
+// linkDomainName is the link's custom domain name, "" when it has none or the
+// domain cannot be loaded (the short URL then falls back to the base URL).
+func (s *StatsServiceImpl) linkDomainName(ctx context.Context, link *model.Link) string {
+	if link.DomainID == nil {
+		return ""
+	}
+	d, err := s.domainRepo.GetByID(ctx, *link.DomainID)
+	if err != nil {
+		logger.Warn(ctx, "stats-service: failed to load link domain",
+			zap.Uint64("domain_id", *link.DomainID),
+			zap.Error(err),
+		)
+		return ""
+	}
+	return d.Domain
 }
 
 // GroupEngagements counts clicks from every source on the group's links in

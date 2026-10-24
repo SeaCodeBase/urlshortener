@@ -117,7 +117,7 @@ func main() {
 		Domains:  domainRepo,
 		BaseURL:  cfg.URLs.BaseURL,
 	})
-	statsService := service.NewStatsService(clickRepo, linkRepo)
+	statsService := service.NewStatsService(clickRepo, linkRepo, domainRepo, cfg.URLs.BaseURL)
 	uploadService, err := service.NewUploadService(cfg.Uploads.Path)
 	if err != nil {
 		logger.Fatal(ctx, "upload directory setup failed", zap.Error(err))
