@@ -56,7 +56,7 @@ async function composeRaster(code: Blob, design: QrDesign, size: number, format:
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(await loadImage(code), insets.border, insets.border + insets.top, size, size);
 
-  if (insets.textHeight > 0 && design.frame_text) {
+  if (insets.textHeight > 0) {
     const t = frameTextLayout(insets, size);
     ctx.fillStyle = design.background;
     ctx.font = `600 ${t.fontSize}px ${FONT_FAMILY}`;
@@ -83,7 +83,7 @@ async function composeSvg(code: Blob, design: QrDesign, size: number): Promise<B
     .replace(/^<\?xml[^>]*\?>\s*/, '')
     .replace(/^<svg\b/, `<svg x="${insets.border}" y="${insets.border + insets.top}"`);
   let text = '';
-  if (insets.textHeight > 0 && design.frame_text) {
+  if (insets.textHeight > 0) {
     const t = frameTextLayout(insets, size);
     text =
       `<text x="${t.x}" y="${t.y}" fill="${design.background}" font-family='${FONT_FAMILY}' font-size="${t.fontSize}" ` +

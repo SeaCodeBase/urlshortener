@@ -54,6 +54,7 @@ export function useBulkQrCodes() {
     onSuccess: (_data, input) => {
       qc.invalidateQueries({ queryKey: ['qr-codes'] });
       for (const id of input.ids) qc.invalidateQueries({ queryKey: queryKeys.qrCode(id) });
+      qc.invalidateQueries({ queryKey: ['search'] });
       if (input.action === 'edit_tags') qc.invalidateQueries({ queryKey: ['tags'] });
     },
   });

@@ -55,7 +55,20 @@ describe("frameInsets", () => {
     expect(frameInsets(DEFAULT_QR_DESIGN, 100)).toEqual({ border: 0, textHeight: 0, top: 0, bottom: 0 });
   });
 
+  it("scales the border with the size", () => {
+    expect(frameInsets({ ...DEFAULT_QR_DESIGN, frame: "border" }, 200)).toEqual({ border: 8, textHeight: 0, top: 0, bottom: 0 });
+    expect(frameInsets({ ...DEFAULT_QR_DESIGN, frame: "border" }, 1024)).toEqual({ border: 41, textHeight: 0, top: 0, bottom: 0 });
+  });
+
   it("adds a text band at the bottom for text-bottom", () => {
-    expect(frameInsets({ ...DEFAULT_QR_DESIGN, frame: "text-bottom" }, 100)).toEqual({ border: 8, textHeight: 18, top: 0, bottom: 18 });
+    expect(frameInsets({ ...DEFAULT_QR_DESIGN, frame: "text-bottom" }, 100)).toEqual({ border: 4, textHeight: 18, top: 0, bottom: 18 });
+  });
+
+  it("adds a text band at the top for text-top", () => {
+    expect(frameInsets({ ...DEFAULT_QR_DESIGN, frame: "text-top" }, 200)).toEqual({ border: 8, textHeight: 36, top: 36, bottom: 0 });
+  });
+
+  it("reserves no text band when the frame text is blank", () => {
+    expect(frameInsets({ ...DEFAULT_QR_DESIGN, frame: "text-bottom", frame_text: "  " }, 100)).toEqual({ border: 4, textHeight: 0, top: 0, bottom: 0 });
   });
 });

@@ -18,8 +18,8 @@ const ERROR_CORRECTIONS: readonly QrErrorCorrection[] = ['L', 'M', 'Q', 'H'];
 
 export const MIN_LOGO_SIZE = 0.2;
 export const MAX_LOGO_SIZE = 0.5;
-/** Frame border width in px (preview and export). */
-export const FRAME_BORDER = 8;
+/** Frame border width as a fraction of the code size (preview and export). */
+export const FRAME_BORDER_RATIO = 0.04;
 /** Frame text band height as a fraction of the code size. */
 export const FRAME_TEXT_RATIO = 0.18;
 
@@ -94,7 +94,7 @@ export function toStylingOptions(design: QrDesign, data: string, size: number): 
 export interface FrameInsets {
   /** Border width on every side (0 without a frame). */
   border: number;
-  /** Height of the text band (0 unless the frame has text). */
+  /** Height of the text band (0 unless the frame has non-blank text). */
   textHeight: number;
   /** Extra space above the code inside the border (the text band for text-top). */
   top: number;
@@ -109,9 +109,10 @@ export interface FrameInsets {
  */
 export function frameInsets(design: QrDesign, size: number): FrameInsets {
   if (design.frame === 'none') return { border: 0, textHeight: 0, top: 0, bottom: 0 };
-  const textHeight = design.frame === 'border' ? 0 : Math.round(size * FRAME_TEXT_RATIO);
+  const hasText = design.frame !== 'border' && design.frame_text.trim() !== '';
+  const textHeight = hasText ? Math.round(size * FRAME_TEXT_RATIO) : 0;
   return {
-    border: FRAME_BORDER,
+    border: Math.round(size * FRAME_BORDER_RATIO),
     textHeight,
     top: design.frame === 'text-top' ? textHeight : 0,
     bottom: design.frame === 'text-bottom' ? textHeight : 0,

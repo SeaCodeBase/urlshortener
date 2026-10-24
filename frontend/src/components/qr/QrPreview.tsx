@@ -24,23 +24,28 @@ export function QrPreview({ design, data, size = 200, className }: QrPreviewProp
   useEffect(() => {
     let cancelled = false
     // qr-code-styling needs the DOM at import time: load it on the client only.
-    import('qr-code-styling').then(({ default: Styling }) => {
-      const container = containerRef.current
-      if (cancelled || !container) return
-      if (instanceRef.current) {
-        instanceRef.current.update(options)
-      } else {
-        instanceRef.current = new Styling(options)
-        instanceRef.current.append(container)
-      }
-    })
+    import('qr-code-styling')
+      .then(({ default: Styling }) => {
+        const container = containerRef.current
+        if (cancelled || !container) return
+        if (instanceRef.current) {
+          instanceRef.current.update(options)
+        } else {
+          instanceRef.current = new Styling(options)
+          instanceRef.current.append(container)
+        }
+      })
+      .catch((err: unknown) => {
+        // A failed chunk load leaves the preview blank; surface it instead of an unhandled rejection.
+        console.error('Could not load the QR code renderer', err)
+      })
     return () => {
       cancelled = true
     }
   }, [options])
 
   const text =
-    insets.textHeight > 0 && design.frame_text ? (
+    insets.textHeight > 0 ? (
       <div
         className="flex items-center justify-center overflow-hidden font-semibold whitespace-nowrap"
         style={{ height: insets.textHeight, fontSize: Math.round(insets.textHeight * 0.5), color: design.background }}
