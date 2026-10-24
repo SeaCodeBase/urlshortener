@@ -12,6 +12,7 @@ package mocks
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	model "github.com/SeaCodeBase/urlshortener/internal/model"
 	repository "github.com/SeaCodeBase/urlshortener/internal/repository"
@@ -56,109 +57,49 @@ func (mr *MockClickRepositoryMockRecorder) BatchInsert(ctx, clicks any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BatchInsert", reflect.TypeOf((*MockClickRepository)(nil).BatchInsert), ctx, clicks)
 }
 
-// GetBrowserStats mocks base method.
-func (m *MockClickRepository) GetBrowserStats(ctx context.Context, linkID uint64) ([]repository.BrowserStats, error) {
+// Breakdown mocks base method.
+func (m *MockClickRepository) Breakdown(ctx context.Context, linkIDs []uint64, from, to time.Time, facet string, limit int, source string) ([]repository.Row, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetBrowserStats", ctx, linkID)
-	ret0, _ := ret[0].([]repository.BrowserStats)
+	ret := m.ctrl.Call(m, "Breakdown", ctx, linkIDs, from, to, facet, limit, source)
+	ret0, _ := ret[0].([]repository.Row)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetBrowserStats indicates an expected call of GetBrowserStats.
-func (mr *MockClickRepositoryMockRecorder) GetBrowserStats(ctx, linkID any) *gomock.Call {
+// Breakdown indicates an expected call of Breakdown.
+func (mr *MockClickRepositoryMockRecorder) Breakdown(ctx, linkIDs, from, to, facet, limit, source any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBrowserStats", reflect.TypeOf((*MockClickRepository)(nil).GetBrowserStats), ctx, linkID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Breakdown", reflect.TypeOf((*MockClickRepository)(nil).Breakdown), ctx, linkIDs, from, to, facet, limit, source)
 }
 
-// GetCityStats mocks base method.
-func (m *MockClickRepository) GetCityStats(ctx context.Context, linkID uint64, limit int) ([]repository.CityStats, error) {
+// CountRange mocks base method.
+func (m *MockClickRepository) CountRange(ctx context.Context, linkIDs []uint64, from, to time.Time, source string) (int64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetCityStats", ctx, linkID, limit)
-	ret0, _ := ret[0].([]repository.CityStats)
+	ret := m.ctrl.Call(m, "CountRange", ctx, linkIDs, from, to, source)
+	ret0, _ := ret[0].(int64)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetCityStats indicates an expected call of GetCityStats.
-func (mr *MockClickRepositoryMockRecorder) GetCityStats(ctx, linkID, limit any) *gomock.Call {
+// CountRange indicates an expected call of CountRange.
+func (mr *MockClickRepositoryMockRecorder) CountRange(ctx, linkIDs, from, to, source any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCityStats", reflect.TypeOf((*MockClickRepository)(nil).GetCityStats), ctx, linkID, limit)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountRange", reflect.TypeOf((*MockClickRepository)(nil).CountRange), ctx, linkIDs, from, to, source)
 }
 
-// GetCountryStats mocks base method.
-func (m *MockClickRepository) GetCountryStats(ctx context.Context, linkID uint64, limit int) ([]repository.CountryStats, error) {
+// CountRangeByGroup mocks base method.
+func (m *MockClickRepository) CountRangeByGroup(ctx context.Context, groupID uint64, from, to time.Time, source string) (int64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetCountryStats", ctx, linkID, limit)
-	ret0, _ := ret[0].([]repository.CountryStats)
+	ret := m.ctrl.Call(m, "CountRangeByGroup", ctx, groupID, from, to, source)
+	ret0, _ := ret[0].(int64)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetCountryStats indicates an expected call of GetCountryStats.
-func (mr *MockClickRepositoryMockRecorder) GetCountryStats(ctx, linkID, limit any) *gomock.Call {
+// CountRangeByGroup indicates an expected call of CountRangeByGroup.
+func (mr *MockClickRepositoryMockRecorder) CountRangeByGroup(ctx, groupID, from, to, source any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCountryStats", reflect.TypeOf((*MockClickRepository)(nil).GetCountryStats), ctx, linkID, limit)
-}
-
-// GetDailyStats mocks base method.
-func (m *MockClickRepository) GetDailyStats(ctx context.Context, linkID uint64, days int) ([]repository.DailyClickStats, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetDailyStats", ctx, linkID, days)
-	ret0, _ := ret[0].([]repository.DailyClickStats)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetDailyStats indicates an expected call of GetDailyStats.
-func (mr *MockClickRepositoryMockRecorder) GetDailyStats(ctx, linkID, days any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDailyStats", reflect.TypeOf((*MockClickRepository)(nil).GetDailyStats), ctx, linkID, days)
-}
-
-// GetDeviceStats mocks base method.
-func (m *MockClickRepository) GetDeviceStats(ctx context.Context, linkID uint64) ([]repository.DeviceStats, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetDeviceStats", ctx, linkID)
-	ret0, _ := ret[0].([]repository.DeviceStats)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetDeviceStats indicates an expected call of GetDeviceStats.
-func (mr *MockClickRepositoryMockRecorder) GetDeviceStats(ctx, linkID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDeviceStats", reflect.TypeOf((*MockClickRepository)(nil).GetDeviceStats), ctx, linkID)
-}
-
-// GetStatsByLinkID mocks base method.
-func (m *MockClickRepository) GetStatsByLinkID(ctx context.Context, linkID uint64) (*repository.ClickStats, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetStatsByLinkID", ctx, linkID)
-	ret0, _ := ret[0].(*repository.ClickStats)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetStatsByLinkID indicates an expected call of GetStatsByLinkID.
-func (mr *MockClickRepositoryMockRecorder) GetStatsByLinkID(ctx, linkID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatsByLinkID", reflect.TypeOf((*MockClickRepository)(nil).GetStatsByLinkID), ctx, linkID)
-}
-
-// GetTopReferrers mocks base method.
-func (m *MockClickRepository) GetTopReferrers(ctx context.Context, linkID uint64, limit int) ([]repository.ReferrerStats, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetTopReferrers", ctx, linkID, limit)
-	ret0, _ := ret[0].([]repository.ReferrerStats)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetTopReferrers indicates an expected call of GetTopReferrers.
-func (mr *MockClickRepositoryMockRecorder) GetTopReferrers(ctx, linkID, limit any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTopReferrers", reflect.TypeOf((*MockClickRepository)(nil).GetTopReferrers), ctx, linkID, limit)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountRangeByGroup", reflect.TypeOf((*MockClickRepository)(nil).CountRangeByGroup), ctx, groupID, from, to, source)
 }
 
 // GetTotalByLinkID mocks base method.
@@ -174,4 +115,34 @@ func (m *MockClickRepository) GetTotalByLinkID(ctx context.Context, linkID uint6
 func (mr *MockClickRepositoryMockRecorder) GetTotalByLinkID(ctx, linkID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTotalByLinkID", reflect.TypeOf((*MockClickRepository)(nil).GetTotalByLinkID), ctx, linkID)
+}
+
+// Series mocks base method.
+func (m *MockClickRepository) Series(ctx context.Context, linkIDs []uint64, from, to time.Time, unit, source string) ([]repository.Bucket, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Series", ctx, linkIDs, from, to, unit, source)
+	ret0, _ := ret[0].([]repository.Bucket)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Series indicates an expected call of Series.
+func (mr *MockClickRepositoryMockRecorder) Series(ctx, linkIDs, from, to, unit, source any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Series", reflect.TypeOf((*MockClickRepository)(nil).Series), ctx, linkIDs, from, to, unit, source)
+}
+
+// TotalAllTime mocks base method.
+func (m *MockClickRepository) TotalAllTime(ctx context.Context, linkIDs []uint64, source string) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TotalAllTime", ctx, linkIDs, source)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// TotalAllTime indicates an expected call of TotalAllTime.
+func (mr *MockClickRepositoryMockRecorder) TotalAllTime(ctx, linkIDs, source any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TotalAllTime", reflect.TypeOf((*MockClickRepository)(nil).TotalAllTime), ctx, linkIDs, source)
 }

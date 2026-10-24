@@ -127,6 +127,7 @@ func main() {
 	tokenHandler := handler.NewTokenHandler(tokenService)
 	tagHandler := handler.NewTagHandler(tagService)
 	activityHandler := handler.NewActivityHandler(activityService)
+	analyticsHandler := handler.NewAnalyticsHandler(statsService)
 
 	// Click service
 	clickService := service.NewClickService(rdb)
@@ -209,6 +210,13 @@ func main() {
 		// Tags and activity log (protected, group-scoped)
 		api.GET("/tags", authMiddleware, groupMW, tagHandler.List)
 		api.GET("/activity-log", authMiddleware, groupMW, activityHandler.List)
+
+		// Group-level analytics (protected, group-scoped)
+		analytics := api.Group("/analytics")
+		analytics.Use(authMiddleware, groupMW)
+		{
+			analytics.GET("/today", analyticsHandler.Today)
+		}
 
 		// Domain routes (protected)
 		domains := api.Group("/domains")

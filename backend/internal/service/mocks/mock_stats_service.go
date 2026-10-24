@@ -12,6 +12,7 @@ package mocks
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	service "github.com/SeaCodeBase/urlshortener/internal/service"
 	gomock "go.uber.org/mock/gomock"
@@ -42,16 +43,31 @@ func (m *MockStatsService) EXPECT() *MockStatsServiceMockRecorder {
 }
 
 // GetLinkStats mocks base method.
-func (m *MockStatsService) GetLinkStats(ctx context.Context, userID, linkID uint64) (*service.LinkStatsResponse, error) {
+func (m *MockStatsService) GetLinkStats(ctx context.Context, userID, linkID uint64, q service.StatsQuery) (*service.LinkStatsV2, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetLinkStats", ctx, userID, linkID)
-	ret0, _ := ret[0].(*service.LinkStatsResponse)
+	ret := m.ctrl.Call(m, "GetLinkStats", ctx, userID, linkID, q)
+	ret0, _ := ret[0].(*service.LinkStatsV2)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetLinkStats indicates an expected call of GetLinkStats.
-func (mr *MockStatsServiceMockRecorder) GetLinkStats(ctx, userID, linkID any) *gomock.Call {
+func (mr *MockStatsServiceMockRecorder) GetLinkStats(ctx, userID, linkID, q any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLinkStats", reflect.TypeOf((*MockStatsService)(nil).GetLinkStats), ctx, userID, linkID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLinkStats", reflect.TypeOf((*MockStatsService)(nil).GetLinkStats), ctx, userID, linkID, q)
+}
+
+// GroupEngagements mocks base method.
+func (m *MockStatsService) GroupEngagements(ctx context.Context, groupID uint64, from, to time.Time) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GroupEngagements", ctx, groupID, from, to)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GroupEngagements indicates an expected call of GroupEngagements.
+func (mr *MockStatsServiceMockRecorder) GroupEngagements(ctx, groupID, from, to any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GroupEngagements", reflect.TypeOf((*MockStatsService)(nil).GroupEngagements), ctx, groupID, from, to)
 }

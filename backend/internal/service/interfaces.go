@@ -78,7 +78,13 @@ type LinkService interface {
 
 //go:generate mockgen -destination=mocks/mock_stats_service.go -package=mocks . StatsService
 type StatsService interface {
-	GetLinkStats(ctx context.Context, userID, linkID uint64) (*LinkStatsResponse, error)
+	// GetLinkStats returns the link's analytics for the query window; it
+	// returns a *StatsQueryError for invalid queries and ErrNotLinkOwner when
+	// the user does not own the link.
+	GetLinkStats(ctx context.Context, userID, linkID uint64, q StatsQuery) (*LinkStatsV2, error)
+	// GroupEngagements counts all clicks on the group's links in the
+	// inclusive UTC date range.
+	GroupEngagements(ctx context.Context, groupID uint64, from, to time.Time) (int64, error)
 }
 
 //go:generate mockgen -destination=mocks/mock_shortcode_service.go -package=mocks . ShortCodeService

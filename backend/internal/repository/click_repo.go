@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
@@ -55,103 +57,157 @@ func (r *ClickRepositoryImpl) GetTotalByLinkID(ctx context.Context, linkID uint6
 	return count, nil
 }
 
-func (r *ClickRepositoryImpl) GetStatsByLinkID(ctx context.Context, linkID uint64) (*ClickStats, error) {
-	var stats ClickStats
-	query := `SELECT COUNT(*) as total_clicks, COUNT(DISTINCT ip_hash) as unique_visitors FROM clicks WHERE link_id = ?`
-	err := r.db.GetContext(ctx, &stats, query, linkID)
-	if err != nil {
-		logger.Error(ctx, "click-repo: failed to get click stats",
-			zap.Uint64("link_id", linkID),
-			zap.Error(err),
-		)
-		return nil, err
-	}
-	return &stats, nil
+// utcDay truncates t to midnight of its UTC day.
+func utcDay(t time.Time) time.Time {
+	t = t.UTC()
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 }
 
-func (r *ClickRepositoryImpl) GetDailyStats(ctx context.Context, linkID uint64, days int) ([]DailyClickStats, error) {
-	var stats []DailyClickStats
-	query := `SELECT DATE(clicked_at) as date, COUNT(*) as clicks FROM clicks WHERE link_id = ? AND clicked_at >= DATE_SUB(NOW(), INTERVAL ? DAY) GROUP BY DATE(clicked_at) ORDER BY date DESC`
-	err := r.db.SelectContext(ctx, &stats, query, linkID, days)
-	if err != nil {
-		logger.Error(ctx, "click-repo: failed to get daily stats",
-			zap.Uint64("link_id", linkID),
-			zap.Error(err),
-		)
-		return nil, err
-	}
-	return stats, nil
+// halfOpen turns inclusive UTC dates into the [start, end) instant range.
+func halfOpen(from, to time.Time) (time.Time, time.Time) {
+	return utcDay(from), utcDay(to).AddDate(0, 0, 1)
 }
 
-func (r *ClickRepositoryImpl) GetTopReferrers(ctx context.Context, linkID uint64, limit int) ([]ReferrerStats, error) {
-	var stats []ReferrerStats
-	query := `SELECT COALESCE(NULLIF(referrer, ''), 'Direct') as referrer, COUNT(*) as count FROM clicks WHERE link_id = ? GROUP BY referrer ORDER BY count DESC LIMIT ?`
-	err := r.db.SelectContext(ctx, &stats, query, linkID, limit)
+func sourceFiltered(source string) bool { return source != "" && source != "all" }
+
+// clickWhere builds the shared WHERE clause for link set, range and source.
+func clickWhere(linkIDs []uint64, from, to time.Time, source string) (string, []any, error) {
+	start, end := halfOpen(from, to)
+	where, args, err := sqlx.In(`link_id IN (?) AND clicked_at >= ? AND clicked_at < ?`, linkIDs, start, end)
 	if err != nil {
-		logger.Error(ctx, "click-repo: failed to get top referrers",
-			zap.Uint64("link_id", linkID),
-			zap.Error(err),
-		)
-		return nil, err
+		return "", nil, err
 	}
-	return stats, nil
+	if sourceFiltered(source) {
+		where += ` AND source = ?`
+		args = append(args, source)
+	}
+	return where, args, nil
 }
 
-func (r *ClickRepositoryImpl) GetDeviceStats(ctx context.Context, linkID uint64) ([]DeviceStats, error) {
-	var stats []DeviceStats
-	query := `SELECT device_type, COUNT(*) as count FROM clicks WHERE link_id = ? GROUP BY device_type ORDER BY count DESC`
-	err := r.db.SelectContext(ctx, &stats, query, linkID)
-	if err != nil {
-		logger.Error(ctx, "click-repo: failed to get device stats",
-			zap.Uint64("link_id", linkID),
-			zap.Error(err),
-		)
-		return nil, err
+func (r *ClickRepositoryImpl) CountRange(ctx context.Context, linkIDs []uint64, from, to time.Time, source string) (int64, error) {
+	if len(linkIDs) == 0 {
+		return 0, nil
 	}
-	return stats, nil
+	where, args, err := clickWhere(linkIDs, from, to, source)
+	if err != nil {
+		return 0, err
+	}
+	var n int64
+	if err := r.db.GetContext(ctx, &n, `SELECT COUNT(*) FROM clicks WHERE `+where, args...); err != nil {
+		logger.Error(ctx, "click-repo: failed to count range", zap.Int("links", len(linkIDs)), zap.Error(err))
+		return 0, err
+	}
+	return n, nil
 }
 
-func (r *ClickRepositoryImpl) GetBrowserStats(ctx context.Context, linkID uint64) ([]BrowserStats, error) {
-	var stats []BrowserStats
-	query := `SELECT COALESCE(NULLIF(browser, ''), 'Unknown') as browser, COUNT(*) as count FROM clicks WHERE link_id = ? GROUP BY browser ORDER BY count DESC LIMIT 10`
-	err := r.db.SelectContext(ctx, &stats, query, linkID)
-	if err != nil {
-		logger.Error(ctx, "click-repo: failed to get browser stats",
-			zap.Uint64("link_id", linkID),
-			zap.Error(err),
-		)
-		return nil, err
+func (r *ClickRepositoryImpl) CountRangeByGroup(ctx context.Context, groupID uint64, from, to time.Time, source string) (int64, error) {
+	start, end := halfOpen(from, to)
+	query := `SELECT COUNT(*) FROM clicks c JOIN links l ON l.id = c.link_id
+			  WHERE l.group_id = ? AND c.clicked_at >= ? AND c.clicked_at < ?`
+	args := []any{groupID, start, end}
+	if sourceFiltered(source) {
+		query += ` AND c.source = ?`
+		args = append(args, source)
 	}
-	return stats, nil
+	var n int64
+	if err := r.db.GetContext(ctx, &n, query, args...); err != nil {
+		logger.Error(ctx, "click-repo: failed to count group range", zap.Uint64("group_id", groupID), zap.Error(err))
+		return 0, err
+	}
+	return n, nil
 }
 
-func (r *ClickRepositoryImpl) GetCountryStats(ctx context.Context, linkID uint64, limit int) ([]CountryStats, error) {
-	var stats []CountryStats
-	query := `SELECT COALESCE(NULLIF(country, ''), 'Unknown') as country, COUNT(*) as count
-			  FROM clicks WHERE link_id = ? GROUP BY country ORDER BY count DESC LIMIT ?`
-	err := r.db.SelectContext(ctx, &stats, query, linkID, limit)
-	if err != nil {
-		logger.Error(ctx, "click-repo: failed to get country stats",
-			zap.Uint64("link_id", linkID),
-			zap.Error(err),
-		)
-		return nil, err
+func (r *ClickRepositoryImpl) TotalAllTime(ctx context.Context, linkIDs []uint64, source string) (int64, error) {
+	if len(linkIDs) == 0 {
+		return 0, nil
 	}
-	return stats, nil
+	query, args, err := sqlx.In(`SELECT COUNT(*) FROM clicks WHERE link_id IN (?)`, linkIDs)
+	if err != nil {
+		return 0, err
+	}
+	if sourceFiltered(source) {
+		query += ` AND source = ?`
+		args = append(args, source)
+	}
+	var n int64
+	if err := r.db.GetContext(ctx, &n, query, args...); err != nil {
+		logger.Error(ctx, "click-repo: failed to count total", zap.Int("links", len(linkIDs)), zap.Error(err))
+		return 0, err
+	}
+	return n, nil
 }
 
-func (r *ClickRepositoryImpl) GetCityStats(ctx context.Context, linkID uint64, limit int) ([]CityStats, error) {
-	var stats []CityStats
-	query := `SELECT COALESCE(NULLIF(city, ''), 'Unknown') as city,
-			  COALESCE(NULLIF(country, ''), 'Unknown') as country, COUNT(*) as count
-			  FROM clicks WHERE link_id = ? GROUP BY city, country ORDER BY count DESC LIMIT ?`
-	err := r.db.SelectContext(ctx, &stats, query, linkID, limit)
+// seriesUnits maps a unit to its SQL DATE_FORMAT pattern, Go layout and step.
+var seriesUnits = map[string]struct {
+	sqlFormat string
+	goLayout  string
+	step      time.Duration
+}{
+	"day":  {"%Y-%m-%d", "2006-01-02", 24 * time.Hour},
+	"hour": {"%Y-%m-%dT%H:00", "2006-01-02T15:00", time.Hour},
+}
+
+func (r *ClickRepositoryImpl) Series(ctx context.Context, linkIDs []uint64, from, to time.Time, unit, source string) ([]Bucket, error) {
+	u, ok := seriesUnits[unit]
+	if !ok {
+		return nil, fmt.Errorf("click-repo: unknown series unit %q", unit)
+	}
+	counts := map[string]int64{}
+	if len(linkIDs) > 0 {
+		where, args, err := clickWhere(linkIDs, from, to, source)
+		if err != nil {
+			return nil, err
+		}
+		var rows []Bucket
+		query := `SELECT DATE_FORMAT(clicked_at, '` + u.sqlFormat + `') AS bucket, COUNT(*) AS cnt
+				  FROM clicks WHERE ` + where + ` GROUP BY bucket`
+		if err := r.db.SelectContext(ctx, &rows, query, args...); err != nil {
+			logger.Error(ctx, "click-repo: failed to get series", zap.Int("links", len(linkIDs)), zap.String("unit", unit), zap.Error(err))
+			return nil, err
+		}
+		for _, row := range rows {
+			counts[row.Date] = row.Count
+		}
+	}
+	start, end := halfOpen(from, to)
+	out := []Bucket{}
+	for t := start; t.Before(end); t = t.Add(u.step) {
+		key := t.Format(u.goLayout)
+		out = append(out, Bucket{Date: key, Count: counts[key]})
+	}
+	return out, nil
+}
+
+// breakdownColumns maps a facet to its key and secondary key expressions.
+var breakdownColumns = map[string][2]string{
+	"country":  {`COALESCE(NULLIF(country, ''), 'Unknown')`, `''`},
+	"city":     {`COALESCE(NULLIF(city, ''), 'Unknown')`, `COALESCE(NULLIF(country, ''), 'Unknown')`},
+	"referrer": {`COALESCE(NULLIF(referrer, ''), 'Direct')`, `''`},
+	"device":   {`CASE WHEN device_type IS NULL OR device_type IN ('', 'unknown') THEN 'Unknown' ELSE device_type END`, `''`},
+	"browser":  {`COALESCE(NULLIF(browser, ''), 'Unknown')`, `''`},
+	"os":       {`COALESCE(NULLIF(os, ''), 'Unknown')`, `''`},
+}
+
+func (r *ClickRepositoryImpl) Breakdown(ctx context.Context, linkIDs []uint64, from, to time.Time, facet string, limit int, source string) ([]Row, error) {
+	cols, ok := breakdownColumns[facet]
+	if !ok {
+		return nil, fmt.Errorf("click-repo: unknown breakdown facet %q", facet)
+	}
+	if len(linkIDs) == 0 {
+		return []Row{}, nil
+	}
+	where, args, err := clickWhere(linkIDs, from, to, source)
 	if err != nil {
-		logger.Error(ctx, "click-repo: failed to get city stats",
-			zap.Uint64("link_id", linkID),
-			zap.Error(err),
-		)
 		return nil, err
 	}
-	return stats, nil
+	query := `SELECT ` + cols[0] + ` AS k, ` + cols[1] + ` AS k2, COUNT(*) AS cnt
+			  FROM clicks WHERE ` + where + `
+			  GROUP BY k, k2 ORDER BY cnt DESC, k ASC, k2 ASC LIMIT ?`
+	args = append(args, limit)
+	rows := []Row{}
+	if err := r.db.SelectContext(ctx, &rows, query, args...); err != nil {
+		logger.Error(ctx, "click-repo: failed to get breakdown", zap.String("facet", facet), zap.Error(err))
+		return nil, err
+	}
+	return rows, nil
 }

@@ -137,55 +137,39 @@ type ActivityRepository interface {
 	List(ctx context.Context, groupID uint64, from, to *time.Time, limit, offset int) ([]model.ActivityEntry, int64, error)
 }
 
+// Range methods take UTC dates: from and to are both inclusive days, i.e. the
+// clicks in [from 00:00, to+1d 00:00). source "" or "all" means every source,
+// otherwise clicks.source must equal it. An empty linkIDs set matches nothing.
+//
 //go:generate mockgen -destination=mocks/mock_click_repo.go -package=mocks . ClickRepository
 type ClickRepository interface {
 	BatchInsert(ctx context.Context, clicks []model.Click) error
 	GetTotalByLinkID(ctx context.Context, linkID uint64) (int64, error)
-	GetStatsByLinkID(ctx context.Context, linkID uint64) (*ClickStats, error)
-	GetDailyStats(ctx context.Context, linkID uint64, days int) ([]DailyClickStats, error)
-	GetTopReferrers(ctx context.Context, linkID uint64, limit int) ([]ReferrerStats, error)
-	GetDeviceStats(ctx context.Context, linkID uint64) ([]DeviceStats, error)
-	GetBrowserStats(ctx context.Context, linkID uint64) ([]BrowserStats, error)
-	GetCountryStats(ctx context.Context, linkID uint64, limit int) ([]CountryStats, error)
-	GetCityStats(ctx context.Context, linkID uint64, limit int) ([]CityStats, error)
+	// CountRange counts the links' clicks in the date range.
+	CountRange(ctx context.Context, linkIDs []uint64, from, to time.Time, source string) (int64, error)
+	// CountRangeByGroup counts clicks on every link of the group in the range.
+	CountRangeByGroup(ctx context.Context, groupID uint64, from, to time.Time, source string) (int64, error)
+	// Series returns zero-filled buckets for the range; unit "day" keys are
+	// YYYY-MM-DD, unit "hour" keys are YYYY-MM-DDTHH:00.
+	Series(ctx context.Context, linkIDs []uint64, from, to time.Time, unit, source string) ([]Bucket, error)
+	// Breakdown groups the range's clicks by facet (country, city, referrer,
+	// device, browser, os), most clicks first, at most limit rows. Empty values
+	// are grouped as "Unknown" ("Direct" for referrer); city rows carry the
+	// country code in Key2.
+	Breakdown(ctx context.Context, linkIDs []uint64, from, to time.Time, facet string, limit int, source string) ([]Row, error)
+	// TotalAllTime counts every click of the links.
+	TotalAllTime(ctx context.Context, linkIDs []uint64, source string) (int64, error)
 }
 
-// Stats types used by ClickRepository
-type ClickStats struct {
-	TotalClicks    int64 `db:"total_clicks"`
-	UniqueVisitors int64 `db:"unique_visitors"`
+// Bucket is one point of a click time series.
+type Bucket struct {
+	Date  string `db:"bucket"`
+	Count int64  `db:"cnt"`
 }
 
-type DailyClickStats struct {
-	Date   string `db:"date" json:"date"`
-	Clicks int64  `db:"clicks" json:"clicks"`
-}
-
-type ReferrerStats struct {
-	Referrer string `db:"referrer" json:"referrer"`
-	Count    int64  `db:"count" json:"count"`
-}
-
-type DeviceStats struct {
-	DeviceType string `db:"device_type" json:"device_type"`
-	Count      int64  `db:"count" json:"count"`
-}
-
-type BrowserStats struct {
-	Browser string `db:"browser" json:"browser"`
-	Count   int64  `db:"count" json:"count"`
-}
-
-type CountryStats struct {
-	Country     string  `db:"country" json:"code"`
-	CountryName string  `json:"name"`
-	Count       int64   `db:"count" json:"clicks"`
-	Percentage  float64 `json:"percentage"`
-}
-
-type CityStats struct {
-	City       string  `db:"city" json:"name"`
-	Country    string  `db:"country" json:"country"`
-	Count      int64   `db:"count" json:"clicks"`
-	Percentage float64 `json:"percentage"`
+// Row is one breakdown entry.
+type Row struct {
+	Key   string `db:"k"`
+	Key2  string `db:"k2"`
+	Count int64  `db:"cnt"`
 }
