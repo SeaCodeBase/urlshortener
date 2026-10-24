@@ -11,6 +11,7 @@ import (
 	"github.com/SeaCodeBase/urlshortener/internal/config"
 	"github.com/SeaCodeBase/urlshortener/internal/middleware"
 	"github.com/SeaCodeBase/urlshortener/internal/model"
+	"github.com/SeaCodeBase/urlshortener/internal/qrimage"
 	"github.com/SeaCodeBase/urlshortener/internal/repository"
 	"github.com/SeaCodeBase/urlshortener/internal/service"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
@@ -25,13 +26,17 @@ type QRHandler struct {
 	linkPresenter
 	qrService   service.QRService
 	invalidator LinkCacheInvalidator
+	stats       service.StatsService
+	now         func() time.Time
 }
 
-func NewQRHandler(qrService service.QRService, invalidator LinkCacheInvalidator, domainRepo repository.DomainRepository, cfg *config.Config) *QRHandler {
+func NewQRHandler(qrService service.QRService, invalidator LinkCacheInvalidator, domainRepo repository.DomainRepository, stats service.StatsService, cfg *config.Config) *QRHandler {
 	return &QRHandler{
 		linkPresenter: newLinkPresenter(cfg, domainRepo),
 		qrService:     qrService,
 		invalidator:   invalidator,
+		stats:         stats,
+		now:           time.Now,
 	}
 }
 
@@ -91,13 +96,18 @@ func (h *QRHandler) toQRResponse(d *service.QRCodeDetails, domainMap map[uint64]
 		Tags:                 tags,
 		TotalScans:           d.TotalScans,
 		ShortURL:             shortURL,
-		QRURL:                shortURL + "?r=qr",
+		QRURL:                qrURL(shortURL),
 		OriginalURL:          d.Link.OriginalURL,
 		FaviconURL:           h.faviconURL(&d.Link),
 		ExpiresAt:            d.Link.ExpiresAt,
 		LinkSource:           d.Link.Source,
 		ImageURL:             "/api/qr-codes/" + strconv.FormatUint(d.ID, 10) + "/image",
 	}
+}
+
+// qrURL is the URL encoded in the QR image; ?r=qr marks scans.
+func qrURL(shortURL string) string {
+	return shortURL + "?r=qr"
 }
 
 // toDetailResponse adds the full link (with routing rules) to the response.
@@ -442,4 +452,99 @@ func (h *QRHandler) Export(c *gin.Context) {
 			zap.Error(err),
 		)
 	}
+}
+
+// renderString returns rc[key] if it is a non-empty string, else def.
+func renderString(rc model.JSONMap, key, def string) string {
+	if v, ok := rc[key].(string); ok && v != "" {
+		return v
+	}
+	return def
+}
+
+// Image handles GET /qr-codes/:id/image?format=png|svg&size=: the plain QR
+// code (colors and error correction from render_customizations) for qr_url.
+func (h *QRHandler) Image(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID := middleware.GetUserID(c)
+	id, ok := parseQRID(c)
+	if !ok {
+		return
+	}
+	format := c.DefaultQuery("format", "png")
+	if format != "png" && format != "svg" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "format must be png or svg"})
+		return
+	}
+	size := qrimage.DefaultSize
+	if raw := c.Query("size"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < qrimage.MinSize || n > qrimage.MaxSize {
+			c.JSON(http.StatusBadRequest, gin.H{"error": qrimage.ErrInvalidSize.Error()})
+			return
+		}
+		size = n
+	}
+
+	d, err := h.qrService.Get(ctx, userID, id)
+	if writeQRServiceError(c, "qr-image", err) {
+		return
+	}
+	content := qrURL(h.buildShortURL(&d.Link, h.loadDomainMap(ctx, userID)))
+	opts := qrimage.Options{
+		Size:       size,
+		Foreground: renderString(d.RenderCustomizations, "color", "#000000"),
+		Background: renderString(d.RenderCustomizations, "background", "#FFFFFF"),
+		Level:      renderString(d.RenderCustomizations, "error_correction", "H"),
+	}
+
+	render, contentType := qrimage.PNG, "image/png"
+	if format == "svg" {
+		render, contentType = qrimage.SVG, "image/svg+xml"
+	}
+	data, err := render(content, opts)
+	if err != nil {
+		logger.Error(ctx, "qr-image: failed to render",
+			zap.Uint64("qr_code_id", id),
+			zap.String("format", format),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to render QR code"})
+		return
+	}
+	c.Header("Cache-Control", "private, max-age=300")
+	c.Header("Content-Disposition", `inline; filename="qr-`+strconv.FormatUint(id, 10)+"."+format+`"`)
+	c.Data(http.StatusOK, contentType, data)
+}
+
+// Stats handles GET /qr-codes/:id/stats: the link stats of the QR code's
+// link restricted to QR scans (source is always qr).
+func (h *QRHandler) Stats(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID := middleware.GetUserID(c)
+	id, ok := parseQRID(c)
+	if !ok {
+		return
+	}
+	q, err := parseStatsQuery(c, h.now())
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	q.Source = "qr"
+
+	d, err := h.qrService.Get(ctx, userID, id)
+	if writeQRServiceError(c, "qr-stats", err) {
+		return
+	}
+	stats, err := h.stats.GetLinkStats(ctx, userID, d.Link.ID, q)
+	var qe *service.StatsQueryError
+	if errors.As(err, &qe) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": qe.Msg})
+		return
+	}
+	if writeQRServiceError(c, "qr-stats", err) {
+		return
+	}
+	c.JSON(http.StatusOK, stats)
 }

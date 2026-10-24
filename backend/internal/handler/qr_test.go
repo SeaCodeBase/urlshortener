@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"image/png"
 	"net/http"
 	"strings"
 	"testing"
@@ -21,6 +22,7 @@ import (
 type qrRouter struct {
 	r       *gin.Engine
 	svc     *mocks.MockQRService
+	stats   *mocks.MockStatsService
 	domains *repomocks.MockDomainRepository
 	inv     *fakeInvalidator
 }
@@ -30,6 +32,7 @@ func newQRRouter(t *testing.T) *qrRouter {
 	ctrl := gomock.NewController(t)
 	qr := &qrRouter{
 		svc:     mocks.NewMockQRService(ctrl),
+		stats:   mocks.NewMockStatsService(ctrl),
 		domains: repomocks.NewMockDomainRepository(ctrl),
 		inv:     &fakeInvalidator{},
 	}
@@ -37,7 +40,7 @@ func newQRRouter(t *testing.T) *qrRouter {
 	cfg := &config.Config{}
 	cfg.URLs.BaseURL = "https://sho.rt"
 	cfg.UI.FaviconService = &favicons
-	h := NewQRHandler(qr.svc, qr.inv, qr.domains, cfg)
+	h := NewQRHandler(qr.svc, qr.inv, qr.domains, qr.stats, cfg)
 	qr.r = gin.New()
 	g := qr.r.Group("/api/qr-codes", withGroup)
 	g.GET("", h.List)
@@ -48,6 +51,8 @@ func newQRRouter(t *testing.T) *qrRouter {
 	g.PUT("/:id", h.Update)
 	g.DELETE("/:id", h.Delete)
 	g.PUT("/:id/tags", h.SetTags)
+	g.GET("/:id/image", h.Image)
+	g.GET("/:id/stats", h.Stats)
 	return qr
 }
 
@@ -260,4 +265,85 @@ func TestQRHandler_Export_CSVHeader(t *testing.T) {
 	require.Len(t, lines, 2)
 	assert.Equal(t, "Title,Short Link,Destination URL,Date created,Scans,Status", lines[0])
 	assert.Equal(t, `"Poster, A",https://sho.rt/abc,https://e.com,2026-10-24T12:00:00Z,3,Active`, lines[1])
+}
+
+func TestQRHandler_Image_SVGHeaders(t *testing.T) {
+	qr := newQRRouter(t)
+	qr.expectDomains()
+	link := model.Link{ID: 3, UserID: 1, GroupID: 7, ShortCode: "abc", OriginalURL: "https://example.com",
+		Source: model.LinkSourceQR, CreatedAt: linkCreated, UpdatedAt: linkCreated}
+	d := qrDetails(9, link)
+	d.RenderCustomizations = model.JSONMap{"color": "#2A5BD7", "background": "#FAFAFA", "error_correction": "M"}
+	qr.svc.EXPECT().Get(gomock.Any(), uint64(1), uint64(9)).Return(d, nil)
+
+	w := doJSON(qr.r, http.MethodGet, "/api/qr-codes/9/image?format=svg&size=320", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "image/svg+xml", w.Header().Get("Content-Type"))
+	assert.Equal(t, "private, max-age=300", w.Header().Get("Cache-Control"))
+	assert.Equal(t, `inline; filename="qr-9.svg"`, w.Header().Get("Content-Disposition"))
+	body := w.Body.String()
+	assert.True(t, strings.HasPrefix(body, "<svg"))
+	assert.Contains(t, body, `fill="#2A5BD7"`)
+	assert.Contains(t, body, `fill="#FAFAFA"`)
+	assert.Contains(t, body, `width="320"`)
+}
+
+func TestQRHandler_Image_PNGDefaults(t *testing.T) {
+	qr := newQRRouter(t)
+	qr.expectDomains()
+	link := model.Link{ID: 3, UserID: 1, GroupID: 7, ShortCode: "abc", CreatedAt: linkCreated, UpdatedAt: linkCreated}
+	qr.svc.EXPECT().Get(gomock.Any(), uint64(1), uint64(9)).Return(qrDetails(9, link), nil)
+
+	w := doJSON(qr.r, http.MethodGet, "/api/qr-codes/9/image", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "image/png", w.Header().Get("Content-Type"))
+	assert.Equal(t, `inline; filename="qr-9.png"`, w.Header().Get("Content-Disposition"))
+	img, err := png.Decode(w.Body)
+	require.NoError(t, err)
+	assert.Equal(t, 512, img.Bounds().Dx())
+}
+
+func TestQRHandler_Image_400s(t *testing.T) {
+	qr := newQRRouter(t)
+	for _, q := range []string{"format=gif", "size=abc", "size=10", "size=4096"} {
+		w := doJSON(qr.r, http.MethodGet, "/api/qr-codes/9/image?"+q, "")
+		assert.Equal(t, http.StatusBadRequest, w.Code, q)
+	}
+}
+
+func TestQRHandler_Image_OtherUser404(t *testing.T) {
+	qr := newQRRouter(t)
+	qr.svc.EXPECT().Get(gomock.Any(), uint64(1), uint64(9)).Return(nil, service.ErrQRCodeNotFound)
+	w := doJSON(qr.r, http.MethodGet, "/api/qr-codes/9/image", "")
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestQRHandler_Stats_ForcesSourceQR(t *testing.T) {
+	qr := newQRRouter(t)
+	link := model.Link{ID: 3, UserID: 1, GroupID: 7, ShortCode: "abc", CreatedAt: linkCreated, UpdatedAt: linkCreated}
+	qr.svc.EXPECT().Get(gomock.Any(), uint64(1), uint64(9)).Return(qrDetails(9, link), nil)
+	qr.stats.EXPECT().GetLinkStats(gomock.Any(), uint64(1), uint64(3), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _, _ uint64, q service.StatsQuery) (*service.LinkStatsV2, error) {
+			assert.Equal(t, "qr", q.Source)
+			assert.Equal(t, "2026-10-01", q.From.Format("2006-01-02"))
+			return &service.LinkStatsV2{From: "2026-10-01", To: "2026-10-10", Unit: "day", TotalRange: 5}, nil
+		})
+
+	w := doJSON(qr.r, http.MethodGet, "/api/qr-codes/9/stats?source=all&from=2026-10-01&to=2026-10-10", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), `"total_range":5`)
+}
+
+func TestQRHandler_Stats_OtherUser404(t *testing.T) {
+	qr := newQRRouter(t)
+	qr.svc.EXPECT().Get(gomock.Any(), uint64(1), uint64(9)).Return(nil, service.ErrQRCodeNotFound)
+	w := doJSON(qr.r, http.MethodGet, "/api/qr-codes/9/stats", "")
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.JSONEq(t, `{"error":"QR code not found"}`, w.Body.String())
+}
+
+func TestQRHandler_Stats_BadQuery400(t *testing.T) {
+	qr := newQRRouter(t)
+	w := doJSON(qr.r, http.MethodGet, "/api/qr-codes/9/stats?compare=bogus", "")
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }

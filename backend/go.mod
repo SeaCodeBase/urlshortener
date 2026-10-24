@@ -3,6 +3,7 @@ module github.com/SeaCodeBase/urlshortener
 go 1.25.1
 
 require (
+	github.com/alicebob/miniredis/v2 v2.36.1
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/go-webauthn/webauthn v0.15.0
@@ -11,6 +12,7 @@ require (
 	github.com/mssola/useragent v1.0.0
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/redis/go-redis/v9 v9.17.3
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin v0.65.0
 	go.opentelemetry.io/otel v1.40.0
@@ -25,7 +27,6 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/alicebob/miniredis/v2 v2.36.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect

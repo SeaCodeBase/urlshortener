@@ -118,6 +118,10 @@ func main() {
 		BaseURL:  cfg.URLs.BaseURL,
 	})
 	statsService := service.NewStatsService(clickRepo, linkRepo)
+	uploadService, err := service.NewUploadService(cfg.Uploads.Path)
+	if err != nil {
+		logger.Fatal(ctx, "upload directory setup failed", zap.Error(err))
+	}
 	passkeyService, err := service.NewPasskeyService(passkeyRepo, userRepo, cfg.WebAuthn.RPID, cfg.WebAuthn.RPOrigin, "URL Shortener")
 	if err != nil {
 		logger.Fatal(ctx, "failed to create passkey service", zap.Error(err))
@@ -148,8 +152,9 @@ func main() {
 	// Setup handlers
 	authHandler := handler.NewAuthHandler(authService, passkeyService, cfg)
 	linkHandler := handler.NewLinkHandler(linkService, redirectService, domainRepo, cfg)
-	qrHandler := handler.NewQRHandler(qrService, redirectService, domainRepo, cfg)
+	qrHandler := handler.NewQRHandler(qrService, redirectService, domainRepo, statsService, cfg)
 	statsHandler := handler.NewStatsHandler(statsService)
+	uploadHandler := handler.NewUploadHandler(uploadService)
 	passkeyHandler := handler.NewPasskeyHandler(passkeyService)
 	passkeyVerifyHandler := handler.NewPasskeyVerifyHandler(passkeyService, authService)
 	domainHandler := handler.NewDomainHandler(domainService, activityService)
@@ -189,6 +194,13 @@ func main() {
 	apiRouter.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "server": "api"})
 	})
+
+	// Uploaded images (public, no directory listing)
+	uploads := apiRouter.Group("/uploads", func(c *gin.Context) {
+		c.Header("Cache-Control", "public, max-age=86400")
+		c.Next()
+	})
+	uploads.StaticFS("/", gin.Dir(cfg.Uploads.Path, false))
 
 	// API Routes
 	api := apiRouter.Group("/api")
@@ -249,7 +261,12 @@ func main() {
 			qrCodes.PUT("/:id", qrHandler.Update)
 			qrCodes.DELETE("/:id", qrHandler.Delete)
 			qrCodes.PUT("/:id/tags", qrHandler.SetTags)
+			qrCodes.GET("/:id/image", qrHandler.Image)
+			qrCodes.GET("/:id/stats", qrHandler.Stats)
 		}
+
+		// Image uploads (QR code logos); user-level, no group.
+		api.POST("/uploads", authMiddleware, uploadHandler.Create)
 
 		// API token routes (tokens are user-level; the active group is only
 		// used to file token.create/token.revoke in the activity log)
