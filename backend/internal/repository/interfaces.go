@@ -277,6 +277,30 @@ type PageRepository interface {
 	MaxBlockUpdatedAt(ctx context.Context, pageID uint64) (*time.Time, error)
 }
 
+// PageViewRepository stores page views. Range methods take inclusive UTC
+// dates like ClickRepository.
+//
+//go:generate mockgen -destination=mocks/mock_page_view_repo.go -package=mocks . PageViewRepository
+type PageViewRepository interface {
+	// Insert stores the view and sets ID; a zero ViewedAt becomes now (UTC).
+	Insert(ctx context.Context, v *model.PageView) error
+	// CountAllTime counts every view of the page.
+	CountAllTime(ctx context.Context, pageID uint64) (int64, error)
+	// CountRange counts the page's views in the date range.
+	CountRange(ctx context.Context, pageID uint64, from, to time.Time) (int64, error)
+	// Series returns zero-filled buckets for the range; unit "day" keys are
+	// YYYY-MM-DD, unit "hour" keys are YYYY-MM-DDTHH:00.
+	Series(ctx context.Context, pageID uint64, from, to time.Time, unit string) ([]Bucket, error)
+	// Breakdown groups the range's views by facet (referrer, device, country,
+	// city, browser), most views first, at most limit rows. Empty values are
+	// grouped as "Unknown" ("Direct" for referrer); city rows carry the
+	// country code in Key2.
+	Breakdown(ctx context.Context, pageID uint64, from, to time.Time, facet string, limit int) ([]Row, error)
+	// CountsForPages maps each page id to its all-time view count (non-nil
+	// map); pages without views are absent.
+	CountsForPages(ctx context.Context, pageIDs []uint64) (map[uint64]int64, error)
+}
+
 //go:generate mockgen -destination=mocks/mock_activity_repo.go -package=mocks . ActivityRepository
 type ActivityRepository interface {
 	// Insert stores the entry and fills ID and CreatedAt.

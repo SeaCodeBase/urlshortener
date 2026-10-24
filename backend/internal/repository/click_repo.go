@@ -57,17 +57,6 @@ func (r *ClickRepositoryImpl) GetTotalByLinkID(ctx context.Context, linkID uint6
 	return count, nil
 }
 
-// utcDay truncates t to midnight of its UTC day.
-func utcDay(t time.Time) time.Time {
-	t = t.UTC()
-	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
-}
-
-// halfOpen turns inclusive UTC dates into the [start, end) instant range.
-func halfOpen(from, to time.Time) (time.Time, time.Time) {
-	return utcDay(from), utcDay(to).AddDate(0, 0, 1)
-}
-
 // sourceClause returns the source condition (with a leading AND) for a
 // source filter: "" and "all" match everything, "not_qr" excludes QR scans,
 // any other value matches that source exactly.
@@ -155,16 +144,6 @@ func (r *ClickRepositoryImpl) TotalAllTime(ctx context.Context, linkIDs []uint64
 	return n, nil
 }
 
-// seriesUnits maps a unit to its SQL DATE_FORMAT pattern, Go layout and step.
-var seriesUnits = map[string]struct {
-	sqlFormat string
-	goLayout  string
-	step      time.Duration
-}{
-	"day":  {"%Y-%m-%d", "2006-01-02", 24 * time.Hour},
-	"hour": {"%Y-%m-%dT%H:00", "2006-01-02T15:00", time.Hour},
-}
-
 func (r *ClickRepositoryImpl) Series(ctx context.Context, linkIDs []uint64, from, to time.Time, unit, source string) ([]Bucket, error) {
 	return r.SeriesScope(ctx, linkScope(linkIDs, source), from, to, unit)
 }
@@ -179,33 +158,13 @@ func (r *ClickRepositoryImpl) SeriesScope(ctx context.Context, scope ClickScope,
 		return nil, err
 	}
 	var rows []Bucket
-	query := `SELECT DATE_FORMAT(clicked_at, '` + u.sqlFormat + `') AS bucket, COUNT(*) AS cnt
+	query := `SELECT ` + u.bucketExpr("clicked_at") + ` AS bucket, COUNT(*) AS cnt
 			  FROM clicks WHERE ` + where + ` GROUP BY bucket`
 	if err := r.db.SelectContext(ctx, &rows, query, args...); err != nil {
 		logger.Error(ctx, "click-repo: failed to get series", zap.Uint64("group_id", scope.GroupID), zap.Int("links", len(scope.LinkIDs)), zap.String("unit", unit), zap.Error(err))
 		return nil, err
 	}
-	counts := make(map[string]int64, len(rows))
-	for _, row := range rows {
-		counts[row.Date] = row.Count
-	}
-	start, end := halfOpen(from, to)
-	out := []Bucket{}
-	for t := start; t.Before(end); t = t.Add(u.step) {
-		key := t.Format(u.goLayout)
-		out = append(out, Bucket{Date: key, Count: counts[key]})
-	}
-	return out, nil
-}
-
-// breakdownColumns maps a facet to its key and secondary key expressions.
-var breakdownColumns = map[string][2]string{
-	"country":  {`COALESCE(NULLIF(country, ''), 'Unknown')`, `''`},
-	"city":     {`COALESCE(NULLIF(city, ''), 'Unknown')`, `COALESCE(NULLIF(country, ''), 'Unknown')`},
-	"referrer": {`COALESCE(NULLIF(referrer, ''), 'Direct')`, `''`},
-	"device":   {`CASE WHEN device_type IS NULL OR device_type IN ('', 'unknown') THEN 'Unknown' ELSE device_type END`, `''`},
-	"browser":  {`COALESCE(NULLIF(browser, ''), 'Unknown')`, `''`},
-	"os":       {`COALESCE(NULLIF(os, ''), 'Unknown')`, `''`},
+	return u.zeroFill(rows, from, to), nil
 }
 
 func (r *ClickRepositoryImpl) Breakdown(ctx context.Context, linkIDs []uint64, from, to time.Time, facet string, limit int, source string) ([]Row, error) {
@@ -222,8 +181,7 @@ func (r *ClickRepositoryImpl) BreakdownScope(ctx context.Context, scope ClickSco
 		return nil, err
 	}
 	query := `SELECT ` + cols[0] + ` AS k, ` + cols[1] + ` AS k2, COUNT(*) AS cnt
-			  FROM clicks WHERE ` + where + `
-			  GROUP BY k, k2 ORDER BY cnt DESC, k ASC, k2 ASC LIMIT ?`
+			  FROM clicks WHERE ` + where + breakdownOrder
 	args = append(args, limit)
 	rows := []Row{}
 	if err := r.db.SelectContext(ctx, &rows, query, args...); err != nil {
