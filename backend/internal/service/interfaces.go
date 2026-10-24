@@ -98,6 +98,12 @@ type LinkService interface {
 	// EditBackHalf creates a new link with the back-half, copying the old
 	// one; domainID nil keeps the old domain, 0 means the default domain.
 	EditBackHalf(ctx context.Context, userID, linkID uint64, domainID *uint64, backHalf string) (*model.Link, error)
+	// GetRoutingRules returns the link's routing rules in evaluation order.
+	GetRoutingRules(ctx context.Context, userID, linkID uint64) ([]model.RoutingRule, error)
+	// SetRoutingRules validates (ErrInvalidRoutingRule) and replaces the
+	// link's routing rules; an empty slice clears them. It returns the stored
+	// rules with ids and positions.
+	SetRoutingRules(ctx context.Context, userID, linkID uint64, rules []RoutingRuleInput) ([]model.RoutingRule, error)
 	// Delete removes the link and returns it; ErrLinkNotDeletable when it was
 	// redirected or has a custom back-half.
 	Delete(ctx context.Context, userID, linkID uint64) (*model.Link, error)

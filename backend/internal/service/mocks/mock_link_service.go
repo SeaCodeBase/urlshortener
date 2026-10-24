@@ -147,6 +147,21 @@ func (mr *MockLinkServiceMockRecorder) GetDetails(ctx, userID, linkID any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDetails", reflect.TypeOf((*MockLinkService)(nil).GetDetails), ctx, userID, linkID)
 }
 
+// GetRoutingRules mocks base method.
+func (m *MockLinkService) GetRoutingRules(ctx context.Context, userID, linkID uint64) ([]model.RoutingRule, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRoutingRules", ctx, userID, linkID)
+	ret0, _ := ret[0].([]model.RoutingRule)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetRoutingRules indicates an expected call of GetRoutingRules.
+func (mr *MockLinkServiceMockRecorder) GetRoutingRules(ctx, userID, linkID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRoutingRules", reflect.TypeOf((*MockLinkService)(nil).GetRoutingRules), ctx, userID, linkID)
+}
+
 // List mocks base method.
 func (m *MockLinkService) List(ctx context.Context, groupID uint64, params service.ListLinksParams) (*service.ListLinksResult, error) {
 	m.ctrl.T.Helper()
@@ -175,6 +190,21 @@ func (m *MockLinkService) SetArchived(ctx context.Context, userID, groupID uint6
 func (mr *MockLinkServiceMockRecorder) SetArchived(ctx, userID, groupID, ids, archived any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetArchived", reflect.TypeOf((*MockLinkService)(nil).SetArchived), ctx, userID, groupID, ids, archived)
+}
+
+// SetRoutingRules mocks base method.
+func (m *MockLinkService) SetRoutingRules(ctx context.Context, userID, linkID uint64, rules []service.RoutingRuleInput) ([]model.RoutingRule, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetRoutingRules", ctx, userID, linkID, rules)
+	ret0, _ := ret[0].([]model.RoutingRule)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetRoutingRules indicates an expected call of SetRoutingRules.
+func (mr *MockLinkServiceMockRecorder) SetRoutingRules(ctx, userID, linkID, rules any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetRoutingRules", reflect.TypeOf((*MockLinkService)(nil).SetRoutingRules), ctx, userID, linkID, rules)
 }
 
 // SetTags mocks base method.

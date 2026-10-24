@@ -221,7 +221,7 @@ func writeServiceError(c *gin.Context, op string, err error) bool {
 	case errors.Is(err, service.ErrInvalidUTMParam):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, service.ErrInvalidRoutingRule):
-		c.JSON(http.StatusBadRequest, gin.H{"error": "each routing rule needs a valid http(s) destination URL"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, service.ErrDomainNotFound):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "domain not found"})
 	case errors.Is(err, service.ErrDomainNotVerified):
@@ -593,4 +593,57 @@ func (h *LinkHandler) SetTags(c *gin.Context) {
 		tags = []string{}
 	}
 	c.JSON(http.StatusOK, gin.H{"tags": tags})
+}
+
+type routingRulesRequest struct {
+	RoutingRules []service.RoutingRuleInput `json:"routing_rules"`
+}
+
+func (h *LinkHandler) GetRoutingRules(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID := middleware.GetUserID(c)
+	linkID, ok := parseLinkID(c)
+	if !ok {
+		return
+	}
+	rules, err := h.linkService.GetRoutingRules(ctx, userID, linkID)
+	if writeServiceError(c, "get-routing-rules", err) {
+		return
+	}
+	if rules == nil {
+		rules = []model.RoutingRule{}
+	}
+	c.JSON(http.StatusOK, gin.H{"routing_rules": rules})
+}
+
+// SetRoutingRules replaces the link's routing rules (position = array index)
+// and drops its cached redirect, which embeds the rules.
+func (h *LinkHandler) SetRoutingRules(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID := middleware.GetUserID(c)
+	linkID, ok := parseLinkID(c)
+	if !ok {
+		return
+	}
+	var req routingRulesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	rules, err := h.linkService.SetRoutingRules(ctx, userID, linkID, req.RoutingRules)
+	if writeServiceError(c, "set-routing-rules", err) {
+		return
+	}
+	if link, err := h.linkService.GetByID(ctx, userID, linkID); err == nil {
+		h.invalidate(ctx, h.loadDomainMap(ctx, userID), link)
+	} else {
+		logger.Warn(ctx, "set-routing-rules: failed to load link for cache invalidation",
+			zap.Uint64("link_id", linkID),
+			zap.Error(err),
+		)
+	}
+	if rules == nil {
+		rules = []model.RoutingRule{}
+	}
+	c.JSON(http.StatusOK, gin.H{"routing_rules": rules})
 }

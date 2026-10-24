@@ -220,6 +220,8 @@ func main() {
 			links.DELETE("/:id", linkHandler.Delete)
 			links.POST("/:id/back-half", linkHandler.EditBackHalf)
 			links.PUT("/:id/tags", linkHandler.SetTags)
+			links.GET("/:id/routing-rules", linkHandler.GetRoutingRules)
+			links.PUT("/:id/routing-rules", linkHandler.SetRoutingRules)
 			links.GET("/:id/stats", statsHandler.GetLinkStats)
 		}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -177,27 +178,71 @@ func validDestination(rawURL string) bool {
 	return u.Scheme == "http" || u.Scheme == "https"
 }
 
-func toStringList(v []string) model.StringList {
-	if v == nil {
-		return model.StringList{}
+// maxRoutingRules bounds the routing rules of one link.
+const maxRoutingRules = 20
+
+var (
+	routingDevices = map[string]bool{"mobile": true, "tablet": true, "desktop": true}
+	routingOSes    = map[string]bool{"ios": true, "android": true}
+)
+
+// normalizeRuleValues trims and lowercases (or uppercases) values and checks
+// each with valid; field and pos name the problem in the error.
+func normalizeRuleValues(pos int, field string, values []string, upper bool, valid func(string) bool, want string) (model.StringList, error) {
+	out := make(model.StringList, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if upper {
+			v = strings.ToUpper(v)
+		} else {
+			v = strings.ToLower(v)
+		}
+		if !valid(v) {
+			return nil, fmt.Errorf("%w: rule %d: %s value %q must be %s", ErrInvalidRoutingRule, pos, field, v, want)
+		}
+		out = append(out, v)
 	}
-	return model.StringList(v)
+	return out, nil
 }
 
+func isCountryCode(v string) bool {
+	return len(v) == 2 && v[0] >= 'A' && v[0] <= 'Z' && v[1] >= 'A' && v[1] <= 'Z'
+}
+
+// toRoutingRules validates and normalizes client routing rules (used by
+// Create and SetRoutingRules). Errors wrap ErrInvalidRoutingRule and name the
+// offending rule (1-based) and field.
 func toRoutingRules(in []RoutingRuleInput) ([]model.RoutingRule, error) {
+	if len(in) > maxRoutingRules {
+		return nil, fmt.Errorf("%w: a link can have at most %d routing rules", ErrInvalidRoutingRule, maxRoutingRules)
+	}
 	rules := make([]model.RoutingRule, 0, len(in))
-	for _, r := range in {
+	for i, r := range in {
+		pos := i + 1
 		dest := strings.TrimSpace(r.LongURL)
 		if !validDestination(dest) {
-			return nil, ErrInvalidRoutingRule
+			return nil, fmt.Errorf("%w: rule %d: long_url must be a valid http(s) URL of at most %d characters",
+				ErrInvalidRoutingRule, pos, maxURLLength)
 		}
-		rules = append(rules, model.RoutingRule{
-			LongURL:        dest,
-			DeviceMatch:    toStringList(r.DeviceMatch),
-			OSMatch:        toStringList(r.OSMatch),
-			CountryMatch:   toStringList(r.CountryMatch),
-			CountryExclude: toStringList(r.CountryExclude),
-		})
+		rule := model.RoutingRule{LongURL: dest}
+		var err error
+		if rule.DeviceMatch, err = normalizeRuleValues(pos, "device_match", r.DeviceMatch, false,
+			func(v string) bool { return routingDevices[v] }, "one of mobile, tablet, desktop"); err != nil {
+			return nil, err
+		}
+		if rule.OSMatch, err = normalizeRuleValues(pos, "os_match", r.OSMatch, false,
+			func(v string) bool { return routingOSes[v] }, "one of ios, android"); err != nil {
+			return nil, err
+		}
+		if rule.CountryMatch, err = normalizeRuleValues(pos, "country_match", r.CountryMatch, true,
+			isCountryCode, "a 2-letter ISO country code"); err != nil {
+			return nil, err
+		}
+		if rule.CountryExclude, err = normalizeRuleValues(pos, "country_exclude", r.CountryExclude, true,
+			isCountryCode, "a 2-letter ISO country code"); err != nil {
+			return nil, err
+		}
+		rules = append(rules, rule)
 	}
 	return rules, nil
 }
@@ -596,6 +641,49 @@ func (s *LinkServiceImpl) SetTags(ctx context.Context, userID, linkID uint64, ta
 	s.activity.Log(detached(ctx), userID, link.GroupID, ActionLinkUpdate, EntityLink, link.ID,
 		map[string]any{"short_code": link.ShortCode, "fields": []string{"tags"}})
 	return normalized, nil
+}
+
+// GetRoutingRules returns the link's routing rules in evaluation order.
+func (s *LinkServiceImpl) GetRoutingRules(ctx context.Context, userID, linkID uint64) ([]model.RoutingRule, error) {
+	link, err := s.GetByID(ctx, userID, linkID)
+	if err != nil {
+		return nil, err
+	}
+	rules, err := s.ruleRepo.ListByLinkID(ctx, link.ID)
+	if err != nil {
+		return nil, err
+	}
+	if rules == nil {
+		rules = []model.RoutingRule{}
+	}
+	return rules, nil
+}
+
+// SetRoutingRules validates and replaces the link's routing rules (an empty
+// slice clears them) and returns the stored rules with ids and positions.
+// Callers must invalidate the link's cached redirect.
+func (s *LinkServiceImpl) SetRoutingRules(ctx context.Context, userID, linkID uint64, in []RoutingRuleInput) ([]model.RoutingRule, error) {
+	link, err := s.GetByID(ctx, userID, linkID)
+	if err != nil {
+		return nil, err
+	}
+	rules, err := toRoutingRules(in)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rules {
+		rules[i].LinkID = link.ID
+	}
+	if err := s.ruleRepo.ReplaceForLink(ctx, link.ID, rules); err != nil {
+		logger.Error(ctx, "link-service: failed to replace routing rules",
+			zap.Uint64("link_id", link.ID),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+	s.activity.Log(detached(ctx), userID, link.GroupID, ActionLinkUpdate, EntityLink, link.ID,
+		map[string]any{"short_code": link.ShortCode, "routing_rules": len(rules)})
+	return rules, nil
 }
 
 // groupLinks loads the distinct ids and fails with ErrLinkNotFound unless

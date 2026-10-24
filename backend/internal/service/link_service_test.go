@@ -435,3 +435,100 @@ func TestLinkService_Update_ClearsTitle(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, link.Title)
 }
+
+func TestLinkService_SetRoutingRules_ReplacesAndReturns(t *testing.T) {
+	f := newLinkSvc(t)
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(&model.Link{ID: 3, UserID: 1, GroupID: 7, ShortCode: "abc"}, nil)
+	f.rules.EXPECT().ReplaceForLink(gomock.Any(), uint64(3), []model.RoutingRule{
+		{LinkID: 3, LongURL: "https://ios.example.com", DeviceMatch: model.StringList{"mobile"}, OSMatch: model.StringList{"ios"},
+			CountryMatch: model.StringList{"US", "FR"}, CountryExclude: model.StringList{}},
+		{LinkID: 3, LongURL: "https://eu.example.com", DeviceMatch: model.StringList{}, OSMatch: model.StringList{},
+			CountryMatch: model.StringList{}, CountryExclude: model.StringList{"DE"}},
+	}).DoAndReturn(func(_ context.Context, linkID uint64, rules []model.RoutingRule) error {
+		for i := range rules {
+			rules[i].ID = uint64(100 + i)
+			rules[i].Position = i
+		}
+		return nil
+	})
+	f.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionLinkUpdate, service.EntityLink, uint64(3),
+		map[string]any{"short_code": "abc", "routing_rules": 2})
+
+	rules, err := f.svc.SetRoutingRules(context.Background(), 1, 3, []service.RoutingRuleInput{
+		{LongURL: " https://ios.example.com ", DeviceMatch: []string{"Mobile"}, OSMatch: []string{"iOS"}, CountryMatch: []string{"US", "FR"}},
+		{LongURL: "https://eu.example.com", CountryExclude: []string{"DE"}},
+	})
+	require.NoError(t, err)
+	require.Len(t, rules, 2)
+	assert.Equal(t, uint64(100), rules[0].ID)
+	assert.Equal(t, 0, rules[0].Position)
+	assert.Equal(t, uint64(101), rules[1].ID)
+	assert.Equal(t, 1, rules[1].Position)
+	assert.Equal(t, "https://eu.example.com", rules[1].LongURL)
+}
+
+func TestLinkService_SetRoutingRules_EmptyClears(t *testing.T) {
+	f := newLinkSvc(t)
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(&model.Link{ID: 3, UserID: 1, GroupID: 7, ShortCode: "abc"}, nil)
+	f.rules.EXPECT().ReplaceForLink(gomock.Any(), uint64(3), []model.RoutingRule{}).Return(nil)
+	f.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionLinkUpdate, service.EntityLink, uint64(3),
+		map[string]any{"short_code": "abc", "routing_rules": 0})
+
+	rules, err := f.svc.SetRoutingRules(context.Background(), 1, 3, nil)
+	require.NoError(t, err)
+	assert.NotNil(t, rules)
+	assert.Empty(t, rules)
+}
+
+func TestLinkService_SetRoutingRules_InvalidURL(t *testing.T) {
+	f := newLinkSvc(t)
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(&model.Link{ID: 3, UserID: 1, GroupID: 7}, nil).AnyTimes()
+	_, err := f.svc.SetRoutingRules(context.Background(), 1, 3, []service.RoutingRuleInput{{LongURL: "javascript:alert(1)"}})
+	assert.ErrorIs(t, err, service.ErrInvalidRoutingRule)
+	assert.Contains(t, err.Error(), "rule 1")
+}
+
+func TestLinkService_SetRoutingRules_InvalidMatchValues(t *testing.T) {
+	tooMany := make([]service.RoutingRuleInput, 21)
+	for i := range tooMany {
+		tooMany[i] = service.RoutingRuleInput{LongURL: "https://e.com"}
+	}
+	cases := map[string][]service.RoutingRuleInput{
+		"device_match":    {{LongURL: "https://e.com", DeviceMatch: []string{"phone"}}},
+		"os_match":        {{LongURL: "https://e.com", OSMatch: []string{"windows"}}},
+		"country_match":   {{LongURL: "https://e.com", CountryMatch: []string{"USA"}}},
+		"country_exclude": {{LongURL: "https://e.com", CountryExclude: []string{"1A"}}},
+		"at most 20":      tooMany,
+	}
+	for want, in := range cases {
+		f := newLinkSvc(t)
+		f.links.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(&model.Link{ID: 3, UserID: 1, GroupID: 7}, nil).AnyTimes()
+		_, err := f.svc.SetRoutingRules(context.Background(), 1, 3, in)
+		assert.ErrorIs(t, err, service.ErrInvalidRoutingRule, want)
+		if err != nil {
+			assert.Contains(t, err.Error(), want)
+		}
+	}
+}
+
+func TestLinkService_SetRoutingRules_NotOwner(t *testing.T) {
+	f := newLinkSvc(t)
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(&model.Link{ID: 3, UserID: 2, GroupID: 7}, nil)
+	_, err := f.svc.SetRoutingRules(context.Background(), 1, 3, []service.RoutingRuleInput{{LongURL: "https://e.com"}})
+	assert.ErrorIs(t, err, service.ErrNotLinkOwner)
+}
+
+func TestLinkService_GetRoutingRules(t *testing.T) {
+	f := newLinkSvc(t)
+	f.links.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(&model.Link{ID: 3, UserID: 1, GroupID: 7}, nil)
+	f.rules.EXPECT().ListByLinkID(gomock.Any(), uint64(3)).Return(nil, nil)
+	rules, err := f.svc.GetRoutingRules(context.Background(), 1, 3)
+	require.NoError(t, err)
+	assert.NotNil(t, rules)
+	assert.Empty(t, rules)
+
+	f2 := newLinkSvc(t)
+	f2.links.EXPECT().GetByID(gomock.Any(), uint64(3)).Return(&model.Link{ID: 3, UserID: 2}, nil)
+	_, err = f2.svc.GetRoutingRules(context.Background(), 1, 3)
+	assert.ErrorIs(t, err, service.ErrNotLinkOwner)
+}

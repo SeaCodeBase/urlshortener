@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -57,6 +58,8 @@ func newLinkRouter(t *testing.T, favicons bool) *linkRouter {
 	links.DELETE("/:id", h.Delete)
 	links.POST("/:id/back-half", h.EditBackHalf)
 	links.PUT("/:id/tags", h.SetTags)
+	links.GET("/:id/routing-rules", h.GetRoutingRules)
+	links.PUT("/:id/routing-rules", h.SetRoutingRules)
 	return lr
 }
 
@@ -345,3 +348,51 @@ func TestLinkHandler_Export_FormulaTitleEscaped(t *testing.T) {
 }
 
 func u64p(v uint64) *uint64 { return &v }
+
+func TestLinkHandler_GetRoutingRules(t *testing.T) {
+	lr := newLinkRouter(t, true)
+	lr.svc.EXPECT().GetRoutingRules(gomock.Any(), uint64(1), uint64(3)).Return([]model.RoutingRule{
+		{ID: 9, LinkID: 3, Position: 0, LongURL: "https://m.e.com", DeviceMatch: model.StringList{"mobile"},
+			OSMatch: model.StringList{}, CountryMatch: model.StringList{}, CountryExclude: model.StringList{}},
+	}, nil)
+	w := doJSON(lr.r, http.MethodGet, "/api/links/3/routing-rules", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.JSONEq(t, `{"routing_rules":[{"id":9,"link_id":3,"position":0,"long_url":"https://m.e.com",
+		"device_match":["mobile"],"os_match":[],"country_match":[],"country_exclude":[]}]}`, w.Body.String())
+
+	lr.svc.EXPECT().GetRoutingRules(gomock.Any(), uint64(1), uint64(4)).Return(nil, service.ErrNotLinkOwner)
+	w = doJSON(lr.r, http.MethodGet, "/api/links/4/routing-rules", "")
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestLinkHandler_SetRoutingRules_InvalidatesCache(t *testing.T) {
+	lr := newLinkRouter(t, true)
+	lr.expectDomains(&model.Domain{ID: 5, Domain: "go.brand.test"})
+	lr.svc.EXPECT().SetRoutingRules(gomock.Any(), uint64(1), uint64(3), []service.RoutingRuleInput{
+		{LongURL: "https://m.e.com", DeviceMatch: []string{"mobile"}},
+	}).Return([]model.RoutingRule{
+		{ID: 9, LinkID: 3, Position: 0, LongURL: "https://m.e.com", DeviceMatch: model.StringList{"mobile"},
+			OSMatch: model.StringList{}, CountryMatch: model.StringList{}, CountryExclude: model.StringList{}},
+	}, nil)
+	lr.svc.EXPECT().GetByID(gomock.Any(), uint64(1), uint64(3)).Return(&model.Link{ID: 3, ShortCode: "abc", DomainID: u64p(5)}, nil)
+
+	w := doJSON(lr.r, http.MethodPut, "/api/links/3/routing-rules",
+		`{"routing_rules":[{"long_url":"https://m.e.com","device_match":["mobile"]}]}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.JSONEq(t, `{"routing_rules":[{"id":9,"link_id":3,"position":0,"long_url":"https://m.e.com",
+		"device_match":["mobile"],"os_match":[],"country_match":[],"country_exclude":[]}]}`, w.Body.String())
+	assert.Equal(t, []string{"go.brand.test/abc"}, lr.inv.calls)
+}
+
+func TestLinkHandler_SetRoutingRules_Invalid400(t *testing.T) {
+	lr := newLinkRouter(t, true)
+	lr.svc.EXPECT().SetRoutingRules(gomock.Any(), uint64(1), uint64(3), gomock.Any()).
+		Return(nil, fmt.Errorf("%w: rule 1: device_match value \"phone\" must be one of mobile, tablet, desktop", service.ErrInvalidRoutingRule))
+	w := doJSON(lr.r, http.MethodPut, "/api/links/3/routing-rules", `{"routing_rules":[{"long_url":"https://e.com","device_match":["phone"]}]}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "device_match")
+	assert.Empty(t, lr.inv.calls)
+
+	w = doJSON(lr.r, http.MethodPut, "/api/links/3/routing-rules", `nope`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
