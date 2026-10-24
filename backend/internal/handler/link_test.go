@@ -417,3 +417,22 @@ func TestLinkHandler_SetRoutingRules_Invalid400(t *testing.T) {
 	w = doJSON(lr.r, http.MethodPut, "/api/links/3/routing-rules", `nope`)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+func TestLinkHandler_Get_IncludesQRCodeID(t *testing.T) {
+	lr := newLinkRouter(t, false)
+	lr.expectDomains()
+	lr.svc.EXPECT().GetDetails(gomock.Any(), uint64(1), uint64(30)).Return(&service.LinkDetails{
+		Link:     model.Link{ID: 30, ShortCode: "new", OriginalURL: "https://e.com", Source: "link"},
+		QRCodeID: u64p(9),
+	}, nil)
+	w := doJSON(lr.r, http.MethodGet, "/api/links/30", "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"qr_code_id":9`)
+
+	lr.svc.EXPECT().List(gomock.Any(), uint64(7), gomock.Any()).Return(&service.ListLinksResult{
+		Links: []model.LinkWithStats{{Link: model.Link{ID: 30, ShortCode: "new"}, QRCodeID: u64p(9)}},
+	}, nil)
+	w = doJSON(lr.r, http.MethodGet, "/api/links", "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"qr_code_id":9`)
+}

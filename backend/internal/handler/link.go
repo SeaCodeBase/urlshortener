@@ -6,7 +6,6 @@ import (
 	"encoding/csv"
 	"errors"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -31,8 +30,7 @@ const (
 	// maxBulkTags caps add_tags + remove_tags of one bulk edit_tags request.
 	maxBulkTags = 50
 	// maxPage bounds ?page= so offsets stay cheap (also used by activity).
-	maxPage              = 10_000
-	faviconServiceFormat = "https://www.google.com/s2/favicons?domain=%s&sz=32"
+	maxPage = 10_000
 )
 
 // LinkCacheInvalidator drops cached redirects of a link
@@ -42,20 +40,16 @@ type LinkCacheInvalidator interface {
 }
 
 type LinkHandler struct {
+	linkPresenter
 	linkService service.LinkService
 	invalidator LinkCacheInvalidator
-	domainRepo  repository.DomainRepository
-	baseURL     string
-	favicons    bool
 }
 
 func NewLinkHandler(linkService service.LinkService, invalidator LinkCacheInvalidator, domainRepo repository.DomainRepository, cfg *config.Config) *LinkHandler {
 	return &LinkHandler{
-		linkService: linkService,
-		invalidator: invalidator,
-		domainRepo:  domainRepo,
-		baseURL:     cfg.URLs.BaseURL,
-		favicons:    cfg.UI.FaviconService == nil || *cfg.UI.FaviconService,
+		linkPresenter: newLinkPresenter(cfg, domainRepo),
+		linkService:   linkService,
+		invalidator:   invalidator,
 	}
 }
 
@@ -73,6 +67,7 @@ type linkResponse struct {
 	FaviconURL   string               `json:"favicon_url"`
 	RoutingRules *[]model.RoutingRule `json:"routing_rules,omitempty"`
 	History      *[]historyEntry      `json:"history,omitempty"`
+	QRCodeID     *uint64              `json:"qr_code_id,omitempty"`
 }
 
 type listLinksResponse struct {
@@ -80,45 +75,6 @@ type listLinksResponse struct {
 	Total      int64          `json:"total"`
 	Page       int            `json:"page"`
 	TotalPages int            `json:"total_pages"`
-}
-
-func (h *LinkHandler) buildShortURL(link *model.Link, domainMap map[uint64]string) string {
-	domainName := ""
-	if link.DomainID != nil {
-		domainName = domainMap[*link.DomainID]
-	}
-	return service.ShortURL(h.baseURL, link, domainName)
-}
-
-// faviconURL returns the Google favicon URL for the destination host, or ""
-// when the favicon service is disabled.
-func (h *LinkHandler) faviconURL(link *model.Link) string {
-	if !h.favicons {
-		return ""
-	}
-	host := ""
-	if link.LongURLHost != nil {
-		host = *link.LongURLHost
-	} else if u, err := url.Parse(link.OriginalURL); err == nil {
-		host = strings.ToLower(u.Hostname())
-	}
-	if host == "" {
-		return ""
-	}
-	return strings.Replace(faviconServiceFormat, "%s", url.QueryEscape(host), 1)
-}
-
-func (h *LinkHandler) toResponse(link *model.Link, tags []string, clicks int64, domainMap map[uint64]string) linkResponse {
-	if tags == nil {
-		tags = []string{}
-	}
-	return linkResponse{
-		Link:        link,
-		ShortURL:    h.buildShortURL(link, domainMap),
-		Tags:        tags,
-		TotalClicks: clicks,
-		FaviconURL:  h.faviconURL(link),
-	}
 }
 
 func (h *LinkHandler) toDetailResponse(d *service.LinkDetails, domainMap map[uint64]string) linkResponse {
@@ -134,6 +90,7 @@ func (h *LinkHandler) toDetailResponse(d *service.LinkDetails, domainMap map[uin
 	}
 	resp.RoutingRules = &rules
 	resp.History = &history
+	resp.QRCodeID = d.QRCodeID
 	return resp
 }
 
@@ -142,6 +99,7 @@ func (h *LinkHandler) toListResponse(result *service.ListLinksResult, domainMap 
 	for i := range result.Links {
 		l := &result.Links[i]
 		links[i] = h.toResponse(&l.Link, l.Tags, l.TotalClicks, domainMap)
+		links[i].QRCodeID = l.QRCodeID
 	}
 	return listLinksResponse{
 		Links:      links,
@@ -149,22 +107,6 @@ func (h *LinkHandler) toListResponse(result *service.ListLinksResult, domainMap 
 		Page:       result.Page,
 		TotalPages: result.TotalPages,
 	}
-}
-
-func (h *LinkHandler) loadDomainMap(ctx context.Context, userID uint64) map[uint64]string {
-	domains, err := h.domainRepo.ListByUserID(ctx, userID)
-	if err != nil {
-		logger.Warn(ctx, "link-handler: failed to load domains for user",
-			zap.Uint64("user_id", userID),
-			zap.Error(err),
-		)
-		return make(map[uint64]string)
-	}
-	domainMap := make(map[uint64]string, len(domains))
-	for _, d := range domains {
-		domainMap[d.ID] = d.Domain
-	}
-	return domainMap
 }
 
 // invalidate drops the cached redirects of the links (best effort).
@@ -313,6 +255,41 @@ func parseDay(s string) (*time.Time, error) {
 	return &t, nil
 }
 
+// parseTagsQuery reads tags=a,b / tags[]=a query values.
+func parseTagsQuery(c *gin.Context) []string {
+	var tags []string
+	for _, raw := range append(c.QueryArray("tags"), c.QueryArray("tags[]")...) {
+		for _, t := range strings.Split(raw, ",") {
+			if t = strings.TrimSpace(t); t != "" {
+				tags = append(tags, t)
+			}
+		}
+	}
+	return tags
+}
+
+// parseCreatedRange reads created_after (inclusive) and created_before
+// (inclusive of the whole day, returned as the exclusive next midnight). msg
+// is non-empty on invalid input.
+func parseCreatedRange(c *gin.Context) (after, before *time.Time, msg string) {
+	after, err := parseDay(c.Query("created_after"))
+	if err != nil {
+		return nil, nil, "created_after must be YYYY-MM-DD"
+	}
+	before, err = parseDay(c.Query("created_before"))
+	if err != nil {
+		return nil, nil, "created_before must be YYYY-MM-DD"
+	}
+	if before != nil {
+		next := before.AddDate(0, 0, 1)
+		before = &next
+	}
+	if after != nil && before != nil && !after.Before(*before) {
+		return nil, nil, "created_after must not be after created_before"
+	}
+	return after, before, ""
+}
+
 // parseLinkFilter reads the list/export query parameters (spec §6.2). It
 // writes a 400 response and returns false on invalid input.
 func parseLinkFilter(c *gin.Context) (repository.LinkFilter, bool) {
@@ -323,13 +300,7 @@ func parseLinkFilter(c *gin.Context) (repository.LinkFilter, bool) {
 	}
 
 	f.Query = strings.TrimSpace(c.Query("q"))
-	for _, raw := range append(c.QueryArray("tags"), c.QueryArray("tags[]")...) {
-		for _, t := range strings.Split(raw, ",") {
-			if t = strings.TrimSpace(t); t != "" {
-				f.Tags = append(f.Tags, t)
-			}
-		}
-	}
+	f.Tags = parseTagsQuery(c)
 
 	var ok bool
 	if f.Archived, ok = parseOnOff(c, "archived", "off", true); !ok {
@@ -357,23 +328,10 @@ func parseLinkFilter(c *gin.Context) (repository.LinkFilter, bool) {
 		f.CampaignID = &id
 	}
 
-	after, err := parseDay(c.Query("created_after"))
-	if err != nil {
-		return bad("created_after must be YYYY-MM-DD")
+	var msg string
+	if f.CreatedAfter, f.CreatedBefore, msg = parseCreatedRange(c); msg != "" {
+		return bad(msg)
 	}
-	before, err := parseDay(c.Query("created_before"))
-	if err != nil {
-		return bad("created_before must be YYYY-MM-DD")
-	}
-	if before != nil {
-		// created_before is inclusive of the whole day.
-		next := before.AddDate(0, 0, 1)
-		before = &next
-	}
-	if after != nil && before != nil && !after.Before(*before) {
-		return bad("created_after must not be after created_before")
-	}
-	f.CreatedAfter, f.CreatedBefore = after, before
 
 	switch s := c.Query("sort"); s {
 	case "", "created":
@@ -385,6 +343,26 @@ func parseLinkFilter(c *gin.Context) (repository.LinkFilter, bool) {
 	return f, true
 }
 
+// parsePaging reads ?page= (default 1, at most maxPage) and ?limit= (default
+// 20). It writes a 400 response and returns false on invalid input.
+func parsePaging(c *gin.Context) (page, limit int, ok bool) {
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid page"})
+		return 0, 0, false
+	}
+	if page > maxPage {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page must be at most 10000"})
+		return 0, 0, false
+	}
+	limit, err = strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
+		return 0, 0, false
+	}
+	return page, limit, true
+}
+
 func (h *LinkHandler) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := middleware.GetUserID(c)
@@ -394,18 +372,8 @@ func (h *LinkHandler) List(c *gin.Context) {
 	if !ok {
 		return
 	}
-	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid page"})
-		return
-	}
-	if page > maxPage {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "page must be at most 10000"})
-		return
-	}
-	limit, err := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
+	page, limit, ok := parsePaging(c)
+	if !ok {
 		return
 	}
 

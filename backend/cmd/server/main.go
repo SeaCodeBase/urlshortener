@@ -109,6 +109,14 @@ func main() {
 		Activity:   activityService,
 		BaseURL:    cfg.URLs.BaseURL,
 	})
+	qrService := service.NewQRService(service.QRServiceDeps{
+		QRs:      qrRepo,
+		Links:    linkService,
+		LinkRepo: linkRepo,
+		Activity: activityService,
+		Domains:  domainRepo,
+		BaseURL:  cfg.URLs.BaseURL,
+	})
 	statsService := service.NewStatsService(clickRepo, linkRepo)
 	passkeyService, err := service.NewPasskeyService(passkeyRepo, userRepo, cfg.WebAuthn.RPID, cfg.WebAuthn.RPOrigin, "URL Shortener")
 	if err != nil {
@@ -140,6 +148,7 @@ func main() {
 	// Setup handlers
 	authHandler := handler.NewAuthHandler(authService, passkeyService, cfg)
 	linkHandler := handler.NewLinkHandler(linkService, redirectService, domainRepo, cfg)
+	qrHandler := handler.NewQRHandler(qrService, redirectService, domainRepo, cfg)
 	statsHandler := handler.NewStatsHandler(statsService)
 	passkeyHandler := handler.NewPasskeyHandler(passkeyService)
 	passkeyVerifyHandler := handler.NewPasskeyVerifyHandler(passkeyService, authService)
@@ -226,6 +235,20 @@ func main() {
 			links.GET("/:id/routing-rules", linkHandler.GetRoutingRules)
 			links.PUT("/:id/routing-rules", linkHandler.SetRoutingRules)
 			links.GET("/:id/stats", statsHandler.GetLinkStats)
+		}
+
+		// QR code routes (protected)
+		qrCodes := api.Group("/qr-codes")
+		qrCodes.Use(authMiddleware, groupMW)
+		{
+			qrCodes.GET("", qrHandler.List)
+			qrCodes.POST("", qrHandler.Create)
+			qrCodes.GET("/export", qrHandler.Export)
+			qrCodes.PATCH("/bulk", qrHandler.Bulk)
+			qrCodes.GET("/:id", qrHandler.Get)
+			qrCodes.PUT("/:id", qrHandler.Update)
+			qrCodes.DELETE("/:id", qrHandler.Delete)
+			qrCodes.PUT("/:id/tags", qrHandler.SetTags)
 		}
 
 		// API token routes (tokens are user-level; the active group is only
