@@ -22,6 +22,7 @@ func SetupTestDB(t *testing.T) *sqlx.DB {
 	for _, table := range []string{
 		"qr_tags",
 		"qr_codes",
+		"dashboards",
 		"clicks",
 		"link_tags",
 		"dynamic_routing_rules",

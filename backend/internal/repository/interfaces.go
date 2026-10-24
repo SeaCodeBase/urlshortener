@@ -185,6 +185,34 @@ type QRRepository interface {
 	RemoveTags(ctx context.Context, ids []uint64, tags []string) error
 }
 
+// DashboardRepository stores analytics dashboards. Group scoping is the
+// caller's job: lookups by ID do not check the group.
+//
+//go:generate mockgen -destination=mocks/mock_dashboard_repo.go -package=mocks . DashboardRepository
+type DashboardRepository interface {
+	// Create inserts the dashboard and sets ID and timestamps.
+	Create(ctx context.Context, d *model.Dashboard) error
+	// GetByID returns the dashboard; ErrDashboardNotFound.
+	GetByID(ctx context.Context, id uint64) (*model.Dashboard, error)
+	// ListByGroup returns every dashboard of the group sorted by sort:
+	// "created" (newest first, default), "modified" (most recently updated
+	// first) or "name" (A-Z).
+	ListByGroup(ctx context.Context, groupID uint64, sort string) ([]model.Dashboard, error)
+	// CountByGroup counts the group's dashboards.
+	CountByGroup(ctx context.Context, groupID uint64) (int64, error)
+	// Update writes name, date_range, filter and layout; ErrDashboardNotFound.
+	Update(ctx context.Context, d *model.Dashboard) error
+	// Delete removes the dashboard; ErrDashboardNotFound.
+	Delete(ctx context.Context, id uint64) error
+	// EnsureDefault returns the group's default dashboard, inserting one
+	// named "Default" (created by userID, with layout) when there is none.
+	// Safe under concurrent calls.
+	EnsureDefault(ctx context.Context, groupID, userID uint64, layout model.JSONMap) (*model.Dashboard, error)
+	// CreatorNames maps existing user IDs to their display name (email when
+	// unset); unknown IDs are absent.
+	CreatorNames(ctx context.Context, userIDs []uint64) (map[uint64]string, error)
+}
+
 //go:generate mockgen -destination=mocks/mock_activity_repo.go -package=mocks . ActivityRepository
 type ActivityRepository interface {
 	// Insert stores the entry and fills ID and CreatedAt.
