@@ -12,13 +12,19 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ApiError } from '@/lib/api'
-import { useCreateLink, useDomains, useTags } from '@/lib/hooks'
+import { useActiveGroupId, useCreateLink, useDomains, useTags } from '@/lib/hooks'
 import { normalizeDestination } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import type { CreateLinkInput, Domain, UTMParams } from '@/types'
 import { ExpirationField, minExpiration } from './ExpirationField'
 import { RoutingRulesEditor, emptyRule, toRoutingRuleInputs, type RoutingRuleDraft } from './RoutingRulesEditor'
-import { ShortLinkField, validateBackHalf } from './ShortLinkField'
+import {
+  ShortLinkField,
+  domainIdForCreate,
+  usableDomains,
+  useGroupDefaultDomainId,
+  validateBackHalf,
+} from './ShortLinkField'
 import { UtmBuilder, cleanUtm, rememberUtm } from './UtmBuilder'
 
 export const QR_COLORS = ['#000000', '#D93025', '#F3A33B', '#1E8E3E', '#61B3DE', '#2A5BD7', '#8C6BE0', '#D64680']
@@ -80,7 +86,11 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
 
   const [url, setUrl] = useState('')
   const [urlError, setUrlError] = useState<string | null>(null)
-  const [domainId, setDomainId] = useState<number | null>(null)
+  // undefined until the user picks a domain: the group default is shown.
+  const [domainChoice, setDomainChoice] = useState<number | null | undefined>(undefined)
+  const activeGroupId = useActiveGroupId()
+  const groupDefaultDomainId = useGroupDefaultDomainId(usableDomains(domains, activeGroupId))
+  const domainId = domainChoice === undefined ? groupDefaultDomainId : domainChoice
   const [backHalf, setBackHalf] = useState('')
   const [backHalfError, setBackHalfError] = useState<string | null>(null)
   const [title, setTitle] = useState('')
@@ -130,7 +140,7 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
       original_url: destination,
       custom_code: bh || undefined,
       title: title.trim() || undefined,
-      domain_id: domainId ?? undefined,
+      domain_id: domainIdForCreate(domainChoice, groupDefaultDomainId),
       tags: tags.length ? tags : undefined,
       expires_at: expiresIso,
     }
@@ -195,7 +205,7 @@ export function LinkForm({ mode = 'create', defaultDomains }: { mode?: 'create';
           <ShortLinkField
             domains={domains}
             domainId={domainId}
-            onDomainChange={setDomainId}
+            onDomainChange={setDomainChoice}
             backHalf={backHalf}
             onBackHalfChange={(v) => {
               setBackHalf(v)

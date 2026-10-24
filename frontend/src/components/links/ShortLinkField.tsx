@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useMeta } from '@/lib/hooks'
+import { useActiveGroupId, useGroups, useMeta } from '@/lib/hooks'
 import type { Domain } from '@/types'
 
 export const BACK_HALF_RE = /^[A-Za-z0-9_-]{1,255}$/
@@ -38,9 +38,32 @@ export function useDefaultHost(): string {
   }
 }
 
-/** Verified domains only: the others can't serve links yet. */
-export function verifiedDomains(domains: Domain[] | undefined): Domain[] {
-  return (domains ?? []).filter((d) => d.verification_status === 'ok')
+/**
+ * Domains a link of the active group can use: verified (the others can't
+ * serve links yet) and either shared by all groups or bound to that group.
+ */
+export function usableDomains(domains: Domain[] | undefined, activeGroupId: number | null): Domain[] {
+  return (domains ?? []).filter(
+    (d) => d.verification_status === 'ok' && (d.group_id == null || d.group_id === activeGroupId),
+  )
+}
+
+/** The active group's default domain id when it is among `usable`, else null (the service default). */
+export function useGroupDefaultDomainId(usable: Domain[]): number | null {
+  const activeGroupId = useActiveGroupId()
+  const { data: groups } = useGroups()
+  const id = groups?.find((g) => g.id === activeGroupId)?.default_domain_id ?? null
+  return id != null && usable.some((d) => d.id === id) ? id : null
+}
+
+/**
+ * domain_id for a new link: the user's explicit pick (0 = the service
+ * default), else the preselected group default; undefined lets the backend
+ * apply the group default itself.
+ */
+export function domainIdForCreate(choice: number | null | undefined, groupDefault: number | null): number | undefined {
+  if (choice === undefined) return groupDefault ?? undefined
+  return choice ?? 0
 }
 
 /** "Short link domain" select + " / " + "Back-half (optional)" with a Generate button. */
@@ -64,7 +87,7 @@ export function ShortLinkField({
   const defaultHost = useDefaultHost()
   const [localError, setLocalError] = useState<string | null>(null)
   const shown = error || localError
-  const options = verifiedDomains(domains)
+  const options = usableDomains(domains, useActiveGroupId())
 
   return (
     <div className="space-y-1.5">

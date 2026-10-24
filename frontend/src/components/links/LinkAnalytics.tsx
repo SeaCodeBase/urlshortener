@@ -15,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApiError } from '@/lib/api'
 import { buildStatsCsv } from '@/lib/csv'
+import { downloadBlob } from '@/lib/download'
 import { formatNumber } from '@/lib/format'
 import { useLinkStats } from '@/lib/hooks'
 import type { LinkStatsQuery, LinkStatsV2, StatsSource, StatsUnit } from '@/types'
@@ -100,17 +101,6 @@ function hostOf(url: string): string {
   } catch {
     return url
   }
-}
-
-function downloadCsv(filename: string, csv: string) {
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
 }
 
 function Module({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
@@ -224,7 +214,13 @@ export function LinkAnalytics({ linkId, destination }: { linkId: number; destina
           aria-label="Download CSV"
           className="ml-auto"
           disabled={!stats}
-          onClick={() => stats && downloadCsv(`link-${linkId}-analytics-${range.from}-${range.to}.csv`, buildStatsCsv(stats, { rangeLabel: label }))}
+          onClick={() =>
+            stats &&
+            downloadBlob(
+              `link-${linkId}-analytics-${range.from}-${range.to}.csv`,
+              new Blob([buildStatsCsv(stats, { rangeLabel: label })], { type: 'text/csv;charset=utf-8' }),
+            )
+          }
         >
           <Download className="size-5" />
         </Button>

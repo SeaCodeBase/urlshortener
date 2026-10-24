@@ -6,10 +6,12 @@ import { ArrowRight, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { LinkReadyDialog } from '@/components/links/LinkReadyDialog'
 import {
+  domainIdForCreate,
   generateBackHalf,
+  usableDomains,
   useDefaultHost,
+  useGroupDefaultDomainId,
   validateBackHalf,
-  verifiedDomains,
 } from '@/components/links/ShortLinkField'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -17,7 +19,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ApiError } from '@/lib/api'
-import { useCreateLink, useDomains } from '@/lib/hooks'
+import { useActiveGroupId, useCreateLink, useDomains } from '@/lib/hooks'
 import { normalizeDestination } from '@/lib/url'
 import { cn } from '@/lib/utils'
 
@@ -33,7 +35,11 @@ export function QuickCreate() {
   const defaultHost = useDefaultHost()
   const [mode, setMode] = useState<Mode>('link')
   const [url, setUrl] = useState('')
-  const [domainId, setDomainId] = useState<number | null>(null)
+  const domainOptions = usableDomains(domains, useActiveGroupId())
+  const groupDefaultDomainId = useGroupDefaultDomainId(domainOptions)
+  // undefined until the user picks a domain: the group default is shown.
+  const [domainChoice, setDomainChoice] = useState<number | null | undefined>(undefined)
+  const domainId = domainChoice === undefined ? groupDefaultDomainId : domainChoice
   const [backHalf, setBackHalf] = useState('')
   const [backHalfError, setBackHalfError] = useState<string | null>(null)
   const [alsoQr, setAlsoQr] = useState(false)
@@ -59,7 +65,7 @@ export function QuickCreate() {
       const link = await createLink.mutateAsync({
         original_url: destination,
         custom_code: backHalf.trim() || undefined,
-        domain_id: domainId ?? undefined,
+        domain_id: domainIdForCreate(domainChoice, groupDefaultDomainId),
       })
       setCreated({ id: link.id, short_url: link.short_url, qr: alsoQr })
       setUrl('')
@@ -119,14 +125,14 @@ export function QuickCreate() {
                 <span className="text-sm font-medium text-foreground">Domain:</span>
                 <Select
                   value={domainId == null ? DEFAULT_DOMAIN : String(domainId)}
-                  onValueChange={(v) => setDomainId(v === DEFAULT_DOMAIN ? null : Number(v))}
+                  onValueChange={(v) => setDomainChoice(v === DEFAULT_DOMAIN ? null : Number(v))}
                 >
                   <SelectTrigger aria-label="Domain" className="min-w-40">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={DEFAULT_DOMAIN}>{defaultHost || 'Default domain'}</SelectItem>
-                    {verifiedDomains(domains).map((d) => (
+                    {domainOptions.map((d) => (
                       <SelectItem key={d.id} value={String(d.id)}>
                         {d.domain}
                       </SelectItem>

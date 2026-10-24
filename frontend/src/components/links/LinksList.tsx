@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
+import { downloadBlob } from '@/lib/download'
 import { useBulkLinks, useLinks, useTags } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { BulkTagDialog } from './BulkTagDialog'
@@ -50,17 +51,6 @@ function EndOfList() {
       <span className="h-px flex-1 bg-border" />
     </div>
   )
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
 }
 
 /** The links list: URL-driven filters, infinite scroll, selection and bulk actions (spec §5.2). */
@@ -139,7 +129,7 @@ export function LinksList() {
   async function runExport() {
     setExporting(true)
     try {
-      downloadBlob(await api.exportLinks(apiParams), 'links.csv')
+      downloadBlob('links.csv', await api.exportLinks(apiParams))
       toast.success('Export downloaded')
       clearSelection()
     } catch {

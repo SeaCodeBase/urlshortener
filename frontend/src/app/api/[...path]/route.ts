@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { buildProxyRequestHeaders, buildProxyResponseHeaders } from '@/lib/proxyHeaders'
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8081'
 
@@ -7,14 +8,7 @@ async function proxyRequest(request: NextRequest, params: Promise<{ path: string
   const url = new URL(request.url)
   const backendPath = `/api/${path.join('/')}${url.search}`
 
-  const headers: HeadersInit = {
-    'Content-Type': request.headers.get('Content-Type') || 'application/json',
-  }
-
-  const auth = request.headers.get('Authorization')
-  if (auth) {
-    headers['Authorization'] = auth
-  }
+  const headers = buildProxyRequestHeaders(request.headers)
 
   const fetchOptions: RequestInit = {
     method: request.method,
@@ -28,13 +22,11 @@ async function proxyRequest(request: NextRequest, params: Promise<{ path: string
 
   const response = await fetch(`${BACKEND_URL}${backendPath}`, fetchOptions)
 
-  // Return the response with the same status and headers
+  // Same status; only allowlisted headers (Content-Type, Content-Disposition).
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
-    headers: {
-      'Content-Type': response.headers.get('Content-Type') || 'application/json',
-    },
+    headers: buildProxyResponseHeaders(response.headers),
   })
 }
 
