@@ -3,13 +3,14 @@
 import { useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { differenceInCalendarDays, format, isValid, parseISO, subDays } from 'date-fns'
-import { AlertCircle, Calendar, ChevronDown, Download } from 'lucide-react'
+import { AlertCircle, Calendar, ChevronDown, Download, GitCompareArrows, X } from 'lucide-react'
 import { BreakdownTable, type BreakdownRow } from '@/components/charts/BreakdownTable'
 import { DeviceBarChart } from '@/components/charts/DeviceBarChart'
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart'
 import { DateRangeDialog } from '@/components/common/DateRangeDialog'
 import { StatCard } from '@/components/common/StatCard'
 import { Button } from '@/components/ui/button'
+import { CompareLinkDialog } from '@/components/links/CompareLinkDialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -35,13 +36,15 @@ const SOURCES: { value: StatsSource; label: string }[] = [
 
 type Compare = 'previous' | 'none'
 
-/** Analytics controls as they live in the URL (`?from&to&compare&source`). */
+/** Analytics controls as they live in the URL (`?from&to&compare&source&compare_link`). */
 export interface AnalyticsUrlState {
   /** YYYY-MM-DD, both null for the default "Last 30 days". */
   from: string | null
   to: string | null
   compare: Compare
   source: StatsSource
+  /** Id of another link to chart next to this one (links only). */
+  compareLink: number | null
 }
 
 function validDay(v: string | null): string | null {
@@ -53,11 +56,13 @@ export function parseAnalyticsUrlState(sp: Pick<URLSearchParams, 'get'>): Analyt
   let to = validDay(sp.get('to'))
   if (!from || !to || from > to) from = to = null
   const source = sp.get('source')
+  const compareLink = sp.get('compare_link')
   return {
     from,
     to,
     compare: sp.get('compare') === 'previous' ? 'previous' : 'none',
     source: SOURCES.some((s) => s.value === source) ? (source as StatsSource) : 'all',
+    compareLink: compareLink && /^[1-9]\d{0,15}$/.test(compareLink) ? Number(compareLink) : null,
   }
 }
 
@@ -162,19 +167,25 @@ export function LinkAnalytics(props: LinkAnalyticsProps) {
   const searchParams = useSearchParams()
   const state = parseAnalyticsUrlState(searchParams)
   const [dateOpen, setDateOpen] = useState(false)
+  const [compareLinkOpen, setCompareLinkOpen] = useState(false)
 
   const range = effectiveRange(state)
   const unit = unitFor(range.from, range.to)
   const comparing = state.compare === 'previous'
   const label = rangeLabel(state)
+  const canCompareLink = subject.kind === 'link'
   const query: LinkStatsQuery = cfg.sourceSelect
     ? { ...range, unit, compare: state.compare, source: state.source }
     : { ...range, unit, compare: state.compare }
+  if (canCompareLink && state.compareLink != null) query.compare_link = state.compareLink
   // Both hooks run (rules of hooks); only the subject's query is enabled.
   const linkStats = useLinkStats(subject.kind === 'link' ? subject.id : null, query)
   const qrStats = useQrStats(subject.kind === 'qr' ? subject.id : null, query)
   const { data: stats, isLoading, isError, error, refetch, isFetching } = subject.kind === 'qr' ? qrStats : linkStats
   const loading = isLoading && !stats
+  const comparingLink = canCompareLink && state.compareLink != null
+  const compared = comparingLink ? (stats?.compare_link ?? null) : null
+  const comparedName = compared ? compared.title || compared.short_url : ''
 
   function update(patch: Partial<AnalyticsUrlState>) {
     const next = { ...state, ...patch }
@@ -184,6 +195,7 @@ export function LinkAnalytics(props: LinkAnalyticsProps) {
     set('to', next.to)
     set('compare', next.compare === 'previous' ? 'previous' : null)
     set('source', next.source === 'all' ? null : next.source)
+    set('compare_link', next.compareLink != null ? String(next.compareLink) : null)
     const qs = sp.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }
@@ -246,6 +258,28 @@ export function LinkAnalytics(props: LinkAnalyticsProps) {
             <SelectItem value="previous">Previous period</SelectItem>
           </SelectContent>
         </Select>
+        {canCompareLink &&
+          (comparingLink ? (
+            // Shown as soon as the param is set, so a stale id that fails to load can still be removed.
+            <span className="inline-flex h-10 items-center gap-1 rounded-md bg-white pl-3 pr-1 text-sm text-foreground">
+              <span className="max-w-48 truncate">{comparedName || 'Compared link'}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-8"
+                aria-label="Remove comparison"
+                onClick={() => update({ compareLink: null })}
+              >
+                <X className="size-4" />
+              </Button>
+            </span>
+          ) : (
+            <Button type="button" variant="secondary" onClick={() => setCompareLinkOpen(true)}>
+              <GitCompareArrows className="size-4" />
+              Compare to a link
+            </Button>
+          ))}
         {cfg.sourceSelect && (
           <Select value={state.source} onValueChange={(v) => update({ source: v as StatsSource })}>
             <SelectTrigger aria-label="Source" className="h-10 w-48 bg-white">
@@ -292,6 +326,18 @@ export function LinkAnalytics(props: LinkAnalyticsProps) {
         onClear={state.from ? () => update({ from: null, to: null }) : undefined}
       />
 
+      {canCompareLink && (
+        <CompareLinkDialog
+          open={compareLinkOpen}
+          onOpenChange={setCompareLinkOpen}
+          currentId={subject.id}
+          onCompare={(id) => {
+            setCompareLinkOpen(false)
+            update({ compareLink: id })
+          }}
+        />
+      )}
+
       {isError && !stats ? (
         <div role="alert" className="flex flex-col items-center gap-3 rounded-xl bg-card px-8 py-12 text-center">
           <AlertCircle className="size-8 text-destructive" aria-hidden />
@@ -305,7 +351,7 @@ export function LinkAnalytics(props: LinkAnalyticsProps) {
         </div>
       ) : (
         <>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className={`grid gap-4 md:grid-cols-2 ${compared ? 'xl:grid-cols-3' : ''}`}>
         {loading ? (
           <>
             <Skeleton className="h-[124px] rounded-xl" />
@@ -320,6 +366,9 @@ export function LinkAnalytics(props: LinkAnalyticsProps) {
               change={comparing ? { pct: stats?.change_pct ?? null, label: 'vs previous period' } : undefined}
               spark={stats?.series.map((p) => p.clicks)}
             />
+            {compared && (
+              <StatCard label={comparedName} value={formatNumber(compared.total_range)} />
+            )}
           </>
         )}
       </div>
@@ -334,6 +383,7 @@ export function LinkAnalytics(props: LinkAnalyticsProps) {
             unit={stats?.unit ?? unit}
             compare={comparing}
             seriesName={cfg.noun}
+            extraSeries={compared ? { name: comparedName, points: compared.series } : undefined}
           />
         )}
       </Module>

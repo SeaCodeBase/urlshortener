@@ -8,7 +8,7 @@ import { LinkAnalytics } from "./LinkAnalytics";
 
 let search = new URLSearchParams();
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace, prefetch: vi.fn() }),
   usePathname: () => "/dashboard/links/7",
   useSearchParams: () => search,
 }));
@@ -39,6 +39,7 @@ const fixture: LinkStatsV2 = {
 };
 
 const useLinkStats = vi.fn();
+const replace = vi.fn();
 vi.mock("@/lib/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/hooks")>()),
   useLinkStats: (id: number, query: LinkStatsQuery) => useLinkStats(id, query),
@@ -53,6 +54,7 @@ describe("LinkAnalytics", () => {
   beforeEach(() => {
     search = new URLSearchParams();
     useLinkStats.mockReset();
+    replace.mockReset();
   });
 
   it("renders the controls and every module with defaults", () => {
@@ -165,5 +167,54 @@ describe("LinkAnalytics", () => {
     wrap(<LinkAnalytics subject={{ kind: "link", id: 9 }} destination="https://example.com" />);
     expect(screen.getByRole("heading", { name: "Link analytics - example.com" })).toBeInTheDocument();
     expect(useLinkStats.mock.calls[0][0]).toBe(9);
+  });
+
+  it("compares with another link from ?compare_link and clears it from the chip", () => {
+    search = new URLSearchParams("compare_link=12&source=qr");
+    useLinkStats.mockReturnValue({
+      data: {
+        ...fixture,
+        compare_link: {
+          id: 12,
+          title: "Spring sale",
+          short_url: "https://sho.rt/spring",
+          total_range: 4321,
+          series: [
+            { date: "2026-10-23", clicks: 3 },
+            { date: "2026-10-24", clicks: 4 },
+          ],
+        },
+      },
+      isLoading: false,
+    });
+    wrap(<LinkAnalytics linkId={7} destination="https://example.com" />);
+
+    expect(useLinkStats.mock.calls[0][1]).toMatchObject({ compare_link: 12 });
+    expect(screen.queryByRole("button", { name: "Compare to a link" })).not.toBeInTheDocument();
+    expect(screen.getByText("4,321")).toBeInTheDocument();
+    expect(screen.getAllByText("Spring sale").length).toBeGreaterThanOrEqual(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove comparison" }));
+    expect(replace).toHaveBeenCalledWith("/dashboard/links/7?source=qr", { scroll: false });
+  });
+
+  it("offers Compare to a link and ignores an invalid compare_link", () => {
+    search = new URLSearchParams("compare_link=abc");
+    useLinkStats.mockReturnValue({ data: fixture, isLoading: false });
+    wrap(<LinkAnalytics linkId={7} destination="https://example.com" />);
+    expect(useLinkStats.mock.calls[0][1]).not.toHaveProperty("compare_link");
+    expect(screen.getByRole("button", { name: "Compare to a link" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove comparison" })).not.toBeInTheDocument();
+  });
+
+  it("never offers Compare to a link on QR scan data", async () => {
+    const getQrStats = vi.spyOn(api, "getQrStats").mockResolvedValue(fixture);
+    search = new URLSearchParams("compare_link=12");
+    useLinkStats.mockReturnValue({ data: undefined, isLoading: false });
+    wrap(<LinkAnalytics subject={{ kind: "qr", id: 5 }} destination="https://example.com/menu" />);
+    expect(await screen.findByText("Total scans")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Compare to a link" })).not.toBeInTheDocument();
+    expect(getQrStats.mock.calls[0][1]).not.toHaveProperty("compare_link");
+    getQrStats.mockRestore();
   });
 });

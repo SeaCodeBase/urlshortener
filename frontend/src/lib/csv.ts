@@ -45,6 +45,7 @@ export function buildStatsCsv(
     [`${n} (${opts.rangeLabel})`, stats.total_range],
   ])
   section(`${n} over time`, ['Date', n], stats.series.map((p) => [p.date, p.clicks]))
+  if (stats.compare_link) section('Compared link', ['Date', n], stats.compare_link.series.map((p) => [p.date, p.clicks]))
   section('Countries', ['Country', 'Code', n, '%'], stats.countries.map((c) => [c.name, c.code, c.clicks, pct(c.percentage)]))
   section('Cities', ['City', 'Country', n, '%'], stats.cities.map((c) => [c.name, c.country, c.clicks, pct(c.percentage)]))
   if (!opts.scansOnly) {

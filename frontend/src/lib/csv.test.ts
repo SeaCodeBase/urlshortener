@@ -57,4 +57,26 @@ describe("buildStatsCsv", () => {
     expect(lines).not.toContain("Devices");
     expect(lines).toContain("Browsers");
   });
+
+  it("adds a Compared link section when stats compare with another link", () => {
+    const lines = buildStatsCsv(
+      {
+        ...stats,
+        compare_link: {
+          id: 2,
+          title: "=Spring",
+          short_url: "https://sho.rt/s",
+          total_range: 7,
+          series: [{ date: "2026-10-24", clicks: 7 }],
+        },
+      },
+      { rangeLabel: "Last 30 days" },
+    ).split("\n");
+    const i = lines.indexOf("Compared link");
+    expect(i).toBeGreaterThan(0);
+    expect(lines[i + 1]).toBe("Date,Engagements");
+    expect(lines[i + 2]).toBe("2026-10-24,7");
+    expect(buildStatsCsv(stats, { rangeLabel: "Last 30 days" })).not.toContain("Compared link");
+  });
 });
+
