@@ -46,3 +46,10 @@ ui:
 
 uploads:
   path: "data/uploads"  # Directory for user-uploaded files (QR logos, page images, ...); must be writable
+
+workers:
+  webhooks:
+    poll_every: 2s    # How often due webhook deliveries are sent
+  bulk:
+    poll_every: 5s    # How often queued bulk uploads are picked up
+    batch_size: 50    # Rows processed between progress updates

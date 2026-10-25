@@ -86,11 +86,22 @@ func main() {
 	activityRepo := repository.NewActivityRepository(db)
 	pageRepo := repository.NewPageRepository(db)
 	pageViewRepo := repository.NewPageViewRepository(db)
+	webhookRepo := repository.NewWebhookRepository(db)
 
-	// Start click flusher worker
+	// Outbound webhook requests (verify pings and deliveries): 10 s timeout,
+	// ≤3 redirects, refuses non-public addresses.
+	webhookClient := service.NewWebhookHTTPClient()
+
+	// Start workers: the click flusher queues webhook events for every
+	// stored click; the dispatcher delivers them. Deferred stops run in
+	// reverse, so the dispatcher finishes in-flight deliveries first.
 	clickFlusher := worker.NewClickFlusher(rdb, clickRepo)
+	clickFlusher.SetEnqueuer(worker.NewWebhookEnqueuer(rdb, webhookRepo, linkRepo, tagRepo, domainRepo, cfg.URLs.BaseURL))
 	clickFlusher.Start()
 	defer clickFlusher.Stop()
+	webhookDispatcher := worker.NewWebhookDispatcher(rdb, webhookRepo, webhookClient, cfg.Workers.Webhooks.PollEvery)
+	webhookDispatcher.Start()
+	defer webhookDispatcher.Stop()
 
 	// Setup services
 	authService := service.NewAuthService(userRepo, groupRepo, cfg.JWT.Secret)
@@ -98,6 +109,12 @@ func main() {
 	tokenService := service.NewTokenService(apiTokenRepo, userRepo)
 	tagService := service.NewTagService(tagRepo, qrRepo)
 	activityService := service.NewActivityService(activityRepo)
+	webhookService := service.NewWebhookService(service.WebhookServiceDeps{
+		Webhooks: webhookRepo,
+		Activity: activityService,
+		Client:   webhookClient,
+		Resolver: service.NewNetResolver(),
+	})
 	shortCodeSvc := service.NewShortCodeService(linkRepo)
 	linkService := service.NewLinkService(service.LinkServiceDeps{
 		Links:      linkRepo,
@@ -190,6 +207,7 @@ func main() {
 	activityHandler := handler.NewActivityHandler(activityService)
 	analyticsHandler := handler.NewAnalyticsHandler(statsService, analyticsService)
 	dashboardHandler := handler.NewDashboardHandler(dashboardService, analyticsService)
+	webhookHandler := handler.NewWebhookHandler(webhookService)
 
 	// Click service
 	clickService := service.NewClickService(rdb)
@@ -343,6 +361,9 @@ func main() {
 
 		// Link-in-bio pages (protected, group-scoped)
 		handler.RegisterPageRoutes(api.Group("/pages", authMiddleware, groupMW), pageHandler)
+
+		// Webhooks (protected, group-scoped)
+		handler.RegisterWebhookRoutes(api, webhookHandler, authMiddleware, groupMW)
 
 		// Published pages (public: no auth, no group; drafts are never served)
 		public := api.Group("/public")

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/url"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -79,6 +80,27 @@ type GeoIPConfig struct {
 	Path string `yaml:"path"`
 }
 
+// WebhookWorkerConfig tunes the webhook dispatcher.
+type WebhookWorkerConfig struct {
+	// PollEvery is how often due deliveries are picked up (default 2s).
+	PollEvery time.Duration `yaml:"poll_every"`
+}
+
+// BulkWorkerConfig tunes the bulk-upload worker.
+type BulkWorkerConfig struct {
+	// PollEvery is how often queued uploads are picked up (default 5s).
+	PollEvery time.Duration `yaml:"poll_every"`
+	// BatchSize is how many rows are processed between progress updates
+	// (default 50).
+	BatchSize int `yaml:"batch_size"`
+}
+
+// WorkersConfig holds the background workers' settings.
+type WorkersConfig struct {
+	Webhooks WebhookWorkerConfig `yaml:"webhooks"`
+	Bulk     BulkWorkerConfig    `yaml:"bulk"`
+}
+
 // Config is the main application configuration
 type Config struct {
 	Server   ServerConfig   `yaml:"server"`
@@ -90,6 +112,7 @@ type Config struct {
 	GeoIP    GeoIPConfig    `yaml:"geoip"`
 	UI       UIConfig       `yaml:"ui"`
 	Uploads  UploadsConfig  `yaml:"uploads"`
+	Workers  WorkersConfig  `yaml:"workers"`
 }
 
 // LoadFromYAML loads configuration from a YAML file
@@ -184,6 +207,15 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Uploads.Path == "" {
 		cfg.Uploads.Path = "data/uploads"
+	}
+	if cfg.Workers.Webhooks.PollEvery <= 0 {
+		cfg.Workers.Webhooks.PollEvery = 2 * time.Second
+	}
+	if cfg.Workers.Bulk.PollEvery <= 0 {
+		cfg.Workers.Bulk.PollEvery = 5 * time.Second
+	}
+	if cfg.Workers.Bulk.BatchSize <= 0 {
+		cfg.Workers.Bulk.BatchSize = 50
 	}
 	if cfg.WebAuthn.RPID == "" {
 		cfg.WebAuthn.RPID = "localhost"

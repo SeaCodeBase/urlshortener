@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"syscall"
@@ -58,14 +59,95 @@ func ValidateWebhookURL(ctx context.Context, raw string, r DNSResolver) error {
 	return nil
 }
 
-// isPublicIP reports whether ip is outside the loopback, link-local,
-// private, unspecified and multicast ranges.
+// deniedPrefixes are the non-public ranges a webhook may never target:
+// this-network, private, CGNAT, loopback, link-local, IETF protocol
+// assignments, benchmarking, multicast, reserved, broadcast, and their IPv6
+// counterparts (unspecified, loopback, ULA, link-local, multicast).
+var deniedPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("127.0.0.0/8"),
+	netip.MustParsePrefix("169.254.0.0/16"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("224.0.0.0/4"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("255.255.255.255/32"),
+	netip.MustParsePrefix("::/128"),
+	netip.MustParsePrefix("::1/128"),
+	netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("ff00::/8"),
+}
+
+// IPv6 ranges that embed an IPv4 address, which must itself be public.
+var (
+	nat64Prefix    = netip.MustParsePrefix("64:ff9b::/96") // RFC 6052: last 32 bits
+	sixToFourPrefx = netip.MustParsePrefix("2002::/16")    // RFC 3056: bits 16-47
+	v4CompatPrefix = netip.MustParsePrefix("::/96")        // deprecated IPv4-compatible
+)
+
+// isPublicIP reports whether ip is a public unicast address: outside every
+// deniedPrefixes range, with IPv4-mapped, IPv4-compatible, NAT64 and 6to4
+// addresses judged by the IPv4 address they embed.
 func isPublicIP(ip net.IP) bool {
-	if ip == nil {
+	a, ok := netip.AddrFromSlice(ip)
+	if !ok {
 		return false
 	}
-	return !(ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsPrivate() || ip.IsUnspecified() || ip.IsMulticast() || ip.IsInterfaceLocalMulticast())
+	return isPublicAddr(a)
+}
+
+func isPublicAddr(a netip.Addr) bool {
+	if !a.IsValid() {
+		return false
+	}
+	a = a.WithZone("").Unmap() // ::ffff:0:0/96
+	for _, p := range deniedPrefixes {
+		if p.Contains(a) {
+			return false
+		}
+	}
+	if a.Is4() {
+		return true
+	}
+	b := a.As16()
+	switch {
+	case nat64Prefix.Contains(a), v4CompatPrefix.Contains(a):
+		return isPublicAddr(netip.AddrFrom4([4]byte{b[12], b[13], b[14], b[15]}))
+	case sixToFourPrefx.Contains(a):
+		return isPublicAddr(netip.AddrFrom4([4]byte{b[2], b[3], b[4], b[5]}))
+	}
+	return true
+}
+
+// WebhookURLHost returns scheme://host[:port] of a webhook URL, for logs and
+// activity meta (the full URL may carry a token in its path or query).
+func WebhookURLHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// WebhookErrorMessage renders a delivery error for logs and the stored
+// delivery row (at most 500 characters): a *url.Error is reduced to its
+// operation, the URL's scheme+host and the cause, so the full URL never
+// leaks.
+func WebhookErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		msg := ue.Op + " " + WebhookURLHost(ue.URL) + ": " + ue.Err.Error()
+		return truncateWebhookError(msg)
+	}
+	return truncateWebhookError(err.Error())
 }
 
 // SignBody is the lowercase hex HMAC-SHA256 of body keyed by secret (the
@@ -81,7 +163,6 @@ func SignBody(secret string, body []byte) string {
 // counts up, remembers when failing started, alerts from the second failure
 // on and deactivates once failing for longer than 24 h.
 func ApplyDeliveryResult(w *model.Webhook, ok bool, now time.Time) {
-	w.LastDeliveryAt = model.NullTime{}
 	w.LastDeliveryAt.Time, w.LastDeliveryAt.Valid = now, true
 	if ok {
 		w.Status = model.WebhookStatusActive
@@ -129,7 +210,8 @@ func NewWebhookHTTPClient() *http.Client {
 		Timeout:   10 * time.Second,
 		Transport: transport,
 		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
-			if len(via) >= 3 {
+			// via holds the requests made so far: the 4th redirect is refused.
+			if len(via) > 3 {
 				return http.ErrUseLastResponse
 			}
 			return nil

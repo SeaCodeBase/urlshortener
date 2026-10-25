@@ -20,6 +20,7 @@ type ClickFlusher struct {
 	clickRepo repository.ClickRepository
 	interval  time.Duration
 	batchSize int
+	enqueuer  ClickEnqueuer // nil: no webhook events
 	stopCh    chan struct{}
 	doneCh    chan struct{}
 }
@@ -34,6 +35,10 @@ func NewClickFlusher(rdb *redis.Client, clickRepo repository.ClickRepository) *C
 		doneCh:    make(chan struct{}),
 	}
 }
+
+// SetEnqueuer sets who receives each stored batch of clicks (webhook
+// events); call before Start.
+func (f *ClickFlusher) SetEnqueuer(e ClickEnqueuer) { f.enqueuer = e }
 
 func (f *ClickFlusher) Start() {
 	go f.run()
@@ -122,6 +127,12 @@ func (f *ClickFlusher) flush() {
 				zap.Error(err),
 			)
 			return
+		}
+
+		// Queue webhook events before the buffer is trimmed (a crash in
+		// between re-sends both the clicks and their events: at least once).
+		if f.enqueuer != nil {
+			f.enqueuer.Enqueue(ctx, clicks)
 		}
 
 		// Remove processed events from buffer

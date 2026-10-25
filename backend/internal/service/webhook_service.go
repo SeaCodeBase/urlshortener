@@ -133,7 +133,7 @@ func (s *WebhookServiceImpl) Create(ctx context.Context, userID, groupID uint64,
 		return nil, err
 	}
 	s.activity.Log(ctx, userID, groupID, ActionWebhookCreate, EntityWebhook, w.ID,
-		map[string]any{"name": w.Name, "url": w.URL})
+		map[string]any{"name": w.Name, "url_host": WebhookURLHost(w.URL)})
 	return w, nil
 }
 
@@ -165,7 +165,7 @@ func (s *WebhookServiceImpl) Update(ctx context.Context, userID, groupID, id uin
 		return nil, err
 	}
 	s.activity.Log(ctx, userID, groupID, ActionWebhookUpdate, EntityWebhook, w.ID,
-		map[string]any{"name": w.Name, "url": w.URL})
+		map[string]any{"name": w.Name, "url_host": WebhookURLHost(w.URL)})
 	return w, nil
 }
 
@@ -231,12 +231,15 @@ func (s *WebhookServiceImpl) Verify(ctx context.Context, userID, groupID, id uin
 		return nil, err
 	}
 	eventID := "ping-" + strconv.FormatInt(now.Unix(), 10)
+	// The ping and its bookkeeping outlive a cancelled request (the client
+	// timeout bounds the call) so the delivery and status are always recorded.
+	ctx = context.WithoutCancel(ctx)
 	status, sendErr := s.send(ctx, w, eventID, body)
 	ok := sendErr == nil && status >= 200 && status < 300
 
 	d := &model.WebhookDelivery{WebhookID: w.ID, EventID: eventID, StatusCode: status, Attempt: 1, DeliveredAt: now}
 	if sendErr != nil {
-		d.Error = truncateWebhookError(sendErr.Error())
+		d.Error = WebhookErrorMessage(sendErr)
 	}
 	if err := s.webhooks.AddDelivery(ctx, d); err != nil {
 		return nil, err
@@ -269,7 +272,8 @@ func (s *WebhookServiceImpl) send(ctx context.Context, w *model.Webhook, eventID
 	req.Header.Set("X-Event-Id", eventID)
 	resp, err := s.client.Do(req)
 	if err != nil {
-		logger.Info(ctx, "webhook-service: ping failed", zap.Uint64("webhook_id", w.ID), zap.Error(err))
+		logger.Info(ctx, "webhook-service: ping failed", zap.Uint64("webhook_id", w.ID),
+			zap.String("url_host", WebhookURLHost(w.URL)), zap.String("error", WebhookErrorMessage(err)))
 		return 0, err
 	}
 	defer resp.Body.Close()

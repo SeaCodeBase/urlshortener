@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -164,5 +165,35 @@ uploads:
 		require.NotNil(t, cfg.UI.FaviconService)
 		assert.False(t, *cfg.UI.FaviconService)
 		assert.Equal(t, "/var/lib/us/uploads", cfg.Uploads.Path)
+	})
+}
+
+func TestWorkersConfig(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		cfg := &Config{}
+		applyDefaults(cfg)
+		assert.Equal(t, 2*time.Second, cfg.Workers.Webhooks.PollEvery)
+		assert.Equal(t, 5*time.Second, cfg.Workers.Bulk.PollEvery)
+		assert.Equal(t, 50, cfg.Workers.Bulk.BatchSize)
+	})
+
+	t.Run("explicit values kept", func(t *testing.T) {
+		content := `
+jwt:
+  secret: "minimum-required-secret-for-test!"
+workers:
+  webhooks:
+    poll_every: 500ms
+  bulk:
+    poll_every: 1m
+    batch_size: 10
+`
+		configPath := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+		cfg, err := LoadFromYAML(configPath)
+		require.NoError(t, err)
+		assert.Equal(t, 500*time.Millisecond, cfg.Workers.Webhooks.PollEvery)
+		assert.Equal(t, time.Minute, cfg.Workers.Bulk.PollEvery)
+		assert.Equal(t, 10, cfg.Workers.Bulk.BatchSize)
 	})
 }

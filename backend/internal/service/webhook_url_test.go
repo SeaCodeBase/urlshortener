@@ -3,9 +3,12 @@ package service_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -154,4 +157,58 @@ func TestNewWebhookHTTPClient_RefusesLoopback(t *testing.T) {
 	}
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "non-public address")
+}
+
+// TestValidateWebhookURL_DenyList covers every non-public range, as an IP
+// literal and as a resolved address.
+func TestValidateWebhookURL_DenyList(t *testing.T) {
+	denied := []string{
+		"0.1.2.3", "10.9.8.7", "100.64.0.1", "100.127.255.254", "127.0.0.2", "169.254.169.254",
+		"172.16.0.1", "172.31.255.255", "192.0.0.8", "192.168.1.1", "198.18.0.1", "198.19.255.255",
+		"224.0.0.251", "239.1.2.3", "240.0.0.1", "255.255.255.255",
+		"::", "::1", "fd00::1", "fc00::1", "fe80::1", "ff02::1",
+		"::ffff:127.0.0.1", "::ffff:10.0.0.1", "::ffff:169.254.169.254",
+		"64:ff9b::7f00:1", "64:ff9b::a00:1", "2002:7f00:1::", "2002:a9fe:a9fe::1", "::7f00:1", "::a00:1",
+	}
+	for _, ip := range denied {
+		r := &fakeIPResolver{ips: map[string][]string{"h.example.test": {ip}}}
+		for _, raw := range []string{"http://" + literalHost(ip) + "/x", "https://h.example.test/x"} {
+			err := service.ValidateWebhookURL(context.Background(), raw, r)
+			var ve *service.ValidationError
+			assert.True(t, errors.As(err, &ve), "%s (%s) must be rejected, got %v", raw, ip, err)
+		}
+	}
+	allowed := []string{"93.184.216.34", "100.63.255.255", "100.128.0.1", "172.32.0.1", "198.20.0.1",
+		"2606:4700::1111", "::ffff:93.184.216.34", "64:ff9b::5db8:d822", "2002:5db8:d822::1"}
+	for _, ip := range allowed {
+		err := service.ValidateWebhookURL(context.Background(), "http://"+literalHost(ip)+"/x", nil)
+		assert.NoError(t, err, ip)
+	}
+}
+
+func literalHost(ip string) string {
+	if strings.Contains(ip, ":") {
+		return "[" + ip + "]"
+	}
+	return ip
+}
+
+func TestNewWebhookHTTPClient_Limits(t *testing.T) {
+	c := service.NewWebhookHTTPClient()
+	assert.Equal(t, 10*time.Second, c.Timeout)
+
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		n := hits.Add(1)
+		http.Redirect(rw, r, fmt.Sprintf("/r/%d", n), http.StatusFound)
+	}))
+	defer srv.Close()
+
+	// Reuse the redirect policy with a transport that may reach 127.0.0.1.
+	c.Transport = http.DefaultTransport
+	resp, err := c.Get(srv.URL + "/start")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusFound, resp.StatusCode, "the 4th redirect is returned, not followed")
+	assert.Equal(t, int32(4), hits.Load(), "original request + 3 followed redirects")
 }

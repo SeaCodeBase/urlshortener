@@ -80,7 +80,7 @@ func TestWebhookService_Create_GeneratesSecret(t *testing.T) {
 			return nil
 		})
 		f.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionWebhookCreate, service.EntityWebhook, uint64(5),
-			map[string]any{"name": "My hook", "url": "https://hooks.example.test/x"})
+			map[string]any{"name": "My hook", "url_host": "https://hooks.example.test"})
 		w, err := f.svc.Create(ctx, 1, 7, service.WebhookInput{Name: " My hook ", URL: "https://hooks.example.test/x", Event: "engagement"})
 		require.NoError(t, err)
 		require.NotNil(t, stored)
