@@ -4,3 +4,9 @@
 *.md
 Dockerfile
 docker-compose.yml
+# Local build and developer artifacts (the image runs `go mod download`)
+vendor/
+config.yaml
+server
+repository.test
+data/
