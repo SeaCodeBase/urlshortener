@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -611,4 +612,113 @@ func TestDispatcher_RecoversFromPanic(t *testing.T) {
 	d := newTestDispatcher(rdb, panickyRepo{newFakeWebhookRepo(hook(5, 7, srv.URL))}, srv.Client())
 	pushJob(t, rdb, WebhookJob{WebhookID: 5, EventID: "ev1", Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
 	assert.NotPanics(t, d.poll)
+}
+
+func TestDispatcher_SlowEndpointDoesNotStarveOthers(t *testing.T) {
+	_, rdb := newTestRedis(t)
+	var slowHits, fastHits atomic.Int32
+	slow := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		slowHits.Add(1)
+		time.Sleep(2 * time.Second)
+		rw.WriteHeader(http.StatusOK)
+	}))
+	defer slow.Close()
+	fast := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		fastHits.Add(1)
+		rw.WriteHeader(http.StatusOK)
+	}))
+	defer fast.Close()
+
+	repo := newFakeWebhookRepo(hook(5, 7, slow.URL), hook(6, 7, fast.URL))
+	client := &http.Client{Timeout: 3 * time.Second}
+	d := newTestDispatcher(rdb, repo, client)
+	for i := 0; i < 6; i++ {
+		pushJob(t, rdb, WebhookJob{WebhookID: 5, EventID: "slow" + strconv.Itoa(i), Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
+	}
+	pushJob(t, rdb, WebhookJob{WebhookID: 6, EventID: "fast", Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
+
+	d.poll()
+
+	assert.Equal(t, int32(1), fastHits.Load())
+	assert.LessOrEqual(t, slowHits.Load(), int32(2))
+	var fastDelivered bool
+	for _, del := range repo.deliveries {
+		if del.WebhookID == 6 && del.EventID == "fast" && del.StatusCode == 200 {
+			fastDelivered = true
+		}
+	}
+	assert.True(t, fastDelivered, "the fast webhook's delivery is recorded")
+	zs := queueJobs(t, rdb)
+	assert.Len(t, zs, 6-int(slowHits.Load()))
+	for _, z := range zs {
+		j := decodeJob(t, z.Member)
+		assert.Equal(t, uint64(5), j.WebhookID)
+		assert.Equal(t, 1, j.Attempt, "a deferred job is not a retry")
+		assert.Equal(t, float64(hookNow.Add(5*time.Second).Unix()), z.Score)
+	}
+}
+
+func TestDispatcher_AlertWebhookGetsOneProbePerPoll(t *testing.T) {
+	_, rdb := newTestRedis(t)
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		rw.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	w := hook(5, 7, srv.URL)
+	w.Status, w.ConsecutiveFailures = model.WebhookStatusAlert, 2
+	w.FailingSince.Time, w.FailingSince.Valid = hookNow.Add(-time.Hour), true
+	repo := newFakeWebhookRepo(w)
+	d := newTestDispatcher(rdb, repo, srv.Client())
+	for i := 0; i < 3; i++ {
+		pushJob(t, rdb, WebhookJob{WebhookID: 5, EventID: "ev" + strconv.Itoa(i), Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
+	}
+
+	d.poll()
+
+	assert.Equal(t, int32(1), hits.Load())
+	require.Len(t, repo.deliveries, 1)
+	zs := queueJobs(t, rdb)
+	require.Len(t, zs, 3, "two deferred jobs plus the probe's retry")
+	var deferred, retried int
+	for _, z := range zs {
+		j := decodeJob(t, z.Member)
+		assert.Equal(t, float64(hookNow.Add(60*time.Second).Unix()), z.Score)
+		switch j.Attempt {
+		case 1:
+			deferred++
+		case 2:
+			retried++
+			assert.Equal(t, repo.deliveries[0].EventID, j.EventID)
+		}
+	}
+	assert.Equal(t, 2, deferred)
+	assert.Equal(t, 1, retried)
+}
+
+func TestDispatcher_SkipsTickWhilePolling(t *testing.T) {
+	_, rdb := newTestRedis(t)
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		started <- struct{}{}
+		<-release
+		rw.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	repo := newFakeWebhookRepo(hook(5, 7, srv.URL))
+	d := newTestDispatcher(rdb, repo, srv.Client())
+	pushJob(t, rdb, WebhookJob{WebhookID: 5, EventID: "ev1", Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
+
+	require.True(t, d.tryPoll())
+	<-started
+	assert.False(t, d.tryPoll(), "a tick while deliveries run is skipped")
+	close(release)
+	d.pollWG.Wait()
+	assert.True(t, d.tryPoll(), "the next tick polls again")
+	d.pollWG.Wait()
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	assert.Len(t, repo.deliveries, 1)
 }

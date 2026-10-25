@@ -280,6 +280,12 @@ bulk-upload rows with an empty `domain` — then use it.
   within 10 s (at most 3 redirects). Anything else, including timeouts and
   connection errors, is a failure and is retried after **60 s, 5 min, 30 min
   and 2 h** — 5 attempts in total, then the event is dropped.
+  The worker polls the queue every `workers.webhooks.poll_every` (a poll
+  still delivering skips the next tick) and sends up to 8 requests at a
+  time, but a single webhook gets at most 2 deliveries per poll (1 while it
+  is in **Alert**); its other due events are pushed back by 5 s (60 s in
+  Alert) without counting as an attempt, so one slow endpoint cannot hold
+  up the others.
 - **Status rules** — a success resets the webhook to **Active**. From the
   second consecutive failure the status is **Alert**. When failures have
   continued for more than 24 h since the first one, the webhook is
