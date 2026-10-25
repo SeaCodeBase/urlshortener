@@ -60,6 +60,12 @@ Every configuration key is documented in `backend/config.example.yaml`.
   Because the compose file also publishes `8081`, a client reaching it
   directly could spoof that page-view IP; narrow the list to the frontend
   container's address or stop publishing the API port if that matters.
+  The web UI's Next.js server forwards the `X-Forwarded-For` header it
+  receives unchanged, so page-view IPs (geo, unique visitors) are only
+  reliable when a reverse proxy in front of the UI overwrites that header
+  with the real client address; otherwise a visitor can set their own.
+  Clicks and the redirect engine are unaffected (they use
+  `server.trusted_proxies` on the redirect server).
 - **Graceful shutdown** — on `SIGTERM` (or `SIGINT`) both HTTP servers stop
   accepting connections and in-flight requests get up to 20 s to finish.
   Then, in order: click records still in flight reach the Redis buffer, the
@@ -474,6 +480,13 @@ webhook delivery needs Redis.
   `campaign_channels`, `campaign_links`, `webhooks`, `webhook_deliveries`
   and `bulk_uploads` tables in place (idempotent, applied by the startup
   migrator; no manual SQL needed).
+- **Phase 6:** behind a reverse proxy, set `server.trusted_proxies` (the
+  redirect server: clicks) and `server.api_trusted_proxies` (the API server:
+  public page views), or every click/view appears to come from the proxy.
+  The config file is now parsed strictly — an unknown or misspelled key
+  stops startup with an error naming it. `JWT_SECRET` and `BASE_URL` from
+  the environment (`.env` with Docker) now override `jwt.secret` and
+  `urls.base_url`; setting `JWT_SECRET` to a new value signs everyone out.
 - With Docker, MariaDB only loads `001_init.sql` on first boot; later
   migrations always come from the backend image (`/app/migrations`).
 

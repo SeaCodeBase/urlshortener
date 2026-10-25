@@ -14,6 +14,9 @@ server:
   # it runs. Absent = ["127.0.0.1", "::1"] (UI on the same host); [] = trust nobody.
   # Anyone who can reach the API port from a listed address can set the
   # page-view IP/geo, so keep the list narrow.
+  # The Next.js server passes on the X-Forwarded-For it receives, so page-view
+  # IPs are only reliable when a reverse proxy in front of the UI overwrites
+  # that header; clicks (trusted_proxies above) are unaffected.
   api_trusted_proxies: ["127.0.0.1", "::1"]
 
 database:

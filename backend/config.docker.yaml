@@ -14,6 +14,9 @@ server:
   # an external client reaching :8081 through docker-proxy could spoof
   # X-Forwarded-For for page-view geo/IP only; narrow this to the frontend
   # container's address or remove the published API port if that matters.
+  # The Next.js server passes on the X-Forwarded-For it receives, so page-view
+  # IPs are only reliable when a reverse proxy in front of the UI overwrites
+  # that header; clicks (trusted_proxies above) are unaffected.
   api_trusted_proxies: ["172.16.0.0/12"]
 
 database:
