@@ -310,18 +310,22 @@ func (r *PageRepositoryImpl) UpdateBlock(ctx context.Context, b *model.PageBlock
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	// Page row first (lock order: page, then blocks). The bump affects 0 rows
-	// exactly when the block does not exist (an unchanged block row would
-	// also report 0 affected rows; the page row never does).
-	result, err := tx.ExecContext(ctx,
-		`UPDATE pages SET revision = revision + 1 WHERE id = (SELECT page_id FROM page_blocks WHERE id = ?)`, b.ID)
+	// Lock order is page, then blocks (as in ReorderBlocks and CreateBlock).
+	pageID, err := blockPageID(ctx, tx, b.ID)
 	if err != nil {
-		logger.Error(ctx, "page-repo: failed to bump revision for block update", zap.Uint64("block_id", b.ID), zap.Error(err))
 		return err
 	}
-	if n, err := result.RowsAffected(); err != nil {
+	if err := bumpRevision(ctx, tx, `id = ?`, pageID); err != nil {
 		return err
-	} else if n == 0 {
+	}
+	// Re-check under the lock: the plain read above may predate a
+	// concurrent delete.
+	var exists int
+	if err := tx.GetContext(ctx, &exists, `SELECT COUNT(*) FROM page_blocks WHERE id = ? FOR UPDATE`, b.ID); err != nil {
+		logger.Error(ctx, "page-repo: failed to lock block", zap.Uint64("block_id", b.ID), zap.Error(err))
+		return err
+	}
+	if exists == 0 {
 		return ErrBlockNotFound
 	}
 	if _, err := tx.ExecContext(ctx,
@@ -344,8 +348,13 @@ func (r *PageRepositoryImpl) DeleteBlock(ctx context.Context, id uint64) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	// Bump the page's revision first (the block row is gone afterwards).
-	if err := bumpRevision(ctx, tx, `id = (SELECT page_id FROM page_blocks WHERE id = ?)`, id); err != nil {
+	// Bump the page's revision first (the block row is gone afterwards); lock
+	// order is page, then blocks.
+	pageID, err := blockPageID(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if err := bumpRevision(ctx, tx, `id = ?`, pageID); err != nil {
 		return err
 	}
 	result, err := tx.ExecContext(ctx, `DELETE FROM page_blocks WHERE id = ?`, id)
@@ -365,6 +374,21 @@ func (r *PageRepositoryImpl) DeleteBlock(ctx context.Context, id uint64) error {
 		return err
 	}
 	return nil
+}
+
+// blockPageID reads the block's page with a plain (non-locking) read, so the
+// caller can lock the page row before any block row; ErrBlockNotFound.
+func blockPageID(ctx context.Context, tx *sqlx.Tx, blockID uint64) (uint64, error) {
+	var pageID uint64
+	err := tx.GetContext(ctx, &pageID, `SELECT page_id FROM page_blocks WHERE id = ?`, blockID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrBlockNotFound
+	}
+	if err != nil {
+		logger.Error(ctx, "page-repo: failed to read block page", zap.Uint64("block_id", blockID), zap.Error(err))
+		return 0, err
+	}
+	return pageID, nil
 }
 
 // bumpRevision increments pages.revision for the pages matching where (one

@@ -150,15 +150,26 @@ func (r *LinkRepositoryImpl) Delete(ctx context.Context, id uint64) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 	// The FK cascade removes the link's page blocks without touching their
-	// pages, so mark those pages changed first (they need a republish).
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE pages SET revision = revision + 1
-		 WHERE id IN (SELECT page_id FROM page_blocks WHERE link_id = ?)`, id); err != nil {
-		logger.Error(ctx, "link-repo: failed to bump page revisions on delete",
-			zap.Uint64("link_id", id),
-			zap.Error(err),
-		)
+	// pages, so mark those pages changed first (they need a republish). The
+	// page ids come from a plain read so the page rows are locked before the
+	// cascade locks the blocks (lock order page, then blocks).
+	var pageIDs []uint64
+	if err := tx.SelectContext(ctx, &pageIDs, `SELECT DISTINCT page_id FROM page_blocks WHERE link_id = ?`, id); err != nil {
+		logger.Error(ctx, "link-repo: failed to read pages of link", zap.Uint64("link_id", id), zap.Error(err))
 		return err
+	}
+	if len(pageIDs) > 0 {
+		query, args, err := sqlx.In(`UPDATE pages SET revision = revision + 1 WHERE id IN (?)`, pageIDs)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, tx.Rebind(query), args...); err != nil {
+			logger.Error(ctx, "link-repo: failed to bump page revisions on delete",
+				zap.Uint64("link_id", id),
+				zap.Error(err),
+			)
+			return err
+		}
 	}
 	result, err := tx.ExecContext(ctx, `DELETE FROM links WHERE id = ?`, id)
 	if err != nil {

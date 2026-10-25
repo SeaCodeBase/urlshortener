@@ -2,6 +2,8 @@ package repository_test
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -573,4 +575,91 @@ func TestPageRepo_UpdatedAtSemantics(t *testing.T) {
 
 	require.NoError(t, repo.DeleteBlock(ctx, b.ID))
 	assert.True(t, updatedAt().After(old), "block delete bumps the page")
+}
+
+// UpdateBlock locks the page row before any block row, like ReorderBlocks:
+// a transaction holding the page (then taking the blocks) makes it wait, not
+// deadlock (MariaDB error 1213).
+func TestPageRepo_UpdateBlock_LockOrderPageFirst(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	group, _ := pageFixture(t, db, "page.lockorder@example.com")
+	repo := repository.NewPageRepository(db)
+	p := createPage(t, repo, group, "lockorder")
+	b := createBlock(t, repo, p.ID, model.PageBlockText, nil)
+
+	// tx A plays ReorderBlocks: page row X lock first.
+	txA, err := db.BeginTxx(ctx, nil)
+	require.NoError(t, err)
+	defer func() { _ = txA.Rollback() }()
+	var locked uint64
+	require.NoError(t, txA.GetContext(ctx, &locked, `SELECT id FROM pages WHERE id = ? FOR UPDATE`, p.ID))
+
+	done := make(chan error, 1)
+	go func() {
+		upd := *b
+		upd.Content = model.JSONMap{"heading": "from B"}
+		done <- repo.UpdateBlock(ctx, &upd)
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("UpdateBlock did not wait for the page lock: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	// A now takes the block rows, as ReorderBlocks does. With the old order
+	// (block S lock before the page) this was a deadlock.
+	var ids []uint64
+	require.NoError(t, txA.SelectContext(ctx, &ids, `SELECT id FROM page_blocks WHERE page_id = ? FOR UPDATE`, p.ID))
+	_, err = txA.ExecContext(ctx, `UPDATE page_blocks SET position = 0 WHERE id = ?`, b.ID)
+	require.NoError(t, err)
+	require.NoError(t, txA.Commit())
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("UpdateBlock still blocked after the page lock was released")
+	}
+	got, err := repo.GetBlock(ctx, b.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "from B", got.Content["heading"])
+}
+
+// Concurrent saves of the same block serialize on the page row instead of
+// deadlocking; each one bumps the revision once.
+func TestPageRepo_UpdateBlock_ConcurrentSameBlock(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	group, _ := pageFixture(t, db, "page.concurrent@example.com")
+	repo := repository.NewPageRepository(db)
+	p := createPage(t, repo, group, "concurrent")
+	b := createBlock(t, repo, p.ID, model.PageBlockText, nil)
+	before, err := repo.GetByID(ctx, p.ID)
+	require.NoError(t, err)
+
+	const workers, rounds = 4, 10
+	errs := make(chan error, workers*rounds)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < rounds; i++ {
+				upd := *b
+				upd.Content = model.JSONMap{"heading": fmt.Sprintf("w%d-%d", w, i)}
+				errs <- repo.UpdateBlock(ctx, &upd)
+			}
+		}(w)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	after, err := repo.GetByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, before.Revision+workers*rounds, after.Revision)
 }
