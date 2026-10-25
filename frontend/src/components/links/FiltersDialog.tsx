@@ -14,15 +14,23 @@ import {
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useCampaigns } from '@/lib/hooks'
 
 export interface LinkFilters {
   tags: string[]
   linkType: 'all' | 'custom' | 'nocustom'
   expiration: 'expired' | 'expiring' | 'none' | null
   hasQr: 'any' | 'with' | 'without'
+  /** Campaign id as a string; '' (or 'all') = any campaign. */
+  campaignId: string
 }
 
-export const DEFAULT_LINK_FILTERS: LinkFilters = { tags: [], linkType: 'all', expiration: null, hasQr: 'any' }
+export const DEFAULT_LINK_FILTERS: LinkFilters = { tags: [], linkType: 'all', expiration: null, hasQr: 'any', campaignId: '' }
+
+/** True when a campaign narrows the list ('' and 'all' mean none). */
+export function hasCampaignFilter(f: Pick<LinkFilters, 'campaignId'>): boolean {
+  return f.campaignId !== '' && f.campaignId !== 'all'
+}
 
 const LINK_TYPES: { value: LinkFilters['linkType']; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -49,7 +57,8 @@ export function countActiveFilters(f: LinkFilters): number {
     (f.tags.length ? 1 : 0) +
     (f.linkType !== 'all' ? 1 : 0) +
     (f.expiration != null ? 1 : 0) +
-    (f.hasQr !== 'any' ? 1 : 0)
+    (f.hasQr !== 'any' ? 1 : 0) +
+    (hasCampaignFilter(f) ? 1 : 0)
   )
 }
 
@@ -96,6 +105,7 @@ function FiltersBody({
   onApply: (v: LinkFilters) => void
 }) {
   const [draft, setDraft] = useState<LinkFilters>(value)
+  const { data: campaigns } = useCampaigns()
   const set = <K extends keyof LinkFilters>(key: K, v: LinkFilters[K]) => setDraft((d) => ({ ...d, [key]: v }))
 
   return (
@@ -149,6 +159,26 @@ function FiltersBody({
               {QR_OPTIONS.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
                   {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="filters-campaign">Campaign</Label>
+          <Select
+            value={hasCampaignFilter(draft) ? draft.campaignId : 'all'}
+            onValueChange={(v) => set('campaignId', v === 'all' ? '' : v)}
+          >
+            <SelectTrigger id="filters-campaign" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All campaigns</SelectItem>
+              {(campaigns ?? []).map((c) => (
+                <SelectItem key={c.id} value={String(c.id)}>
+                  {c.name}
                 </SelectItem>
               ))}
             </SelectContent>

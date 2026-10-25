@@ -7,6 +7,7 @@ import { CornerDownRight, EyeOff, Palette, Plus, QrCode } from 'lucide-react'
 import { toast } from 'sonner'
 import { CopyButton } from '@/components/common/CopyButton'
 import { EmptyState } from '@/components/common/EmptyState'
+import { AddToCampaignDialog } from '@/components/links/AddToCampaignDialog'
 import { AddToPageDialog, pageLabel } from '@/components/links/AddToPageDialog'
 import { DynamicRoutingCard } from '@/components/links/DynamicRoutingCard'
 import { LinkAnalytics } from '@/components/links/LinkAnalytics'
@@ -17,7 +18,7 @@ import { QrPreview } from '@/components/qr/QrPreview'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatDate, formatDateTime, formatShortUrl } from '@/lib/format'
-import { useBulkLinks, useLink, usePages, useQrCode } from '@/lib/hooks'
+import { useBulkLinks, useLink, useLinkCampaigns, usePages, useQrCode } from '@/lib/hooks'
 import { normalizeQrDesign } from '@/lib/qr/design'
 import type { Link } from '@/types'
 
@@ -222,6 +223,44 @@ function PagesCard({ link }: { link: Link }) {
   )
 }
 
+function CampaignsCard({ link }: { link: Link }) {
+  const [open, setOpen] = useState(false)
+  const { data } = useLinkCampaigns(link.id)
+  const memberships = data ?? []
+  return (
+    <section className={CARD}>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h2 className="text-xl font-semibold text-foreground">Campaigns</h2>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
+        >
+          <Plus className="size-4" />
+          Add to campaign
+        </button>
+      </div>
+      {memberships.length > 0 ? (
+        <ul className="space-y-1">
+          {memberships.map((m) => (
+            <li key={`${m.campaign_id}-${m.channel_id}`}>
+              <NextLink
+                href={`/dashboard/campaigns/${m.campaign_id}`}
+                className="text-sm font-semibold text-primary hover:underline"
+              >
+                {m.campaign_name} · {m.channel_name}
+              </NextLink>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">Not in a campaign</p>
+      )}
+      <AddToCampaignDialog open={open} onOpenChange={setOpen} link={link} />
+    </section>
+  )
+}
+
 function DetailsSkeleton() {
   return (
     <div className="space-y-4 pt-8">
@@ -265,6 +304,7 @@ export default function LinkDetailsPage() {
         <div className="space-y-4">
           <QrCard link={link} />
           <PagesCard link={link} />
+          <CampaignsCard link={link} />
         </div>
       </div>
       <div className="mt-4">

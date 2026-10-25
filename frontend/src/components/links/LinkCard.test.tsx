@@ -85,6 +85,15 @@ describe("LinkCard", () => {
     expect(within(menu).getByRole("menuitem", { name: "Delete" })).not.toHaveAttribute("data-disabled");
   });
 
+  it("'Add to campaign' is enabled and opens the dialog", async () => {
+    wrap(<LinkCard link={base} selected={false} onSelectedChange={vi.fn()} />);
+    const { user, menu } = await openMenu();
+    const item = within(menu).getByRole("menuitem", { name: "Add to campaign" });
+    expect(item).not.toHaveAttribute("data-disabled");
+    await user.click(item);
+    expect(await screen.findByRole("heading", { name: "Add to campaign" })).toBeInTheDocument();
+  });
+
   it("lists View QR Code linking to the link's QR Code", async () => {
     wrap(<LinkCard link={{ ...base, qr_code_id: 9 }} selected={false} onSelectedChange={vi.fn()} />);
     const { menu } = await openMenu();

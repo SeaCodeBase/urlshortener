@@ -1,5 +1,5 @@
 import type { LinkFilters as ApiLinkFilters } from '@/types'
-import { DEFAULT_LINK_FILTERS, type LinkFilters } from './FiltersDialog'
+import { DEFAULT_LINK_FILTERS, hasCampaignFilter, type LinkFilters } from './FiltersDialog'
 
 export type LinksShow = 'active' | 'hidden'
 export type LinksView = 'compact' | 'default' | 'grid'
@@ -16,6 +16,7 @@ export interface LinksUrlState {
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const POSITIVE_INT_RE = /^[1-9]\d*$/
 
 function oneOf<T extends string>(value: string | null, allowed: readonly T[], fallback: T): T {
   return allowed.includes(value as T) ? (value as T) : fallback
@@ -25,6 +26,7 @@ export function parseLinksUrlState(sp: Pick<URLSearchParams, 'get'>): LinksUrlSt
   const exp = sp.get('exp')
   const from = sp.get('from')
   const to = sp.get('to')
+  const campaignId = sp.get('campaign_id')
   return {
     q: sp.get('q') ?? '',
     show: oneOf(sp.get('show'), ['active', 'hidden'] as const, 'active'),
@@ -36,6 +38,7 @@ export function parseLinksUrlState(sp: Pick<URLSearchParams, 'get'>): LinksUrlSt
       linkType: oneOf(sp.get('type'), ['all', 'custom', 'nocustom'] as const, 'all'),
       expiration: exp === 'expired' || exp === 'expiring' || exp === 'none' ? exp : null,
       hasQr: oneOf(sp.get('qr'), ['any', 'with', 'without'] as const, 'any'),
+      campaignId: campaignId && POSITIVE_INT_RE.test(campaignId) ? campaignId : '',
     },
     from: from && DATE_RE.test(from) ? from : null,
     to: to && DATE_RE.test(to) ? to : null,
@@ -51,6 +54,7 @@ export function linksUrlStateToSearch(s: LinksUrlState): string {
   if (s.filters.linkType !== DEFAULT_LINK_FILTERS.linkType) p.set('type', s.filters.linkType)
   if (s.filters.expiration) p.set('exp', s.filters.expiration)
   if (s.filters.hasQr !== DEFAULT_LINK_FILTERS.hasQr) p.set('qr', s.filters.hasQr)
+  if (hasCampaignFilter(s.filters)) p.set('campaign_id', s.filters.campaignId)
   if (s.from) p.set('from', s.from)
   if (s.to) p.set('to', s.to)
   return p.toString()
@@ -69,6 +73,7 @@ export function toApiParams(s: LinksUrlState): ApiLinkFilters {
   if (s.q) params.q = s.q
   if (s.filters.tags.length) params.tags = s.filters.tags
   if (s.filters.expiration) params.expiration = s.filters.expiration
+  if (hasCampaignFilter(s.filters)) params.campaign_id = Number(s.filters.campaignId)
   if (s.from) params.created_after = s.from
   if (s.to) params.created_before = s.to
   return params
@@ -77,5 +82,5 @@ export function toApiParams(s: LinksUrlState): ApiLinkFilters {
 /** True when anything narrows the list beyond the Active/Hidden view. */
 export function hasActiveQuery(s: LinksUrlState): boolean {
   const f = s.filters
-  return !!(s.q || s.from || s.to || f.tags.length || f.linkType !== 'all' || f.expiration || f.hasQr !== 'any')
+  return !!(s.q || s.from || s.to || f.tags.length || f.linkType !== 'all' || f.expiration || f.hasQr !== 'any' || hasCampaignFilter(f))
 }

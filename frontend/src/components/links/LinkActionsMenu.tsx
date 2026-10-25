@@ -18,6 +18,7 @@ import { ApiError } from '@/lib/api'
 import { useBulkLinks, useDeleteLink } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import type { Link } from '@/types'
+import { AddToCampaignDialog } from './AddToCampaignDialog'
 import { AddToPageDialog } from './AddToPageDialog'
 
 export const CANT_DELETE_MESSAGE = "This link can't be deleted. You can hide it instead."
@@ -54,6 +55,7 @@ export function LinkActionsMenu({
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [addToPage, setAddToPage] = useState(false)
+  const [addToCampaign, setAddToCampaign] = useState(false)
   const bulk = useBulkLinks()
   const del = useDeleteLink()
   const deletable = isDeletable(link)
@@ -115,10 +117,10 @@ export function LinkActionsMenu({
             <FileText />
             Add to a page
           </DropdownMenuItem>
-          <DisabledItem tooltip="Coming soon">
+          <DropdownMenuItem onSelect={() => setAddToCampaign(true)}>
             <Megaphone />
             Add to campaign
-          </DisabledItem>
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={toggleHidden}>
             {link.archived ? <Eye /> : <EyeOff />}
@@ -138,6 +140,7 @@ export function LinkActionsMenu({
         </DropdownMenuContent>
       </DropdownMenu>
       <AddToPageDialog open={addToPage} onOpenChange={setAddToPage} link={link} />
+      <AddToCampaignDialog open={addToCampaign} onOpenChange={setAddToCampaign} link={link} />
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
