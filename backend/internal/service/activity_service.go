@@ -47,6 +47,13 @@ const (
 	ActionPageHide    = "page.hide"
 	ActionPageUnhide  = "page.unhide"
 	ActionPageDelete  = "page.delete"
+
+	// ActionWebhookUpdate also covers re-activation (meta {"activated": true}).
+	ActionWebhookCreate     = "webhook.create"
+	ActionWebhookUpdate     = "webhook.update"
+	ActionWebhookVerify     = "webhook.verify"
+	ActionWebhookDeactivate = "webhook.deactivate"
+	ActionWebhookDelete     = "webhook.delete"
 )
 
 // Activity log entity types.
@@ -58,6 +65,7 @@ const (
 	EntityQRCode    = "qr_code"
 	EntityDashboard = "dashboard"
 	EntityPage      = "page"
+	EntityWebhook   = "webhook"
 )
 
 const (

@@ -1,0 +1,138 @@
+package service
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/url"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/SeaCodeBase/urlshortener/internal/model"
+)
+
+// webhookURLMsg is the ValidationError message for any rejected webhook URL.
+const webhookURLMsg = "URL must be a public http(s) address"
+
+// webhookDeactivateAfter is how long a webhook may keep failing before it is
+// deactivated.
+const webhookDeactivateAfter = 24 * time.Hour
+
+// webhookAlertFailures is the consecutive-failure count that raises an alert.
+const webhookAlertFailures = 2
+
+// ValidateWebhookURL accepts http(s) URLs with a host, no userinfo, whose
+// host (an IP literal, or every address it resolves to, at least one) is a
+// public unicast address. Any rejection is *ValidationError.
+func ValidateWebhookURL(ctx context.Context, raw string, r DNSResolver) error {
+	bad := &ValidationError{Msg: webhookURLMsg}
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
+		return bad
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" || host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return bad
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if !isPublicIP(ip) {
+			return bad
+		}
+		return nil
+	}
+	addrs, err := r.LookupIPAddr(ctx, host)
+	if err != nil || len(addrs) == 0 {
+		return bad
+	}
+	for _, a := range addrs {
+		if !isPublicIP(a.IP) {
+			return bad
+		}
+	}
+	return nil
+}
+
+// isPublicIP reports whether ip is outside the loopback, link-local,
+// private, unspecified and multicast ranges.
+func isPublicIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	return !(ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsPrivate() || ip.IsUnspecified() || ip.IsMulticast() || ip.IsInterfaceLocalMulticast())
+}
+
+// SignBody is the lowercase hex HMAC-SHA256 of body keyed by secret (the
+// X-Signature header of every webhook request).
+func SignBody(secret string, body []byte) string {
+	m := hmac.New(sha256.New, []byte(secret))
+	m.Write(body)
+	return hex.EncodeToString(m.Sum(nil))
+}
+
+// ApplyDeliveryResult updates w's status fields after a delivery attempt at
+// now (pure; the caller persists w). Success resets to active; a failure
+// counts up, remembers when failing started, alerts from the second failure
+// on and deactivates once failing for longer than 24 h.
+func ApplyDeliveryResult(w *model.Webhook, ok bool, now time.Time) {
+	w.LastDeliveryAt = model.NullTime{}
+	w.LastDeliveryAt.Time, w.LastDeliveryAt.Valid = now, true
+	if ok {
+		w.Status = model.WebhookStatusActive
+		w.ConsecutiveFailures = 0
+		w.FailingSince = model.NullTime{}
+		return
+	}
+	w.ConsecutiveFailures++
+	if !w.FailingSince.Valid {
+		w.FailingSince.Time, w.FailingSince.Valid = now, true
+	}
+	if w.ConsecutiveFailures >= webhookAlertFailures {
+		w.Status = model.WebhookStatusAlert
+	}
+	if now.Sub(w.FailingSince.Time) > webhookDeactivateAfter {
+		w.Status = model.WebhookStatusDeactivated
+		w.IsActive = false
+	}
+}
+
+// errNonPublicAddress is returned by the webhook client's dialer.
+var errNonPublicAddress = errors.New("webhook: refusing to connect to a non-public address")
+
+// NewWebhookHTTPClient is the client for outbound webhook requests: 10 s
+// timeout, at most 3 redirects, and a dialer that refuses non-public IPs
+// (so DNS rebinding or a redirect cannot reach internal hosts).
+func NewWebhookHTTPClient() *http.Client {
+	dialer := &net.Dialer{
+		Timeout: 5 * time.Second,
+		Control: func(_, address string, _ syscall.RawConn) error {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return err
+			}
+			if !isPublicIP(net.ParseIP(host)) {
+				return fmt.Errorf("%w: %s", errNonPublicAddress, host)
+			}
+			return nil
+		},
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DialContext = dialer.DialContext
+	return &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: transport,
+		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	}
+}

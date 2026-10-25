@@ -284,3 +284,27 @@ type PasskeyService interface {
 	Delete(ctx context.Context, userID, passkeyID uint64) error
 	HasPasskeys(ctx context.Context, userID uint64) (bool, error)
 }
+
+//go:generate mockgen -destination=mocks/mock_webhook_service.go -package=mocks . WebhookService
+type WebhookService interface {
+	// Create validates the input (*ValidationError: name 1–120 chars, event
+	// "engagement", public http(s) URL) and stores the webhook with a new
+	// 64-hex-char secret.
+	Create(ctx context.Context, userID, groupID uint64, in WebhookInput) (*model.Webhook, error)
+	// Get returns repository.ErrWebhookNotFound when missing or in another
+	// group; every other id-taking method does the same.
+	Get(ctx context.Context, groupID, id uint64) (*model.Webhook, error)
+	List(ctx context.Context, groupID uint64) ([]model.Webhook, error)
+	// Update changes name and URL, validated as Create.
+	Update(ctx context.Context, userID, groupID, id uint64, in WebhookInput) (*model.Webhook, error)
+	Delete(ctx context.Context, userID, groupID, id uint64) error
+	// Deactivate stops deliveries (is_active=false, status=deactivated).
+	Deactivate(ctx context.Context, userID, groupID, id uint64) (*model.Webhook, error)
+	// Activate resumes deliveries and clears the failure state.
+	Activate(ctx context.Context, userID, groupID, id uint64) (*model.Webhook, error)
+	// Verify POSTs a signed ping, records the delivery and applies
+	// ApplyDeliveryResult (a deactivated webhook stays deactivated).
+	Verify(ctx context.Context, userID, groupID, id uint64) (*model.WebhookDelivery, error)
+	// Deliveries returns the newest 20 deliveries.
+	Deliveries(ctx context.Context, groupID, id uint64) ([]model.WebhookDelivery, error)
+}

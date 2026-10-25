@@ -38,10 +38,12 @@ const (
 	verificationTokenN = 16 // bytes → 32 hex characters
 )
 
-// DNSResolver is the subset of net.Resolver used for domain verification.
+// DNSResolver is the subset of net.Resolver used for domain verification
+// and webhook URL validation (LookupIPAddr).
 type DNSResolver interface {
 	LookupTXT(ctx context.Context, name string) ([]string, error)
 	LookupCNAME(ctx context.Context, name string) (string, error)
+	LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error)
 }
 
 // NewNetResolver returns a DNSResolver backed by net.DefaultResolver.

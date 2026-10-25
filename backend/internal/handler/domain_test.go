@@ -35,6 +35,8 @@ func (f *fakeDNS) LookupTXT(_ context.Context, name string) ([]string, error) {
 	return nil, &net.DNSError{Err: "no such host", Name: name, IsNotFound: true}
 }
 
+func (f *fakeDNS) LookupIPAddr(context.Context, string) ([]net.IPAddr, error) { return nil, nil }
+
 func (f *fakeDNS) LookupCNAME(_ context.Context, name string) (string, error) {
 	if v, ok := f.cname[name]; ok {
 		return v, nil
