@@ -59,6 +59,7 @@ const (
 	ActionCampaignCreate = "campaign.create"
 	ActionCampaignUpdate = "campaign.update"
 	ActionCampaignDelete = "campaign.delete"
+	ActionBulkCreate     = "bulk.create"
 )
 
 // Activity log entity types.
@@ -72,6 +73,7 @@ const (
 	EntityPage      = "page"
 	EntityWebhook   = "webhook"
 	EntityCampaign  = "campaign"
+	EntityBulk      = "bulk_upload"
 )
 
 const (

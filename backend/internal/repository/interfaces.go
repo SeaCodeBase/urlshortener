@@ -457,6 +457,10 @@ type BulkUploadRepository interface {
 	// ClaimNext atomically moves the oldest queued upload to processing and
 	// returns it (with SourceCSV); nil, nil when none is queued.
 	ClaimNext(ctx context.Context) (*model.BulkUpload, error)
+	// ReclaimStale moves uploads stuck in processing (not updated for longer
+	// than olderThan, e.g. after a crash) back to queued with zeroed
+	// counters and returns how many it moved.
+	ReclaimStale(ctx context.Context, olderThan time.Duration) (int, error)
 	// UpdateProgress sets the counters; ErrBulkUploadNotFound.
 	UpdateProgress(ctx context.Context, id uint64, processed, succeeded, failed int) error
 	// Finish sets the final status, result CSV (empty string stores NULL) and

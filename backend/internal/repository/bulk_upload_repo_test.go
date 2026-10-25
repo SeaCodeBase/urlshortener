@@ -3,6 +3,7 @@ package repository_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
 	"github.com/SeaCodeBase/urlshortener/internal/repository"
@@ -125,4 +126,44 @@ func TestBulkRepo_ListOmitsCSVBodies(t *testing.T) {
 		assert.Equal(t, 2, u.Total)
 	}
 	assert.Equal(t, model.BulkStatusDone, list[1].Status)
+}
+
+func TestBulkRepo_ReclaimStale(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	group, _ := linkFixture(t, db, "bulk.reclaim@example.com")
+	repo := repository.NewBulkUploadRepository(db)
+
+	stale := createBulk(t, repo, group, "stale.csv")
+	fresh := createBulk(t, repo, group, "fresh.csv")
+	queued := createBulk(t, repo, group, "queued.csv")
+	_, err := repo.ClaimNext(ctx)
+	require.NoError(t, err)
+	_, err = repo.ClaimNext(ctx)
+	require.NoError(t, err)
+	require.NoError(t, repo.UpdateProgress(ctx, stale.ID, 1, 1, 0))
+	_, err = db.ExecContext(ctx,
+		`UPDATE bulk_uploads SET updated_at = NOW() - INTERVAL 11 MINUTE WHERE id = ?`, stale.ID)
+	require.NoError(t, err)
+
+	n, err := repo.ReclaimStale(ctx, 10*time.Minute)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+
+	got, err := repo.GetByID(ctx, stale.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.BulkStatusQueued, got.Status)
+	assert.Equal(t, 0, got.Processed, "counters reset for the rerun")
+	assert.Equal(t, 0, got.Succeeded)
+	got, err = repo.GetByID(ctx, fresh.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.BulkStatusProcessing, got.Status, "recently updated job is left alone")
+	got, err = repo.GetByID(ctx, queued.ID)
+	require.NoError(t, err)
+	assert.Equal(t, model.BulkStatusQueued, got.Status)
+
+	n, err = repo.ReclaimStale(ctx, 10*time.Minute)
+	require.NoError(t, err)
+	assert.Equal(t, 0, n)
 }

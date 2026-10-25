@@ -347,3 +347,18 @@ type CampaignService interface {
 	// belongs to; repository.ErrLinkNotFound for a link of another group.
 	LinkMemberships(ctx context.Context, groupID, linkID uint64) ([]LinkMembership, error)
 }
+
+//go:generate mockgen -destination=mocks/mock_bulk_service.go -package=mocks . BulkService
+type BulkService interface {
+	// Create validates the CSV (*ValidationError: larger than 2 MiB, bad
+	// header, no rows, more than 1000 rows, malformed) and queues it.
+	Create(ctx context.Context, userID, groupID uint64, filename string, csvBytes []byte) (*model.BulkUpload, error)
+	// List returns the group's uploads newest first, without CSV bodies.
+	List(ctx context.Context, groupID uint64) ([]model.BulkUpload, error)
+	// Get returns repository.ErrBulkUploadNotFound when missing or in
+	// another group; Results does the same.
+	Get(ctx context.Context, groupID, id uint64) (*model.BulkUpload, error)
+	// Results returns the per-row results CSV; ErrBulkNotFinished until the
+	// upload is done or failed.
+	Results(ctx context.Context, groupID, id uint64) (string, error)
+}

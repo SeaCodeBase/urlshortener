@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
 	"github.com/SeaCodeBase/urlshortener/pkg/logger"
@@ -109,6 +110,26 @@ func (r *BulkUploadRepositoryImpl) ClaimNext(ctx context.Context) (*model.BulkUp
 		return nil, err
 	}
 	return r.GetByID(ctx, id)
+}
+
+// ReclaimStale requeues processing uploads whose updated_at is older than
+// olderThan (the worker bumps it after every batch), resetting the counters
+// so the rerun reports from scratch. The cutoff is computed by the database
+// so it compares against the same clock that wrote updated_at.
+func (r *BulkUploadRepositoryImpl) ReclaimStale(ctx context.Context, olderThan time.Duration) (int, error) {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE bulk_uploads SET status = ?, processed = 0, succeeded = 0, failed = 0
+		 WHERE status = ? AND updated_at < NOW() - INTERVAL ? SECOND`,
+		model.BulkStatusQueued, model.BulkStatusProcessing, int64(olderThan/time.Second))
+	if err != nil {
+		logger.Error(ctx, "bulk-repo: failed to reclaim stale uploads", zap.Error(err))
+		return 0, err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
 }
 
 func (r *BulkUploadRepositoryImpl) UpdateProgress(ctx context.Context, id uint64, processed, succeeded, failed int) error {

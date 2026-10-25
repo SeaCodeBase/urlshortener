@@ -12,6 +12,7 @@ package mocks
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	model "github.com/SeaCodeBase/urlshortener/internal/model"
 	gomock "go.uber.org/mock/gomock"
@@ -112,6 +113,21 @@ func (m *MockBulkUploadRepository) ListByGroup(ctx context.Context, groupID uint
 func (mr *MockBulkUploadRepositoryMockRecorder) ListByGroup(ctx, groupID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListByGroup", reflect.TypeOf((*MockBulkUploadRepository)(nil).ListByGroup), ctx, groupID)
+}
+
+// ReclaimStale mocks base method.
+func (m *MockBulkUploadRepository) ReclaimStale(ctx context.Context, olderThan time.Duration) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReclaimStale", ctx, olderThan)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReclaimStale indicates an expected call of ReclaimStale.
+func (mr *MockBulkUploadRepositoryMockRecorder) ReclaimStale(ctx, olderThan any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReclaimStale", reflect.TypeOf((*MockBulkUploadRepository)(nil).ReclaimStale), ctx, olderThan)
 }
 
 // UpdateProgress mocks base method.

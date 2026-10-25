@@ -88,6 +88,7 @@ func main() {
 	pageViewRepo := repository.NewPageViewRepository(db)
 	webhookRepo := repository.NewWebhookRepository(db)
 	campaignRepo := repository.NewCampaignRepository(db)
+	bulkUploadRepo := repository.NewBulkUploadRepository(db)
 
 	// Outbound webhook requests (verify pings and deliveries): 10 s timeout,
 	// ≤3 redirects, refuses non-public addresses.
@@ -129,6 +130,16 @@ func main() {
 		Activity:   activityService,
 		BaseURL:    cfg.URLs.BaseURL,
 	})
+	bulkService := service.NewBulkService(service.BulkServiceDeps{
+		Bulk:     bulkUploadRepo,
+		Activity: activityService,
+	})
+	// The bulk worker creates links through the link service, so it starts
+	// once that exists; it stops before the click/webhook workers.
+	bulkWorker := worker.NewBulkWorker(bulkUploadRepo, linkService, domainRepo,
+		cfg.Workers.Bulk.PollEvery, cfg.Workers.Bulk.BatchSize, cfg.URLs.BaseURL)
+	bulkWorker.Start()
+	defer bulkWorker.Stop()
 	campaignService := service.NewCampaignService(service.CampaignServiceDeps{
 		Campaigns: campaignRepo,
 		Links:     linkRepo,
@@ -217,6 +228,7 @@ func main() {
 	analyticsHandler := handler.NewAnalyticsHandler(statsService, analyticsService)
 	dashboardHandler := handler.NewDashboardHandler(dashboardService, analyticsService)
 	webhookHandler := handler.NewWebhookHandler(webhookService)
+	bulkUploadHandler := handler.NewBulkUploadHandler(bulkService)
 	campaignHandler := handler.NewCampaignHandler(campaignService, linkService, domainRepo, cfg)
 	campaignHandler.SetPageIDs(pageService)
 
@@ -379,6 +391,9 @@ func main() {
 
 		// Campaigns and channels (protected, group-scoped)
 		handler.RegisterCampaignRoutes(api, campaignHandler, authMiddleware, groupMW)
+
+		// Bulk CSV uploads (protected, group-scoped)
+		handler.RegisterBulkUploadRoutes(api, bulkUploadHandler, authMiddleware, groupMW)
 
 		// Published pages (public: no auth, no group; drafts are never served)
 		public := api.Group("/public")
