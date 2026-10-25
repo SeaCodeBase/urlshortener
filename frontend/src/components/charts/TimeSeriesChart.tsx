@@ -4,7 +4,7 @@ import { format, parseISO } from 'date-fns'
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { SeriesPoint, StatsUnit } from '@/types'
 import { NoData } from './NoData'
-import { CURRENT_COLOR, EXTRA_COLOR, PREVIOUS_COLOR } from './palette'
+import { CURRENT_COLOR, DOUGHNUT_PALETTE, EXTRA_COLOR, PREVIOUS_COLOR } from './palette'
 
 /** `2026-10-24` → `Oct 24`; `2026-10-24T13:00` → `13:00`. */
 export function formatBucket(date: string, unit: StatsUnit): string {
@@ -25,6 +25,13 @@ interface Row {
 
 const AXIS_TICK = { fontSize: 12, fill: '#526281' }
 
+/** Colour of the `i`-th entry of `multiSeries`, cycling through the chart palette. */
+export function multiSeriesColor(i: number): string {
+  return DOUGHNUT_PALETTE[i % DOUGHNUT_PALETTE.length]
+}
+
+type MultiRow = { label: string } & Record<string, number | string>
+
 /**
  * Engagements over time: current period solid blue, previous period dashed light blue (aligned by bucket index),
  * optional extra series solid teal. `variant="bar"` draws grouped bars in the same colours.
@@ -38,6 +45,7 @@ export function TimeSeriesChart({
   seriesName = 'Engagements',
   prevSeriesName = 'Previous period',
   extraSeries,
+  multiSeries,
   variant = 'line',
 }: {
   series: SeriesPoint[]
@@ -51,8 +59,14 @@ export function TimeSeriesChart({
   prevSeriesName?: string
   /** A third series aligned by bucket index (e.g. a compared link). */
   extraSeries?: { name: string; points: SeriesPoint[] }
+  /**
+   * N named series aligned by bucket index (e.g. one per campaign channel). When given,
+   * `series`/`prevSeries`/`extraSeries` are ignored and the legend lists each name.
+   */
+  multiSeries?: { name: string; points: SeriesPoint[] }[]
   variant?: 'line' | 'bar'
 }) {
+  if (multiSeries) return <MultiSeriesChart multiSeries={multiSeries} unit={unit} height={height} variant={variant} />
   if (!series.length) return <NoData style={{ height }} />
 
   const data: Row[] = series.map((p, i) => ({
@@ -126,6 +140,81 @@ export function TimeSeriesChart({
             isAnimationActive={false}
           />
         )}
+      </LineChart>
+    </ResponsiveContainer>
+  )
+}
+
+function MultiSeriesChart({
+  multiSeries,
+  unit,
+  height,
+  variant,
+}: {
+  multiSeries: { name: string; points: SeriesPoint[] }[]
+  unit: StatsUnit
+  height: number
+  variant: 'line' | 'bar'
+}) {
+  const longest = multiSeries.reduce<SeriesPoint[]>((acc, s) => (s.points.length > acc.length ? s.points : acc), [])
+  if (!longest.length) return <NoData style={{ height }} />
+
+  const data: MultiRow[] = longest.map((p, i) => {
+    const row: MultiRow = { label: formatBucket(p.date, unit) }
+    multiSeries.forEach((s, j) => {
+      row[`s${j}`] = s.points[i]?.clicks ?? 0
+    })
+    return row
+  })
+  const margin = { top: 8, right: 16, bottom: 0, left: -16 }
+  const axes = [
+    <CartesianGrid key="grid" vertical={false} stroke="#E1E4EC" />,
+    <XAxis key="x" dataKey="label" tickLine={false} axisLine={false} tick={AXIS_TICK} minTickGap={16} />,
+    <YAxis key="y" allowDecimals={false} tickLine={false} axisLine={false} tick={AXIS_TICK} />,
+  ]
+
+  if (variant === 'bar') {
+    return (
+      <ResponsiveContainer width="100%" height={height} initialDimension={{ width: 600, height }}>
+        <BarChart data={data} margin={margin}>
+          {axes}
+          <Tooltip cursor={{ fill: '#F4F6FA' }} />
+          <Legend verticalAlign="top" align="right" height={28} iconType="square" itemSorter={null} />
+          {multiSeries.map((s, j) => (
+            <Bar
+              key={j}
+              dataKey={`s${j}`}
+              name={s.name}
+              fill={multiSeriesColor(j)}
+              radius={[4, 4, 0, 0]}
+              maxBarSize={32}
+              isAnimationActive={false}
+            />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    )
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={height} initialDimension={{ width: 600, height }}>
+      <LineChart data={data} margin={margin}>
+        {axes}
+        <Tooltip />
+        {/* Keep the caller's order (recharts sorts legend items by name by default). */}
+        <Legend verticalAlign="top" align="right" height={28} iconType="plainline" itemSorter={null} />
+        {multiSeries.map((s, j) => (
+          <Line
+            key={j}
+            type="monotone"
+            dataKey={`s${j}`}
+            name={s.name}
+            stroke={multiSeriesColor(j)}
+            strokeWidth={2}
+            dot={false}
+            isAnimationActive={false}
+          />
+        ))}
       </LineChart>
     </ResponsiveContainer>
   )
