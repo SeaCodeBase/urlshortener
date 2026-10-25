@@ -169,6 +169,7 @@ func TestValidateWebhookURL_DenyList(t *testing.T) {
 		"::", "::1", "fd00::1", "fc00::1", "fe80::1", "ff02::1",
 		"::ffff:127.0.0.1", "::ffff:10.0.0.1", "::ffff:169.254.169.254",
 		"64:ff9b::7f00:1", "64:ff9b::a00:1", "2002:7f00:1::", "2002:a9fe:a9fe::1", "::7f00:1", "::a00:1",
+		"::ffff:0:7f00:1", "::ffff:0:a00:1", "64:ff9b:1::5db8:d822", "64:ff9b:1::7f00:1", "fec0::1", "feff::1",
 	}
 	for _, ip := range denied {
 		r := &fakeIPResolver{ips: map[string][]string{"h.example.test": {ip}}}
@@ -179,7 +180,8 @@ func TestValidateWebhookURL_DenyList(t *testing.T) {
 		}
 	}
 	allowed := []string{"93.184.216.34", "100.63.255.255", "100.128.0.1", "172.32.0.1", "198.20.0.1",
-		"2606:4700::1111", "::ffff:93.184.216.34", "64:ff9b::5db8:d822", "2002:5db8:d822::1"}
+		"2606:4700::1111", "::ffff:93.184.216.34", "64:ff9b::5db8:d822", "2002:5db8:d822::1",
+		"::ffff:0:5db8:d822"}
 	for _, ip := range allowed {
 		err := service.ValidateWebhookURL(context.Background(), "http://"+literalHost(ip)+"/x", nil)
 		assert.NoError(t, err, ip)

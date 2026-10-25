@@ -245,14 +245,17 @@ func (s *WebhookServiceImpl) Verify(ctx context.Context, userID, groupID, id uin
 		return nil, err
 	}
 
-	// A manually deactivated webhook stays deactivated until Activate.
-	wasDeactivated := !w.IsActive || w.Status == model.WebhookStatusDeactivated
-	ApplyDeliveryResult(w, ok, now)
-	if wasDeactivated {
-		w.IsActive = false
-		w.Status = model.WebhookStatusDeactivated
-	}
-	if err := s.webhooks.Update(ctx, w); err != nil {
+	// Column-scoped and applied to the locked current row, so a concurrent
+	// edit of name/URL survives. A deactivated webhook stays deactivated
+	// until Activate (the repository also guarantees this).
+	if _, err := s.webhooks.UpdateDeliveryState(ctx, w.ID, func(cur *model.Webhook) {
+		wasDeactivated := !cur.IsActive || cur.Status == model.WebhookStatusDeactivated
+		ApplyDeliveryResult(cur, ok, now)
+		if wasDeactivated {
+			cur.IsActive = false
+			cur.Status = model.WebhookStatusDeactivated
+		}
+	}); err != nil {
 		return nil, err
 	}
 	s.activity.Log(ctx, userID, groupID, ActionWebhookVerify, EntityWebhook, w.ID, map[string]any{"status_code": status})

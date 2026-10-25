@@ -430,6 +430,13 @@ type WebhookRepository interface {
 	// Update writes name, url, is_active, status, consecutive_failures,
 	// failing_since and last_delivery_at; ErrWebhookNotFound.
 	Update(ctx context.Context, w *model.Webhook) error
+	// UpdateDeliveryState records a delivery outcome without racing user
+	// edits: in one transaction it locks the row (SELECT … FOR UPDATE), calls
+	// apply on the current row, and writes back only status, is_active,
+	// consecutive_failures, failing_since and last_delivery_at. A webhook
+	// that was inactive when locked keeps its is_active and status (never
+	// reactivated). Returns the stored row; ErrWebhookNotFound.
+	UpdateDeliveryState(ctx context.Context, id uint64, apply func(w *model.Webhook)) (*model.Webhook, error)
 	// Delete removes the webhook and its deliveries; ErrWebhookNotFound.
 	Delete(ctx context.Context, id uint64) error
 	// AddDelivery records a delivery, then keeps only the newest 50 rows of

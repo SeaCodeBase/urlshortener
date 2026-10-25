@@ -80,6 +80,8 @@ var deniedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("::1/128"),
 	netip.MustParsePrefix("fc00::/7"),
 	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("fec0::/10"),      // deprecated site-local
+	netip.MustParsePrefix("64:ff9b:1::/48"), // RFC 8215 local-use NAT64
 	netip.MustParsePrefix("ff00::/8"),
 }
 
@@ -88,6 +90,9 @@ var (
 	nat64Prefix    = netip.MustParsePrefix("64:ff9b::/96") // RFC 6052: last 32 bits
 	sixToFourPrefx = netip.MustParsePrefix("2002::/16")    // RFC 3056: bits 16-47
 	v4CompatPrefix = netip.MustParsePrefix("::/96")        // deprecated IPv4-compatible
+	// RFC 2765 IPv4-translated ::ffff:0:a.b.c.d (IPv4-mapped ::ffff:a.b.c.d
+	// is handled by Unmap).
+	v4TranslatedPrefix = netip.MustParsePrefix("::ffff:0:0:0/96")
 )
 
 // isPublicIP reports whether ip is a public unicast address: outside every
@@ -116,7 +121,7 @@ func isPublicAddr(a netip.Addr) bool {
 	}
 	b := a.As16()
 	switch {
-	case nat64Prefix.Contains(a), v4CompatPrefix.Contains(a):
+	case nat64Prefix.Contains(a), v4CompatPrefix.Contains(a), v4TranslatedPrefix.Contains(a):
 		return isPublicAddr(netip.AddrFrom4([4]byte{b[12], b[13], b[14], b[15]}))
 	case sixToFourPrefx.Contains(a):
 		return isPublicAddr(netip.AddrFrom4([4]byte{b[2], b[3], b[4], b[5]}))

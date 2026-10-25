@@ -104,6 +104,41 @@ func (r *WebhookRepositoryImpl) Update(ctx context.Context, w *model.Webhook) er
 	return requireRowAffected(ctx, r.db, result, "webhooks", w.ID, ErrWebhookNotFound)
 }
 
+func (r *WebhookRepositoryImpl) UpdateDeliveryState(ctx context.Context, id uint64, apply func(w *model.Webhook)) (*model.Webhook, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		logger.Error(ctx, "webhook-repo: failed to begin delivery-state update", zap.Uint64("webhook_id", id), zap.Error(err))
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var w model.Webhook
+	err = tx.GetContext(ctx, &w, webhookSelect+` WHERE id = ? FOR UPDATE`, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrWebhookNotFound
+	}
+	if err != nil {
+		logger.Error(ctx, "webhook-repo: failed to lock webhook", zap.Uint64("webhook_id", id), zap.Error(err))
+		return nil, err
+	}
+	wasActive, wasStatus := w.IsActive, w.Status
+	apply(&w)
+	if !wasActive || wasStatus == model.WebhookStatusDeactivated {
+		w.IsActive, w.Status = wasActive, wasStatus
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE webhooks SET is_active = ?, status = ?, consecutive_failures = ?, failing_since = ?,
+		 last_delivery_at = ? WHERE id = ?`,
+		w.IsActive, w.Status, w.ConsecutiveFailures, utcNullTime(w.FailingSince), utcNullTime(w.LastDeliveryAt), id); err != nil {
+		logger.Error(ctx, "webhook-repo: failed to update delivery state", zap.Uint64("webhook_id", id), zap.Error(err))
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		logger.Error(ctx, "webhook-repo: failed to commit delivery state", zap.Uint64("webhook_id", id), zap.Error(err))
+		return nil, err
+	}
+	return &w, nil
+}
+
 // utcNullTime is the DATETIME parameter for t (UTC), or NULL.
 func utcNullTime(t model.NullTime) any {
 	if !t.Valid {

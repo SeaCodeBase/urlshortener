@@ -97,6 +97,28 @@ func (f *fakeWebhookRepo) Update(_ context.Context, w *model.Webhook) error {
 	return nil
 }
 
+// UpdateDeliveryState mirrors the repository: apply on the current row,
+// write only the delivery-state columns, never reactivate.
+func (f *fakeWebhookRepo) UpdateDeliveryState(_ context.Context, id uint64, apply func(*model.Webhook)) (*model.Webhook, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	stored, ok := f.hooks[id]
+	if !ok {
+		return nil, repository.ErrWebhookNotFound
+	}
+	cur := *stored
+	wasActive, wasStatus := cur.IsActive, cur.Status
+	apply(&cur)
+	if !wasActive || wasStatus == model.WebhookStatusDeactivated {
+		cur.IsActive, cur.Status = wasActive, wasStatus
+	}
+	stored.IsActive, stored.Status = cur.IsActive, cur.Status
+	stored.ConsecutiveFailures, stored.FailingSince, stored.LastDeliveryAt = cur.ConsecutiveFailures, cur.FailingSince, cur.LastDeliveryAt
+	f.updates++
+	out := *stored
+	return &out, nil
+}
+
 func (f *fakeWebhookRepo) Delete(_ context.Context, id uint64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -414,11 +436,20 @@ func TestDispatcher_StopWaitsForInFlight(t *testing.T) {
 	assert.Equal(t, 200, repo.deliveries[0].StatusCode)
 }
 
-// recordingEnqueuer captures what the flusher hands over.
-type recordingEnqueuer struct{ got [][]model.Click }
+// recordingEnqueuer captures what the flusher hands over and, when rdb is
+// set, the click buffer length at that moment.
+type recordingEnqueuer struct {
+	got       [][]model.Click
+	rdb       *redis.Client
+	bufferLen []int64
+}
 
-func (r *recordingEnqueuer) Enqueue(_ context.Context, clicks []model.Click) {
+func (r *recordingEnqueuer) Enqueue(ctx context.Context, clicks []model.Click) {
 	r.got = append(r.got, clicks)
+	if r.rdb != nil {
+		n, _ := r.rdb.LLen(ctx, "clicks:buffer").Result()
+		r.bufferLen = append(r.bufferLen, n)
+	}
 }
 
 func TestClickFlusher_EnqueuesAfterInsert(t *testing.T) {
@@ -429,7 +460,7 @@ func TestClickFlusher_EnqueuesAfterInsert(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, rdb.RPush(context.Background(), "clicks:buffer", string(ev)).Err())
 
-	rec := &recordingEnqueuer{}
+	rec := &recordingEnqueuer{rdb: rdb}
 	inserted := false
 	clicks.EXPECT().BatchInsert(gomock.Any(), gomock.Any()).DoAndReturn(func(context.Context, []model.Click) error {
 		inserted = true
@@ -445,6 +476,8 @@ func TestClickFlusher_EnqueuesAfterInsert(t *testing.T) {
 	require.Len(t, rec.got[0], 1)
 	assert.Equal(t, uint64(42), rec.got[0][0].LinkID)
 	assert.Equal(t, "link", rec.got[0][0].Source)
+	require.Len(t, rec.bufferLen, 1)
+	assert.Greater(t, rec.bufferLen[0], int64(0), "enqueue runs before the buffer is trimmed")
 	n, err := rdb.LLen(context.Background(), "clicks:buffer").Result()
 	require.NoError(t, err)
 	assert.Zero(t, n)
@@ -462,4 +495,43 @@ func TestClickFlusher_InsertFailureSkipsEnqueue(t *testing.T) {
 	f.SetEnqueuer(rec)
 	f.flush()
 	assert.Empty(t, rec.got)
+}
+
+func TestDispatcher_KeepsConcurrentURLChangeAndDeactivation(t *testing.T) {
+	_, rdb := newTestRedis(t)
+	var repo *fakeWebhookRepo
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		// While the delivery is in flight the user moves and deactivates it.
+		repo.mu.Lock()
+		repo.hooks[5].URL = "https://moved.example.test"
+		repo.hooks[5].IsActive, repo.hooks[5].Status = false, model.WebhookStatusDeactivated
+		repo.mu.Unlock()
+		rw.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	repo = newFakeWebhookRepo(hook(5, 7, srv.URL))
+	d := newTestDispatcher(rdb, repo, srv.Client())
+	pushJob(t, rdb, WebhookJob{WebhookID: 5, EventID: "ev1", Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
+
+	d.poll()
+	after := repo.snapshot(5)
+	assert.Equal(t, "https://moved.example.test", after.URL)
+	assert.False(t, after.IsActive)
+	assert.Equal(t, model.WebhookStatusDeactivated, after.Status)
+	assert.Equal(t, 1, after.ConsecutiveFailures)
+	assert.Empty(t, queueJobs(t, rdb), "no retry for a webhook deactivated meanwhile")
+}
+
+// panickyRepo panics on AddDelivery.
+type panickyRepo struct{ *fakeWebhookRepo }
+
+func (p panickyRepo) AddDelivery(context.Context, *model.WebhookDelivery) error { panic("boom") }
+
+func TestDispatcher_RecoversFromPanic(t *testing.T) {
+	_, rdb := newTestRedis(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) { rw.WriteHeader(http.StatusOK) }))
+	defer srv.Close()
+	d := newTestDispatcher(rdb, panickyRepo{newFakeWebhookRepo(hook(5, 7, srv.URL))}, srv.Client())
+	pushJob(t, rdb, WebhookJob{WebhookID: 5, EventID: "ev1", Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
+	assert.NotPanics(t, d.poll)
 }

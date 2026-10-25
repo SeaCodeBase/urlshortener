@@ -157,10 +157,13 @@ func TestWebhookService_Verify_RecordsDelivery(t *testing.T) {
 			d.ID = 99
 			return nil
 		})
-		f.hooks.EXPECT().Update(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, w *model.Webhook) error {
-			updated = w
-			return nil
-		})
+		f.hooks.EXPECT().UpdateDeliveryState(gomock.Any(), uint64(5), gomock.Any()).DoAndReturn(
+			func(_ context.Context, _ uint64, apply func(*model.Webhook)) (*model.Webhook, error) {
+				cur := *w // the row as locked by the repository
+				apply(&cur)
+				updated = &cur
+				return updated, nil
+			})
 		f.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionWebhookVerify, service.EntityWebhook, uint64(5),
 			map[string]any{"status_code": status})
 
@@ -224,10 +227,13 @@ func TestWebhookService_Verify_Timeout(t *testing.T) {
 	var updated *model.Webhook
 	f.hooks.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(w, nil)
 	f.hooks.EXPECT().AddDelivery(gomock.Any(), gomock.Any()).Return(nil)
-	f.hooks.EXPECT().Update(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, w *model.Webhook) error {
-		updated = w
-		return nil
-	})
+	f.hooks.EXPECT().UpdateDeliveryState(gomock.Any(), uint64(5), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ uint64, apply func(*model.Webhook)) (*model.Webhook, error) {
+			cur := *w // the row as locked by the repository
+			apply(&cur)
+			updated = &cur
+			return updated, nil
+		})
 	f.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionWebhookVerify, service.EntityWebhook, uint64(5),
 		map[string]any{"status_code": 0})
 
@@ -249,10 +255,13 @@ func TestWebhookService_Verify_DeactivatedStaysDeactivated(t *testing.T) {
 	var updated *model.Webhook
 	f.hooks.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(w, nil)
 	f.hooks.EXPECT().AddDelivery(gomock.Any(), gomock.Any()).Return(nil)
-	f.hooks.EXPECT().Update(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, w *model.Webhook) error {
-		updated = w
-		return nil
-	})
+	f.hooks.EXPECT().UpdateDeliveryState(gomock.Any(), uint64(5), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ uint64, apply func(*model.Webhook)) (*model.Webhook, error) {
+			cur := *w // the row as locked by the repository
+			apply(&cur)
+			updated = &cur
+			return updated, nil
+		})
 	f.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionWebhookVerify, service.EntityWebhook, uint64(5), gomock.Any())
 
 	d, err := f.svc.Verify(context.Background(), 1, 7, 5)

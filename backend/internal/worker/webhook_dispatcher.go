@@ -316,6 +316,12 @@ func (d *WebhookDispatcher) poll() {
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Error(ctx, "webhook-dispatcher: delivery panicked",
+						zap.Uint64("webhook_id", job.WebhookID), zap.String("event_id", job.EventID), zap.Any("panic", r))
+				}
+			}()
 			d.deliver(ctx, job)
 		}()
 	}
@@ -347,10 +353,18 @@ func (d *WebhookDispatcher) deliver(ctx context.Context, job WebhookJob) {
 	if err := d.webhooks.AddDelivery(ctx, rec); err != nil {
 		logger.Error(ctx, "webhook-dispatcher: failed to record delivery", zap.Uint64("webhook_id", w.ID), zap.Error(err))
 	}
-	// Read-modify-write: a concurrent Verify/Activate may be overwritten.
-	service.ApplyDeliveryResult(w, ok, now)
-	if err := d.webhooks.Update(ctx, w); err != nil {
+	// Column-scoped write on the locked current row: a concurrent edit of
+	// name/URL survives, parallel failures all count, and a webhook
+	// deactivated meanwhile stays deactivated.
+	updated, err := d.webhooks.UpdateDeliveryState(ctx, w.ID, func(cur *model.Webhook) {
+		service.ApplyDeliveryResult(cur, ok, now)
+	})
+	if err != nil {
+		if errors.Is(err, repository.ErrWebhookNotFound) {
+			return // deleted meanwhile: nothing to retry
+		}
 		logger.Error(ctx, "webhook-dispatcher: failed to update webhook", zap.Uint64("webhook_id", w.ID), zap.Error(err))
+		updated = w
 	}
 	if ok {
 		return
@@ -358,7 +372,7 @@ func (d *WebhookDispatcher) deliver(ctx context.Context, job WebhookJob) {
 	logger.Info(ctx, "webhook-dispatcher: delivery failed",
 		zap.Uint64("webhook_id", w.ID), zap.String("url_host", service.WebhookURLHost(w.URL)),
 		zap.Int("attempt", job.Attempt), zap.Int("status_code", status), zap.String("error", rec.Error))
-	if job.Attempt >= webhookMaxAttempts || !w.IsActive || w.Status == model.WebhookStatusDeactivated {
+	if job.Attempt >= webhookMaxAttempts || !updated.IsActive || updated.Status == model.WebhookStatusDeactivated {
 		return
 	}
 	next := job

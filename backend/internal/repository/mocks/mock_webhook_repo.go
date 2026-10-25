@@ -156,3 +156,18 @@ func (mr *MockWebhookRepositoryMockRecorder) Update(ctx, w any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Update", reflect.TypeOf((*MockWebhookRepository)(nil).Update), ctx, w)
 }
+
+// UpdateDeliveryState mocks base method.
+func (m *MockWebhookRepository) UpdateDeliveryState(ctx context.Context, id uint64, apply func(*model.Webhook)) (*model.Webhook, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateDeliveryState", ctx, id, apply)
+	ret0, _ := ret[0].(*model.Webhook)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateDeliveryState indicates an expected call of UpdateDeliveryState.
+func (mr *MockWebhookRepositoryMockRecorder) UpdateDeliveryState(ctx, id, apply any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateDeliveryState", reflect.TypeOf((*MockWebhookRepository)(nil).UpdateDeliveryState), ctx, id, apply)
+}

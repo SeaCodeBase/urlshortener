@@ -3,7 +3,9 @@ package repository_test
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
 	"github.com/SeaCodeBase/urlshortener/internal/repository"
@@ -149,4 +151,87 @@ func TestWebhookRepo_DeliveriesKeepNewest50(t *testing.T) {
 	require.NoError(t, repo.Delete(ctx, w.ID))
 	require.NoError(t, db.Get(&n, `SELECT COUNT(*) FROM webhook_deliveries WHERE webhook_id = ?`, w.ID))
 	assert.Zero(t, n)
+}
+
+// failDelivery is a stand-in for service.ApplyDeliveryResult(w, false, now).
+func failDelivery(now time.Time) func(w *model.Webhook) {
+	return func(w *model.Webhook) {
+		w.ConsecutiveFailures++
+		if !w.FailingSince.Valid {
+			w.FailingSince.Time, w.FailingSince.Valid = now, true
+		}
+		if w.ConsecutiveFailures >= 2 {
+			w.Status = model.WebhookStatusAlert
+		}
+		w.IsActive = true
+		w.LastDeliveryAt.Time, w.LastDeliveryAt.Valid = now, true
+	}
+}
+
+func TestWebhookRepo_UpdateDeliveryState(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	group, _ := linkFixture(t, db, "wh.state@example.com")
+	repo := repository.NewWebhookRepository(db)
+	now := time.Date(2026, 10, 25, 15, 0, 0, 0, time.UTC)
+
+	t.Run("keeps a concurrent name/url change", func(t *testing.T) {
+		w := createWebhook(t, repo, group, "edit")
+		edited := *w
+		edited.Name, edited.URL = "renamed", "https://hooks.example.com/moved"
+		require.NoError(t, repo.Update(ctx, &edited)) // lands while a delivery is in flight
+
+		got, err := repo.UpdateDeliveryState(ctx, w.ID, failDelivery(now))
+		require.NoError(t, err)
+		assert.Equal(t, "https://hooks.example.com/moved", got.URL)
+		stored, err := repo.GetByID(ctx, w.ID)
+		require.NoError(t, err)
+		assert.Equal(t, "renamed", stored.Name)
+		assert.Equal(t, "https://hooks.example.com/moved", stored.URL)
+		assert.Equal(t, 1, stored.ConsecutiveFailures)
+		assert.True(t, stored.FailingSince.Time.Equal(now))
+		assert.True(t, stored.LastDeliveryAt.Time.Equal(now))
+	})
+
+	t.Run("never reactivates a deactivated webhook", func(t *testing.T) {
+		w := createWebhook(t, repo, group, "off")
+		w.IsActive, w.Status = false, model.WebhookStatusDeactivated
+		require.NoError(t, repo.Update(ctx, w))
+
+		got, err := repo.UpdateDeliveryState(ctx, w.ID, func(x *model.Webhook) {
+			x.IsActive, x.Status, x.ConsecutiveFailures = true, model.WebhookStatusActive, 0
+			x.LastDeliveryAt.Time, x.LastDeliveryAt.Valid = now, true
+		})
+		require.NoError(t, err)
+		assert.False(t, got.IsActive)
+		stored, err := repo.GetByID(ctx, w.ID)
+		require.NoError(t, err)
+		assert.False(t, stored.IsActive)
+		assert.Equal(t, model.WebhookStatusDeactivated, stored.Status)
+		assert.True(t, stored.LastDeliveryAt.Valid, "the attempt is still recorded")
+	})
+
+	t.Run("parallel failures all count", func(t *testing.T) {
+		w := createWebhook(t, repo, group, "par")
+		var wg sync.WaitGroup
+		for i := 0; i < 5; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, err := repo.UpdateDeliveryState(ctx, w.ID, failDelivery(now))
+				assert.NoError(t, err)
+			}()
+		}
+		wg.Wait()
+		stored, err := repo.GetByID(ctx, w.ID)
+		require.NoError(t, err)
+		assert.Equal(t, 5, stored.ConsecutiveFailures)
+		assert.Equal(t, model.WebhookStatusAlert, stored.Status)
+	})
+
+	t.Run("missing", func(t *testing.T) {
+		_, err := repo.UpdateDeliveryState(ctx, 999999999, failDelivery(now))
+		assert.ErrorIs(t, err, repository.ErrWebhookNotFound)
+	})
 }
