@@ -84,7 +84,7 @@ func (f *fakeBulkRepo) ReclaimStale(_ context.Context, olderThan time.Duration) 
 	return 0, nil
 }
 
-func (f *fakeBulkRepo) UpdateProgress(_ context.Context, id uint64, processed, succeeded, failed int) error {
+func (f *fakeBulkRepo) UpdateProgress(_ context.Context, id uint64, processed, succeeded, failed int, partial string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	j, ok := f.jobs[id]
@@ -92,6 +92,9 @@ func (f *fakeBulkRepo) UpdateProgress(_ context.Context, id uint64, processed, s
 		return repository.ErrBulkUploadNotFound
 	}
 	j.Processed, j.Succeeded, j.Failed = processed, succeeded, failed
+	if partial != "" {
+		j.ResultCSV = &partial
+	}
 	f.progress[id] = append(f.progress[id], progressCall{processed, succeeded, failed})
 	return nil
 }
@@ -338,4 +341,68 @@ func TestBulkWorker_StopIsIdempotent(t *testing.T) {
 	f.w.Start()
 	f.w.Stop()
 	f.w.Stop()
+}
+
+func TestBulkWorker_StoresPartialResultsWithProgress(t *testing.T) {
+	f := newBulkWorkerFixture(t, 1, nil, bulkJob(5, "https://a.example/1,,,,\nhttps://a.example/2,,,,\n"))
+	var partials []string
+	create := okCreate()
+	f.links.EXPECT().Create(gomock.Any(), uint64(1), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, uid uint64, in service.CreateLinkInput) (*model.Link, error) {
+			j, _ := f.repo.GetByID(ctx, 5)
+			if j.ResultCSV != nil {
+				partials = append(partials, *j.ResultCSV)
+			}
+			return create(ctx, uid, in)
+		}).Times(2)
+
+	f.w.poll()
+
+	require.Len(t, partials, 1, "the first batch's results are stored before the second batch runs")
+	assert.Equal(t, "row,long_url,short_url,status,error\n1,https://a.example/1,http://short.test/c1,ok,\n", partials[0])
+}
+
+func TestBulkWorker_ResumesFromProcessed(t *testing.T) {
+	// A reclaimed job: rows 1-2 were processed (one ok, one error) before
+	// the crash; rows 3-4 remain.
+	stored := "row,long_url,short_url,status,error\n" +
+		"1,https://a.example/1,http://short.test/one,ok,\n" +
+		"2,https://a.example/2,,error,that back-half is already taken\n"
+	job := bulkJob(5, "https://a.example/1,,one,,\nhttps://a.example/2,,taken,,\nhttps://a.example/3,,,,\nhttps://a.example/4,,,,\n")
+	job.Total, job.Processed, job.Succeeded, job.Failed, job.ResultCSV = 4, 2, 1, 1, &stored
+	f := newBulkWorkerFixture(t, 50, nil, job)
+	var created []string
+	create := okCreate()
+	f.links.EXPECT().Create(gomock.Any(), uint64(1), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, uid uint64, in service.CreateLinkInput) (*model.Link, error) {
+			created = append(created, in.OriginalURL)
+			return create(ctx, uid, in)
+		}).Times(2)
+
+	f.w.poll()
+
+	assert.Equal(t, []string{"https://a.example/3", "https://a.example/4"}, created, "processed rows are skipped")
+	j, _ := f.repo.GetByID(context.Background(), 5)
+	assert.Equal(t, model.BulkStatusDone, j.Status)
+	assert.Equal(t, []progressCall{{4, 3, 1}}, f.repo.progress[5])
+	rows := readResults(t, j)
+	require.Len(t, rows, 4, "new results are appended to the stored ones")
+	assert.Equal(t, []string{"1", "https://a.example/1", "http://short.test/one", "ok", ""}, rows[0])
+	assert.Equal(t, "error", rows[1][3])
+	assert.Equal(t, []string{"3", "https://a.example/3", "http://short.test/c1", "ok", ""}, rows[2])
+	assert.Equal(t, "4", rows[3][0])
+}
+
+func TestBulkWorker_ProcessedWithoutResultsStartsOver(t *testing.T) {
+	job := bulkJob(5, "https://a.example/1,,,,\nhttps://a.example/2,,,,\n")
+	job.Processed, job.Succeeded = 1, 1 // e.g. reclaimed before partial results were stored
+	f := newBulkWorkerFixture(t, 50, nil, job)
+	f.links.EXPECT().Create(gomock.Any(), uint64(1), gomock.Any()).DoAndReturn(okCreate()).Times(2)
+
+	f.w.poll()
+
+	j, _ := f.repo.GetByID(context.Background(), 5)
+	assert.Equal(t, model.BulkStatusDone, j.Status)
+	assert.Equal(t, []progressCall{{2, 2, 0}}, f.repo.progress[5])
+	assert.Len(t, readResults(t, j), 2)
 }

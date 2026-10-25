@@ -458,11 +458,13 @@ type BulkUploadRepository interface {
 	// returns it (with SourceCSV); nil, nil when none is queued.
 	ClaimNext(ctx context.Context) (*model.BulkUpload, error)
 	// ReclaimStale moves uploads stuck in processing (not updated for longer
-	// than olderThan, e.g. after a crash) back to queued with zeroed
-	// counters and returns how many it moved.
+	// than olderThan, e.g. after a crash) back to queued, keeping their
+	// counters and partial results so the worker resumes after the last
+	// completed batch, and returns how many it moved.
 	ReclaimStale(ctx context.Context, olderThan time.Duration) (int, error)
-	// UpdateProgress sets the counters; ErrBulkUploadNotFound.
-	UpdateProgress(ctx context.Context, id uint64, processed, succeeded, failed int) error
+	// UpdateProgress sets the counters and the results CSV so far (empty
+	// string stores NULL) in one write; ErrBulkUploadNotFound.
+	UpdateProgress(ctx context.Context, id uint64, processed, succeeded, failed int, partialCSV string) error
 	// Finish sets the final status, result CSV (empty string stores NULL) and
 	// error message; ErrBulkUploadNotFound.
 	Finish(ctx context.Context, id uint64, status string, resultCSV string, errMsg string) error

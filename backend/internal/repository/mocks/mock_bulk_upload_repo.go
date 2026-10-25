@@ -131,15 +131,15 @@ func (mr *MockBulkUploadRepositoryMockRecorder) ReclaimStale(ctx, olderThan any)
 }
 
 // UpdateProgress mocks base method.
-func (m *MockBulkUploadRepository) UpdateProgress(ctx context.Context, id uint64, processed, succeeded, failed int) error {
+func (m *MockBulkUploadRepository) UpdateProgress(ctx context.Context, id uint64, processed, succeeded, failed int, partialCSV string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateProgress", ctx, id, processed, succeeded, failed)
+	ret := m.ctrl.Call(m, "UpdateProgress", ctx, id, processed, succeeded, failed, partialCSV)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateProgress indicates an expected call of UpdateProgress.
-func (mr *MockBulkUploadRepositoryMockRecorder) UpdateProgress(ctx, id, processed, succeeded, failed any) *gomock.Call {
+func (mr *MockBulkUploadRepositoryMockRecorder) UpdateProgress(ctx, id, processed, succeeded, failed, partialCSV any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateProgress", reflect.TypeOf((*MockBulkUploadRepository)(nil).UpdateProgress), ctx, id, processed, succeeded, failed)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateProgress", reflect.TypeOf((*MockBulkUploadRepository)(nil).UpdateProgress), ctx, id, processed, succeeded, failed, partialCSV)
 }

@@ -113,12 +113,13 @@ func (r *BulkUploadRepositoryImpl) ClaimNext(ctx context.Context) (*model.BulkUp
 }
 
 // ReclaimStale requeues processing uploads whose updated_at is older than
-// olderThan (the worker bumps it after every batch), resetting the counters
-// so the rerun reports from scratch. The cutoff is computed by the database
-// so it compares against the same clock that wrote updated_at.
+// olderThan (the worker bumps it after every batch). Counters and the
+// partial result_csv are kept: the worker resumes after the last completed
+// batch. The cutoff is computed by the database so it compares against the
+// same clock that wrote updated_at.
 func (r *BulkUploadRepositoryImpl) ReclaimStale(ctx context.Context, olderThan time.Duration) (int, error) {
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE bulk_uploads SET status = ?, processed = 0, succeeded = 0, failed = 0
+		`UPDATE bulk_uploads SET status = ?
 		 WHERE status = ? AND updated_at < NOW() - INTERVAL ? SECOND`,
 		model.BulkStatusQueued, model.BulkStatusProcessing, int64(olderThan/time.Second))
 	if err != nil {
@@ -132,10 +133,15 @@ func (r *BulkUploadRepositoryImpl) ReclaimStale(ctx context.Context, olderThan t
 	return int(n), nil
 }
 
-func (r *BulkUploadRepositoryImpl) UpdateProgress(ctx context.Context, id uint64, processed, succeeded, failed int) error {
+func (r *BulkUploadRepositoryImpl) UpdateProgress(ctx context.Context, id uint64, processed, succeeded, failed int,
+	partialCSV string) error {
+	var res any = partialCSV
+	if partialCSV == "" {
+		res = nil
+	}
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE bulk_uploads SET processed = ?, succeeded = ?, failed = ? WHERE id = ?`,
-		processed, succeeded, failed, id)
+		`UPDATE bulk_uploads SET processed = ?, succeeded = ?, failed = ?, result_csv = ? WHERE id = ?`,
+		processed, succeeded, failed, res, id)
 	if err != nil {
 		logger.Error(ctx, "bulk-repo: failed to update progress", zap.Uint64("bulk_id", id), zap.Error(err))
 		return err

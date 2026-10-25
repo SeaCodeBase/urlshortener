@@ -205,10 +205,22 @@ func SanitizeBulkFilename(name string) string {
 // EncodeBulkResults renders the results CSV (BulkResultHeader first); every
 // cell goes through csvSafe.
 func EncodeBulkResults(rows []BulkResultRow) (string, error) {
+	return encodeBulkResults(rows, true)
+}
+
+// EncodeBulkResultRows encodes rows like EncodeBulkResults but without the
+// header, to append to a results CSV stored earlier.
+func EncodeBulkResultRows(rows []BulkResultRow) (string, error) {
+	return encodeBulkResults(rows, false)
+}
+
+func encodeBulkResults(rows []BulkResultRow, header bool) (string, error) {
 	var buf bytes.Buffer
 	w := csv.NewWriter(&buf)
-	if err := w.Write(BulkResultHeader); err != nil {
-		return "", err
+	if header {
+		if err := w.Write(BulkResultHeader); err != nil {
+			return "", err
+		}
 	}
 	for _, r := range rows {
 		rec := []string{strconv.Itoa(r.Row), r.LongURL, r.ShortURL, r.Status, r.Error}

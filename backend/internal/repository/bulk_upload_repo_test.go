@@ -41,9 +41,9 @@ func TestBulkRepo_CreateGetProgressFinish(t *testing.T) {
 	_, err = repo.GetByID(ctx, b.ID+999)
 	assert.ErrorIs(t, err, repository.ErrBulkUploadNotFound)
 
-	require.NoError(t, repo.UpdateProgress(ctx, b.ID, 2, 1, 1))
-	require.NoError(t, repo.UpdateProgress(ctx, b.ID, 2, 1, 1), "no-op progress is not an error")
-	assert.ErrorIs(t, repo.UpdateProgress(ctx, b.ID+999, 1, 1, 0), repository.ErrBulkUploadNotFound)
+	require.NoError(t, repo.UpdateProgress(ctx, b.ID, 2, 1, 1, ""))
+	require.NoError(t, repo.UpdateProgress(ctx, b.ID, 2, 1, 1, ""), "no-op progress is not an error")
+	assert.ErrorIs(t, repo.UpdateProgress(ctx, b.ID+999, 1, 1, 0, ""), repository.ErrBulkUploadNotFound)
 	got, err = repo.GetByID(ctx, b.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 2, got.Processed)
@@ -142,7 +142,7 @@ func TestBulkRepo_ReclaimStale(t *testing.T) {
 	require.NoError(t, err)
 	_, err = repo.ClaimNext(ctx)
 	require.NoError(t, err)
-	require.NoError(t, repo.UpdateProgress(ctx, stale.ID, 1, 1, 0))
+	require.NoError(t, repo.UpdateProgress(ctx, stale.ID, 1, 1, 0, "row,long_url,short_url,status,error\n1,https://a.example,http://s/x,ok,\n"))
 	_, err = db.ExecContext(ctx,
 		`UPDATE bulk_uploads SET updated_at = NOW() - INTERVAL 11 MINUTE WHERE id = ?`, stale.ID)
 	require.NoError(t, err)
@@ -154,8 +154,8 @@ func TestBulkRepo_ReclaimStale(t *testing.T) {
 	got, err := repo.GetByID(ctx, stale.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.BulkStatusQueued, got.Status)
-	assert.Equal(t, 0, got.Processed, "counters reset for the rerun")
-	assert.Equal(t, 0, got.Succeeded)
+	assert.Equal(t, 1, got.Processed, "counters are kept so the worker resumes")
+	assert.Equal(t, 1, got.Succeeded)
 	got, err = repo.GetByID(ctx, fresh.ID)
 	require.NoError(t, err)
 	assert.Equal(t, model.BulkStatusProcessing, got.Status, "recently updated job is left alone")
@@ -166,4 +166,38 @@ func TestBulkRepo_ReclaimStale(t *testing.T) {
 	n, err = repo.ReclaimStale(ctx, 10*time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, 0, n)
+}
+
+func TestBulkRepo_ReclaimStaleKeepsCounters(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	group, _ := linkFixture(t, db, "bulk.keep@example.com")
+	repo := repository.NewBulkUploadRepository(db)
+
+	b := createBulk(t, repo, group, "keep.csv")
+	_, err := repo.ClaimNext(ctx)
+	require.NoError(t, err)
+	partial := "row,long_url,short_url,status,error\n1,https://a.example,http://s/x,ok,\n2,https://b.example,,error,bad\n"
+	require.NoError(t, repo.UpdateProgress(ctx, b.ID, 2, 1, 1, partial))
+	got, err := repo.GetByID(ctx, b.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.ResultCSV, "progress stores the partial results")
+	assert.Equal(t, partial, *got.ResultCSV)
+
+	_, err = db.ExecContext(ctx, `UPDATE bulk_uploads SET updated_at = NOW() - INTERVAL 11 MINUTE WHERE id = ?`, b.ID)
+	require.NoError(t, err)
+	n, err := repo.ReclaimStale(ctx, 10*time.Minute)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	got, err = repo.ClaimNext(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, b.ID, got.ID)
+	assert.Equal(t, 2, got.Processed)
+	assert.Equal(t, 1, got.Succeeded)
+	assert.Equal(t, 1, got.Failed)
+	require.NotNil(t, got.ResultCSV)
+	assert.Equal(t, partial, *got.ResultCSV)
 }

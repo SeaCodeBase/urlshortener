@@ -11,7 +11,8 @@ const (
 )
 
 // BulkUpload is a CSV link import processed by the bulk worker. SourceCSV is
-// the uploaded file and ResultCSV the per-row outcome (nil until finished);
+// the uploaded file and ResultCSV the per-row outcome (nil until the first
+// batch is done, then the results so far, updated with every batch);
 // neither is serialized, and list queries leave both empty.
 type BulkUpload struct {
 	ID        uint64    `db:"id" json:"id"`

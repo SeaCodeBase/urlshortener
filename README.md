@@ -350,14 +350,14 @@ bulk-upload rows with an empty `domain` — then use it.
   (multipart field `file`, `201`), `GET /api/bulk-uploads`, `GET
   /api/bulk-uploads/{id}`.
 - **Worker behaviour** — the worker polls every `workers.bulk.poll_every`
-  and updates progress every `workers.bulk.batch_size` rows. On a clean
-  shutdown it stops after the current batch and marks the job `failed`
-  ("interrupted by server shutdown") with the results so far — links already
-  created are kept and the job is not resumed. If the process dies without a
-  clean shutdown, a job stuck in `processing` for more than 10 minutes is
-  put back to `queued` and **processed again from row 1**, so links created
-  before the crash can be reported as errors ("that back-half is already
-  taken") or, for rows without a back-half, duplicated.
+  and saves progress and the results so far every `workers.bulk.batch_size`
+  rows. If the backend restarts (or dies) while a job is `processing`, the
+  job is reclaimed once it has gone 10 minutes without progress, put back
+  to `queued` and **resumed after the last completed batch**; the results
+  CSV keeps the rows already reported. Only the rows of the batch that was
+  running at the time are processed twice, so at most one batch's links can
+  be reported as errors ("that back-half is already taken") or, for rows
+  without a back-half, duplicated.
 
 #### Worker configuration
 

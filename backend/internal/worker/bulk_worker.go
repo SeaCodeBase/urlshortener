@@ -29,7 +29,10 @@ const (
 // BulkWorker processes queued bulk uploads: it creates one link per CSV row
 // through the LinkService (so validation, tags and activity logging match
 // POST /links), reports progress after every batch and stores a per-row
-// results CSV. A failing row never aborts the upload.
+// results CSV. A failing row never aborts the upload. The results so far are
+// stored with every progress update, so an upload reclaimed after a crash
+// resumes after its last completed batch (only that one batch can be
+// repeated).
 type BulkWorker struct {
 	bulk      repository.BulkUploadRepository
 	links     service.LinkService
@@ -146,11 +149,25 @@ func (w *BulkWorker) process(ctx context.Context, job *model.BulkUpload) {
 		}
 	}
 
-	results := make([]service.BulkResultRow, 0, len(rows))
+	// Resume a reclaimed upload: skip the rows already processed and append
+	// to the results stored with that progress.
+	skip, prefix := 0, ""
 	succeeded, failed := 0, 0
-	for start := 0; start < len(rows); start += w.batchSize {
-		if start > 0 && w.stopping() {
-			w.finishWithResults(ctx, job.ID, model.BulkStatusFailed, results, bulkMsgShutdown)
+	if job.Processed > 0 {
+		if job.ResultCSV != nil && job.Processed <= len(rows) {
+			skip, prefix = job.Processed, *job.ResultCSV
+			succeeded, failed = job.Succeeded, job.Failed
+			logger.Warn(ctx, "bulk-worker: resuming upload", zap.Uint64("bulk_id", job.ID), zap.Int("from_row", skip+1))
+		} else {
+			logger.Warn(ctx, "bulk-worker: no partial results to resume from; starting over",
+				zap.Uint64("bulk_id", job.ID), zap.Int("processed", job.Processed))
+		}
+	}
+
+	results := make([]service.BulkResultRow, 0, len(rows)-skip)
+	for start := skip; start < len(rows); start += w.batchSize {
+		if start > skip && w.stopping() {
+			w.finishWithResults(ctx, job.ID, model.BulkStatusFailed, prefix, results, bulkMsgShutdown)
 			return
 		}
 		end := min(start+w.batchSize, len(rows))
@@ -163,16 +180,22 @@ func (w *BulkWorker) process(ctx context.Context, job *model.BulkUpload) {
 			}
 			results = append(results, res)
 		}
-		if err := w.bulk.UpdateProgress(ctx, job.ID, len(results), succeeded, failed); err != nil {
+		partial, err := encodeResults(prefix, results)
+		if err != nil {
+			logger.Error(ctx, "bulk-worker: failed to encode results", zap.Uint64("bulk_id", job.ID), zap.Error(err))
+			w.finish(ctx, job.ID, model.BulkStatusFailed, "", bulkMsgInternal)
+			return
+		}
+		if err := w.bulk.UpdateProgress(ctx, job.ID, skip+len(results), succeeded, failed, partial); err != nil {
 			logger.Error(ctx, "bulk-worker: failed to update progress", zap.Uint64("bulk_id", job.ID), zap.Error(err))
 			if errors.Is(err, repository.ErrBulkUploadNotFound) {
 				return
 			}
-			w.finishWithResults(ctx, job.ID, model.BulkStatusFailed, results, bulkMsgInternal)
+			w.finish(ctx, job.ID, model.BulkStatusFailed, partial, bulkMsgInternal)
 			return
 		}
 	}
-	w.finishWithResults(ctx, job.ID, model.BulkStatusDone, results, "")
+	w.finishWithResults(ctx, job.ID, model.BulkStatusDone, prefix, results, "")
 	logger.Info(ctx, "bulk-worker: upload processed", zap.Uint64("bulk_id", job.ID),
 		zap.Int("succeeded", succeeded), zap.Int("failed", failed))
 }
@@ -259,8 +282,22 @@ func bulkRowMessage(ctx context.Context, bulkID uint64, line int, err error) str
 	return msg
 }
 
-func (w *BulkWorker) finishWithResults(ctx context.Context, id uint64, status string, results []service.BulkResultRow, errMsg string) {
-	out, err := service.EncodeBulkResults(results)
+// encodeResults renders the full results CSV: results appended to prefix
+// (a stored results CSV, header included) or, without one, a fresh CSV.
+func encodeResults(prefix string, results []service.BulkResultRow) (string, error) {
+	if prefix == "" {
+		return service.EncodeBulkResults(results)
+	}
+	rows, err := service.EncodeBulkResultRows(results)
+	if err != nil {
+		return "", err
+	}
+	return prefix + rows, nil
+}
+
+func (w *BulkWorker) finishWithResults(ctx context.Context, id uint64, status, prefix string,
+	results []service.BulkResultRow, errMsg string) {
+	out, err := encodeResults(prefix, results)
 	if err != nil {
 		logger.Error(ctx, "bulk-worker: failed to encode results", zap.Uint64("bulk_id", id), zap.Error(err))
 		w.finish(ctx, id, model.BulkStatusFailed, "", bulkMsgInternal)
