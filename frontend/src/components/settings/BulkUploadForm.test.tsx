@@ -29,6 +29,7 @@ describe("BulkUploadForm", () => {
     render(<BulkUploadForm />);
     expect(screen.getByRole("button", { name: "Upload" })).toBeDisabled();
     expect(screen.getByLabelText("CSV file")).toHaveAttribute("accept", ".csv,text/csv");
+    expect(screen.getByText(/Save as CSV UTF-8\./)).toBeInTheDocument();
   });
 
   it("rejects a 3 MB file with an inline message and does not upload", async () => {

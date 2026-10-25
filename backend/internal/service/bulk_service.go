@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
 	"github.com/SeaCodeBase/urlshortener/internal/repository"
@@ -228,6 +229,10 @@ func EncodeBulkResults(rows []BulkResultRow) (string, error) {
 func (s *BulkServiceImpl) Create(ctx context.Context, userID, groupID uint64, filename string, csvBytes []byte) (*model.BulkUpload, error) {
 	if len(csvBytes) > BulkMaxBytes {
 		return nil, invalid("file is larger than 2 MB")
+	}
+	// source_csv is utf8mb4 in strict mode: anything else fails the INSERT.
+	if !utf8.Valid(csvBytes) {
+		return nil, invalid("the file must be UTF-8 encoded (in Excel choose \"CSV UTF-8\")")
 	}
 	rows, err := ParseBulkCSV(bytes.NewReader(csvBytes))
 	if err != nil {

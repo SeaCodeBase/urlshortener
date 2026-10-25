@@ -162,6 +162,11 @@ func TestBulkService_ParseLimits(t *testing.T) {
 
 	_, err = f.svc.Create(ctx, 1, 7, "bad.csv", []byte("nope\n"))
 	requireValidation(t, err, "header")
+
+	// Windows-1252 "Café" (0xE9 is not valid UTF-8).
+	latin1 := []byte("long_url,title,custom_back_half,tags,domain\nhttps://a.example,Caf\xe9,,,\n")
+	_, err = f.svc.Create(ctx, 1, 7, "latin1.csv", latin1)
+	requireValidation(t, err, "must be UTF-8 encoded")
 }
 
 func TestBulkService_WrongGroup(t *testing.T) {

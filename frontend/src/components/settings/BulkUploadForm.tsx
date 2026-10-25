@@ -57,7 +57,7 @@ export function BulkUploadForm() {
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <p className="max-w-prose text-sm text-muted-foreground">
           Upload a CSV with the columns long_url, title, custom_back_half, tags and domain. Tags are separated by |. Up
-          to 1000 rows, 2 MB.
+          to 1000 rows, 2 MB. Save as CSV UTF-8.
         </p>
         <Button type="button" variant="secondary" className="shrink-0" onClick={downloadBulkTemplate}>
           <Download className="size-4" />

@@ -326,7 +326,8 @@ bulk-upload rows with an empty `domain` — then use it.
   https://example.com/blog,,,,
   ```
 - **Limits** — 2 MiB per file and 1000 data rows (more is rejected with
-  `400` at upload). Rows are created like `POST /api/links`, so the usual
+  `400` at upload). The file must be UTF-8 (in Excel, save as **CSV UTF-8**);
+  other encodings are rejected with `400`. Rows are created like `POST /api/links`, so the usual
   URL, back-half and tag rules apply per row; a bad row is reported in the
   results and never stops the upload.
 - **Results** — `GET /api/bulk-uploads/{id}/results` (`409` until the job is
