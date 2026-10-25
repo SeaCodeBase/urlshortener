@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
+import { useIsMutating, useMutation, useQuery, useQueryClient, type MutationFilters } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { isReservedSlug, isValidSlug } from '@/components/pages/designPresets';
 import type { BlockInput, BlockPatch, CreatePageInput, PageFilters, SlugCheck, UpdatePageInput } from '@/types';
@@ -25,9 +26,51 @@ export function usePage(id: number | null | undefined) {
   });
 }
 
+/** Mutation key of every editor save (page fields and blocks); publish is not one. */
+export const PAGE_SAVE_MUTATION_KEY = ['page', 'save'] as const;
+
+/** The page a save mutation writes: `{ id }` for page updates, `{ pageId }` for blocks. */
+function savedPageId(variables: unknown): number | undefined {
+  if (variables == null || typeof variables !== 'object') return undefined;
+  const v = variables as { id?: unknown; pageId?: unknown };
+  const id = 'pageId' in v ? v.pageId : v.id;
+  return typeof id === 'number' ? id : undefined;
+}
+
+const pageSaveFilters = (pageId: number): MutationFilters => ({
+  mutationKey: PAGE_SAVE_MUTATION_KEY,
+  status: 'pending',
+  predicate: (m) => savedPageId(m.state.variables) === pageId,
+});
+
+/** Number of in-flight saves (page fields or blocks) of the page. */
+export function usePageSavesPending(pageId: number): number {
+  return useIsMutating(pageSaveFilters(pageId));
+}
+
+/** Returns a function resolving once the page has no in-flight saves (at once if none). */
+export function useWaitForPageSaves(pageId: number): () => Promise<void> {
+  const qc = useQueryClient();
+  return useCallback(
+    () =>
+      new Promise<void>((resolve) => {
+        const idle = () => qc.isMutating(pageSaveFilters(pageId)) === 0;
+        if (idle()) return resolve();
+        const unsubscribe = qc.getMutationCache().subscribe(() => {
+          if (!idle()) return;
+          unsubscribe();
+          resolve();
+        });
+      }),
+    [qc, pageId],
+  );
+}
+
 /**
  * Page and block mutations. Each invalidates the page list, the page (and its
  * stats) and links (link JSON carries `page_ids`; blocks can create links).
+ * Content writes carry PAGE_SAVE_MUTATION_KEY so the editor can wait for them
+ * before publishing.
  */
 export function usePageMutations() {
   const qc = useQueryClient();
@@ -44,6 +87,7 @@ export function usePageMutations() {
   });
 
   const update = useMutation({
+    mutationKey: PAGE_SAVE_MUTATION_KEY,
     mutationFn: ({ id, patch }: { id: number; patch: UpdatePageInput }) => api.updatePage(id, patch),
     onSuccess: (_page, { id }) => invalidate(id),
   });
@@ -70,22 +114,26 @@ export function usePageMutations() {
   });
 
   const addBlock = useMutation({
+    mutationKey: PAGE_SAVE_MUTATION_KEY,
     mutationFn: ({ pageId, input }: { pageId: number; input: BlockInput }) => api.addBlock(pageId, input),
     onSuccess: (_block, { pageId }) => invalidate(pageId),
   });
 
   const updateBlock = useMutation({
+    mutationKey: PAGE_SAVE_MUTATION_KEY,
     mutationFn: ({ pageId, blockId, patch }: { pageId: number; blockId: number; patch: BlockPatch }) =>
       api.updateBlock(pageId, blockId, patch),
     onSuccess: (_block, { pageId }) => invalidate(pageId),
   });
 
   const deleteBlock = useMutation({
+    mutationKey: PAGE_SAVE_MUTATION_KEY,
     mutationFn: ({ pageId, blockId }: { pageId: number; blockId: number }) => api.deleteBlock(pageId, blockId),
     onSuccess: (_data, { pageId }) => invalidate(pageId),
   });
 
   const reorder = useMutation({
+    mutationKey: PAGE_SAVE_MUTATION_KEY,
     mutationFn: ({ pageId, ids }: { pageId: number; ids: number[] }) => api.reorderBlocks(pageId, ids),
     onSuccess: (_data, { pageId }) => invalidate(pageId),
   });

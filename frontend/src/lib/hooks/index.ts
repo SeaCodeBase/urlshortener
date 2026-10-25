@@ -18,6 +18,15 @@ export { useAnalyticsOverview } from './useAnalytics';
 export { useDashboards, useDashboard, useDashboardData, useDashboardMutations } from './useDashboards';
 export { useMeta } from './useMeta';
 export { useUpdateMe, useUpdateEmail } from './useAccount';
-export { usePages, usePage, usePageMutations, useSlugCheck, type SlugCheckResult } from './usePages';
+export {
+  usePages,
+  usePage,
+  usePageMutations,
+  usePageSavesPending,
+  useWaitForPageSaves,
+  useSlugCheck,
+  PAGE_SAVE_MUTATION_KEY,
+  type SlugCheckResult,
+} from './usePages';
 export { usePageStats } from './usePageStats';
 export { useDebouncedValue } from './useDebouncedValue';

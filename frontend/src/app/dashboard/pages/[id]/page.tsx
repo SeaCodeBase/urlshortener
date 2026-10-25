@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useCallback, useRef, useState } from 'react'
 import NextLink from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -21,8 +21,17 @@ type EditorTab = (typeof TABS)[number]
 
 const parseTab = (v: string | null): EditorTab => (TABS.includes(v as EditorTab) ? (v as EditorTab) : 'build')
 
-/** Designs are small plain objects with a fixed key order from the same producers. */
-const sameDesign = (a: PageDesign, b: PageDesign) => JSON.stringify(a) === JSON.stringify(b)
+/** JSON with object keys sorted: the server returns design keys alphabetically, the editor in preset order. */
+const canonical = (v: unknown): string =>
+  v != null && typeof v === 'object' && !Array.isArray(v)
+    ? `{${Object.keys(v)
+        .sort()
+        .map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`)
+        .join(',')}}`
+    : JSON.stringify(v)
+
+/** Designs are small plain JSON objects; key order does not matter. */
+const sameDesign = (a: PageDesign, b: PageDesign) => canonical(a) === canonical(b)
 
 function EditorSkeleton() {
   return (
@@ -51,6 +60,15 @@ function Editor({ page }: { page: Page }) {
   if (designOverride && sameDesign(designOverride, page.design)) setDesignOverride(null)
   const previewPage = designOverride ? { ...page, design: designOverride } : page
 
+  // The Design tab registers its flush while mounted; publish sends pending edits first.
+  const designFlush = useRef<(() => Promise<void>) | null>(null)
+  const registerDesignFlush = useCallback((flush: (() => Promise<void>) | null) => {
+    designFlush.current = flush
+  }, [])
+  const flushPendingSaves = useCallback(async () => {
+    await designFlush.current?.()
+  }, [])
+
   function setTab(next: string) {
     const sp = new URLSearchParams(searchParams.toString())
     if (next === 'build') sp.delete('tab')
@@ -61,7 +79,7 @@ function Editor({ page }: { page: Page }) {
 
   return (
     <div className="space-y-6 pb-12">
-      <EditorTopBar page={page} />
+      <EditorTopBar page={page} flushPendingSaves={flushPendingSaves} designPending={designOverride != null} />
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_375px]">
         <Tabs value={tab} onValueChange={setTab} className="min-w-0">
           <TabsList>
@@ -73,7 +91,7 @@ function Editor({ page }: { page: Page }) {
             <BuildTab page={page} />
           </TabsContent>
           <TabsContent value="design" className="pt-4">
-            <DesignTab page={page} onDesignChange={setDesignOverride} />
+            <DesignTab page={page} onDesignChange={setDesignOverride} registerFlush={registerDesignFlush} />
           </TabsContent>
           <TabsContent value="track" className="pt-4">
             <TrackTab pageId={page.id} />

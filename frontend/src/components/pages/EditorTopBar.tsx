@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ApiError } from '@/lib/api'
-import { usePageMutations } from '@/lib/hooks'
+import { usePageMutations, usePageSavesPending, useWaitForPageSaves } from '@/lib/hooks'
 import type { Page } from '@/types'
 import { PageActionsMenu } from './PageActionsMenu'
 import { PageStatusChip } from './PageCard'
@@ -76,17 +76,31 @@ function EditableTitle({ title, onSave }: { title: string; onSave: (title: strin
   )
 }
 
+export interface EditorTopBarProps {
+  page: Page
+  /** Sends edits still waiting in the editor (the Design tab's debounce); resolves when they settle. */
+  flushPendingSaves?: () => Promise<void>
+  /** An edit is shown in the editor but not saved yet (the Design tab's preview override). */
+  designPending?: boolean
+}
+
 /**
  * Editor header: "← Pages", inline title, status, Preview (dialog), Share, Publish changes and ⋯
- * (View page / Hide / Delete; deleting returns to the Pages list).
+ * (View page / Hide / Delete; deleting returns to the Pages list). Publishing first flushes pending
+ * edits and waits for in-flight saves, so the snapshot never misses them; while anything is saving
+ * the button is disabled ("Saving…").
  */
-export function EditorTopBar({ page }: { page: Page }) {
+export function EditorTopBar({ page, flushPendingSaves, designPending = false }: EditorTopBarProps) {
   const router = useRouter()
   const { update, publish } = usePageMutations()
+  const savesPending = usePageSavesPending(page.id)
+  const waitForSaves = useWaitForPageSaves(page.id)
+  const [preparing, setPreparing] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const title = page.title || page.slug
-  const canPublish = page.has_unpublished_changes && !publish.isPending
+  const saving = savesPending > 0 || designPending
+  const canPublish = page.has_unpublished_changes && !saving && !preparing && !publish.isPending
 
   async function rename(next: string) {
     try {
@@ -96,7 +110,15 @@ export function EditorTopBar({ page }: { page: Page }) {
     }
   }
 
-  function onPublish() {
+  async function onPublish() {
+    if (preparing) return
+    setPreparing(true)
+    try {
+      await flushPendingSaves?.()
+      await waitForSaves()
+    } finally {
+      setPreparing(false)
+    }
     publish.mutate(page.id, {
       onSuccess: () => toast.success('Page published'),
       onError: (err) => toast.error(errorMessage(err, "Couldn't publish the page")),
@@ -128,7 +150,7 @@ export function EditorTopBar({ page }: { page: Page }) {
             <Share2 />
             Share
           </Button>
-          {page.has_unpublished_changes ? (
+          {page.has_unpublished_changes && !saving ? (
             publishButton
           ) : (
             <Tooltip>
@@ -138,7 +160,7 @@ export function EditorTopBar({ page }: { page: Page }) {
                   {publishButton}
                 </span>
               </TooltipTrigger>
-              <TooltipContent>No unpublished changes</TooltipContent>
+              <TooltipContent>{saving ? 'Saving…' : 'No unpublished changes'}</TooltipContent>
             </Tooltip>
           )}
           <PageActionsMenu page={page} showViewPage triggerClassName="size-10" onDeleted={() => router.push(PAGES_HREF)} />

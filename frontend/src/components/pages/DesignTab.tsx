@@ -180,10 +180,15 @@ export interface DesignTabProps {
   page: Page
   /** The unsaved design to preview, or null once there is nothing pending (preview falls back to the page). */
   onDesignChange?: (design: PageDesign | null) => void
+  /**
+   * Receives this tab's flush (sends a debounced design edit now; resolves when that save
+   * settles, at once if nothing is waiting) on mount, and null on unmount.
+   */
+  registerFlush?: (flush: (() => Promise<void>) | null) => void
 }
 
 /** Design tab of the page editor (spec §5.7): profile, theme presets, colours, buttons and font. */
-export function DesignTab({ page, onDesignChange }: DesignTabProps) {
+export function DesignTab({ page, onDesignChange, registerFlush }: DesignTabProps) {
   const { update } = usePageMutations()
   const upload = useUploadImage()
   const id = useId()
@@ -212,22 +217,41 @@ export function DesignTab({ page, onDesignChange }: DesignTabProps) {
    * editor page's setter, which outlives the tab — so a failed save always toasts and
    * drops the preview override.
    */
-  function send(next: PageDesign, revertLocal: boolean) {
+  function send(next: PageDesign, revertLocal: boolean): Promise<void> {
     pending.current = null
     const seq = ++saveSeq.current
     const { update: u, pageId, onDesignChange: notify, serverDesign } = latest.current
-    u.mutateAsync({ id: pageId, patch: { design: next } }).catch((err: unknown) => {
-      if (seq !== saveSeq.current) return
-      toast.error(err instanceof Error ? err.message : "Couldn't save the design")
-      notify?.(null)
-      if (revertLocal) {
-        setDesign(serverDesign)
-        setTexts(hexTexts(serverDesign))
-      }
-    })
+    return u.mutateAsync({ id: pageId, patch: { design: next } }).then(
+      () => undefined,
+      (err: unknown) => {
+        if (seq !== saveSeq.current) return
+        toast.error(err instanceof Error ? err.message : "Couldn't save the design")
+        notify?.(null)
+        if (revertLocal) {
+          setDesign(serverDesign)
+          setTexts(hexTexts(serverDesign))
+        }
+      },
+    )
   }
 
-  const save = (next: PageDesign) => send(next, true)
+  const save = (next: PageDesign) => void send(next, true)
+
+  // Publish flushes a debounced edit first so the snapshot includes it.
+  const sendRef = useRef(send)
+  useEffect(() => {
+    sendRef.current = send
+  })
+  useEffect(() => {
+    if (!registerFlush) return
+    registerFlush(() => {
+      if (!timer.current || !pending.current) return Promise.resolve()
+      clearTimeout(timer.current)
+      timer.current = null
+      return sendRef.current(pending.current, true)
+    })
+    return () => registerFlush(null)
+  }, [registerFlush])
 
   // Leaving the tab with an edit still waiting: save it now rather than drop it.
   useEffect(

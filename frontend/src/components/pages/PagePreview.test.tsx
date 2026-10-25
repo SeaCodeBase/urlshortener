@@ -63,6 +63,23 @@ describe("PagePreview", () => {
     expect(root.style.getPropertyValue("--btn-radius")).toBe("999px");
   });
 
+  it("keeps the avatar initial visible on every preset", () => {
+    for (const design of Object.values(DESIGN_PRESETS)) {
+      const { container, unmount } = render(<PagePreview mode="editor" page={{ ...page, design, blocks: [] }} />);
+      const disc = container.querySelector("header > div[aria-hidden]") as HTMLElement;
+      expect(disc).toHaveTextContent("J");
+      expect(disc.style.background, design.theme).not.toBe("");
+      expect(disc.style.color, design.theme).not.toBe("");
+      expect(disc.style.color, design.theme).not.toBe(disc.style.background);
+      unmount();
+    }
+    // Minimal (outline buttons): dark disc, light letter.
+    const { container } = render(<PagePreview mode="editor" page={{ ...page, design: DESIGN_PRESETS.minimal, blocks: [] }} />);
+    const disc = container.querySelector("header > div[aria-hidden]") as HTMLElement;
+    expect(disc.style.background).toBe("rgb(17, 24, 39)");
+    expect(disc.style.color).toBe("rgb(255, 255, 255)");
+  });
+
   it("renders a gradient background", () => {
     const { container } = render(<PagePreview mode="editor" page={{ ...page, design: DESIGN_PRESETS.dark, blocks: [] }} />);
     const root = container.firstElementChild as HTMLElement;

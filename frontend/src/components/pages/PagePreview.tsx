@@ -57,6 +57,18 @@ export function designVars(design: PageDesign): Record<string, string> {
   }
 }
 
+/**
+ * Colours of the initial-letter avatar: a disc in the button colour with the button text colour
+ * for fill buttons; outline buttons have no fill colour pair, so the letter takes the page
+ * background colour (the text colour, if that matches the disc).
+ */
+export function avatarColours(design: PageDesign): { background: string; color: string } {
+  const { background: bg, button } = design
+  if (button.style === 'fill') return { background: button.color, color: button.text_color }
+  const color = bg.color.toLowerCase() !== button.color.toLowerCase() ? bg.color : design.text_color
+  return { background: button.color, color }
+}
+
 function resolve(url: string, baseHref: string): string {
   return url.startsWith('/') && !url.startsWith('//') ? `${baseHref}${url}` : url
 }
@@ -224,8 +236,7 @@ export function PagePreview({ page, mode, baseHref = '' }: PagePreviewProps) {
                 justifyContent: 'center',
                 fontSize: 36,
                 fontWeight: 700,
-                background: 'var(--btn-border)',
-                color: page.design.button.style === 'fill' ? 'var(--btn-text)' : 'var(--page-text)',
+                ...avatarColours(page.design),
               }}
             >
               {initials(page.title)}
