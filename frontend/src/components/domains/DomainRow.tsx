@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { FileText, MoreHorizontal, Settings, Trash2 } from 'lucide-react'
+import { FileText, MoreHorizontal, Settings, Star, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Badge } from '@/components/ui/badge'
@@ -13,8 +13,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ApiError } from '@/lib/api'
 import { formatDate } from '@/lib/format'
-import { useDeleteDomain, useVerifyDomain } from '@/lib/hooks'
+import { useDeleteDomain, useUpdateGroup, useVerifyDomain } from '@/lib/hooks'
+import { useAuthStore } from '@/stores/auth'
 import type { Domain, DomainVerificationStatus, Group } from '@/types'
 import { DomainSettingsDialog } from './DomainSettingsDialog'
 
@@ -36,12 +39,16 @@ export function DomainRow({
 }) {
   const verify = useVerifyDomain()
   const del = useDeleteDomain()
+  const updateGroup = useUpdateGroup()
+  const activeGroupId = useAuthStore((s) => s.activeGroupId)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
 
   const status = STATUS[domain.verification_status] ?? STATUS.pending
   const groupName = domain.group_id == null ? 'All groups' : (groups.find((g) => g.id === domain.group_id)?.name ?? 'Group')
   const defaultFor = groups.filter((g) => g.default_domain_id === domain.id)
+  const isActiveDefault = groups.find((g) => g.id === activeGroupId)?.default_domain_id === domain.id
+  const verified = domain.verification_status === 'ok'
 
   async function runVerify() {
     try {
@@ -50,6 +57,16 @@ export function DomainRow({
       else toast.error(updated.verification_error || "We couldn't verify this domain yet")
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Verification failed')
+    }
+  }
+
+  async function setAsDefault() {
+    if (activeGroupId == null) return
+    try {
+      await updateGroup.mutateAsync({ id: activeGroupId, data: { default_domain_id: domain.id } })
+      toast.success('Default domain updated')
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't update the default domain")
     }
   }
 
@@ -106,6 +123,25 @@ export function DomainRow({
               <FileText className="size-4" />
               View DNS instructions
             </DropdownMenuItem>
+            {!isActiveDefault &&
+              (verified ? (
+                <DropdownMenuItem onSelect={() => void setAsDefault()} disabled={updateGroup.isPending || activeGroupId == null}>
+                  <Star className="size-4" />
+                  Set as default for group
+                </DropdownMenuItem>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      <DropdownMenuItem disabled>
+                        <Star className="size-4" />
+                        Set as default for group
+                      </DropdownMenuItem>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Verify the domain first</TooltipContent>
+                </Tooltip>
+              ))}
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={() => setConfirmRemove(true)}>
               <Trash2 className="size-4" />
