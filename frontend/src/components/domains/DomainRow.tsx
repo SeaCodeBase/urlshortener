@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { FileText, MoreHorizontal, Settings, Star, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { StatusChip, type StatusTone } from '@/components/common/StatusChip'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -21,10 +22,10 @@ import { useAuthStore } from '@/stores/auth'
 import type { Domain, DomainVerificationStatus, Group } from '@/types'
 import { DomainSettingsDialog } from './DomainSettingsDialog'
 
-const STATUS: Record<DomainVerificationStatus, { label: string; className: string }> = {
-  pending: { label: 'Pending', className: 'bg-muted text-muted-foreground' },
-  ok: { label: 'Verified', className: 'bg-success/15 text-success' },
-  error: { label: 'Error', className: 'bg-destructive/10 text-destructive' },
+const STATUS: Record<DomainVerificationStatus, { label: string; tone: StatusTone }> = {
+  pending: { label: 'Pending', tone: 'muted' },
+  ok: { label: 'Verified', tone: 'success' },
+  error: { label: 'Error', tone: 'destructive' },
 }
 
 /** One custom domain: name, status, group, default chips and actions (spec §5.10). */
@@ -49,6 +50,8 @@ export function DomainRow({
   const defaultFor = groups.filter((g) => g.default_domain_id === domain.id)
   const isActiveDefault = groups.find((g) => g.id === activeGroupId)?.default_domain_id === domain.id
   const verified = domain.verification_status === 'ok'
+  // Another group's domain can't become the active group's default; hide the item like the already-default case.
+  const foreignGroup = domain.group_id != null && domain.group_id !== activeGroupId
 
   async function runVerify() {
     try {
@@ -85,9 +88,9 @@ export function DomainRow({
       <div className="min-w-0 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="truncate font-mono text-base font-semibold text-foreground">{domain.domain}</h2>
-          <Badge className={status.className} title={domain.verification_status === 'error' ? domain.verification_error ?? undefined : undefined}>
+          <StatusChip tone={status.tone} title={domain.verification_status === 'error' ? domain.verification_error ?? undefined : undefined}>
             {status.label}
-          </Badge>
+          </StatusChip>
           {defaultFor.map((g) => (
             <Badge key={g.id} variant="outline">
               Default for {g.name}
@@ -124,6 +127,7 @@ export function DomainRow({
               View DNS instructions
             </DropdownMenuItem>
             {!isActiveDefault &&
+              !foreignGroup &&
               (verified ? (
                 <DropdownMenuItem onSelect={() => void setAsDefault()} disabled={updateGroup.isPending || activeGroupId == null}>
                   <Star className="size-4" />

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
 import { SettingsSection } from '@/components/settings/SettingsSection'
 import { TokenCreateDialog } from '@/components/settings/TokenCreateDialog'
@@ -55,7 +56,8 @@ export default function ApiSettingsPage() {
         {isLoading ? (
           <Skeleton className="h-24 w-full" />
         ) : !tokens?.length ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">No tokens generated yet</p>
+          // The section header already carries "Generate token", so the empty state points at it rather than repeating it.
+          <EmptyState title="No tokens generated yet" description="Generate a token to connect other apps or call the API." />
         ) : (
           <Table>
             <TableHeader>

@@ -72,6 +72,8 @@ describe("TopPerforming", () => {
     state.data = overview();
     render(<TopPerforming />);
     expect(screen.getByText("No engagements in the last 30 days")).toBeInTheDocument();
+    expect(screen.getByText("Share your links and QR Codes to see the best performers here.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Create a link" })).toHaveAttribute("href", "/dashboard/links/create");
   });
 });
 

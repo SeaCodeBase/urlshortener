@@ -3,7 +3,7 @@
 import { Fragment, type KeyboardEvent } from 'react'
 import { MoreHorizontal, Pencil, Power, Send, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
+import { StatusChip, type StatusTone } from '@/components/common/StatusChip'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -18,11 +18,10 @@ import { useWebhookMutations } from '@/lib/hooks'
 import type { Webhook, WebhookStatus } from '@/types'
 import { DeliveriesPanel } from './DeliveriesPanel'
 
-/** Same colouring as the domain verification chip. */
-const STATUS: Record<WebhookStatus, { label: string; className: string }> = {
-  active: { label: 'Active', className: 'bg-success/15 text-success' },
-  alert: { label: 'Alert', className: 'bg-amber-500/15 text-amber-700 dark:text-amber-400' },
-  deactivated: { label: 'Disabled', className: 'bg-muted text-muted-foreground' },
+const STATUS: Record<WebhookStatus, { label: string; tone: StatusTone }> = {
+  active: { label: 'Active', tone: 'success' },
+  alert: { label: 'Alert', tone: 'warning' },
+  deactivated: { label: 'Disabled', tone: 'muted' },
 }
 
 export const WEBHOOK_COLUMNS = 6
@@ -99,7 +98,7 @@ export function WebhookRow({
         </TableCell>
         <TableCell>{webhook.event}</TableCell>
         <TableCell>
-          <Badge className={status.className}>{status.label}</Badge>
+          <StatusChip tone={status.tone}>{status.label}</StatusChip>
         </TableCell>
         <TableCell className="text-sm whitespace-nowrap">
           {webhook.last_delivery_at ? formatDateTime(webhook.last_delivery_at) : '—'}

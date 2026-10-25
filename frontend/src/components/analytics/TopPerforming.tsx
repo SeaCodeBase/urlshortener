@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { Link2, QrCode } from 'lucide-react'
 import { EmptyState } from '@/components/common/EmptyState'
+import { Button } from '@/components/ui/button'
 import { Favicon } from '@/components/common/Favicon'
 import { formatNumber, formatShortUrl } from '@/lib/format'
 import { useAnalyticsOverview } from '@/lib/hooks'
@@ -29,7 +30,15 @@ export function TopPerforming() {
             onRetry={() => void refetch()}
           />
         ) : items.length === 0 ? (
-          <EmptyState title="No engagements in the last 30 days" />
+          <EmptyState
+            title="No engagements in the last 30 days"
+            description="Share your links and QR Codes to see the best performers here."
+            action={
+              <Button asChild>
+                <Link href="/dashboard/links/create">Create a link</Link>
+              </Button>
+            }
+          />
         ) : (
           <ul className="divide-y divide-border rounded-xl border border-border bg-card px-6">
             {items.map((item) => {

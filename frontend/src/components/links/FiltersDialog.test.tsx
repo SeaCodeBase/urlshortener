@@ -70,3 +70,21 @@ describe("countActiveFilters", () => {
     expect(countActiveFilters({ ...active, campaignId: "4" })).toBe(5);
   });
 });
+
+describe("FiltersDialog — unknown campaign", () => {
+  it("shows a 'Campaign #id' fallback when the selected campaign isn't loaded", () => {
+    render(
+      <FiltersDialog open onOpenChange={vi.fn()} value={{ ...DEFAULT_LINK_FILTERS, campaignId: "99" }} tags={[]} onApply={vi.fn()} />,
+    );
+    expect(screen.getByRole("combobox", { name: "Campaign" })).toHaveTextContent("Campaign #99");
+  });
+
+  it("keeps the unknown campaign on Apply", () => {
+    const onApply = vi.fn();
+    render(
+      <FiltersDialog open onOpenChange={vi.fn()} value={{ ...DEFAULT_LINK_FILTERS, campaignId: "99" }} tags={[]} onApply={onApply} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(onApply).toHaveBeenCalledWith({ ...DEFAULT_LINK_FILTERS, campaignId: "99" });
+  });
+});

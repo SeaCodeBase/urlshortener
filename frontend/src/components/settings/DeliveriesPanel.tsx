@@ -1,14 +1,14 @@
 'use client'
 
-import { Badge } from '@/components/ui/badge'
+import { StatusChip, type StatusTone } from '@/components/common/StatusChip'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatDateTime } from '@/lib/format'
 import { useWebhookDeliveries } from '@/lib/hooks'
 
-function codeClass(code: number): string {
-  if (code >= 200 && code < 300) return 'bg-success/15 text-success'
-  if (code === 0 || code >= 400) return 'bg-destructive/10 text-destructive'
-  return 'bg-muted text-muted-foreground'
+function codeTone(code: number): StatusTone {
+  if (code >= 200 && code < 300) return 'success'
+  if (code === 0 || code >= 400) return 'destructive'
+  return 'muted'
 }
 
 /** A webhook's last 20 deliveries, newest first; fetched only while `open`. */
@@ -37,7 +37,9 @@ export function DeliveriesPanel({ webhookId, open = true }: { webhookId: number;
     <ul aria-label="Recent deliveries" className="flex flex-col divide-y divide-border">
       {data.map((d) => (
         <li key={d.id} className="flex items-center gap-4 py-2 text-sm">
-          <Badge className={`w-12 justify-center font-mono ${codeClass(d.status_code)}`}>{d.status_code}</Badge>
+          <StatusChip tone={codeTone(d.status_code)} className="w-12 justify-center font-mono">
+            {d.status_code}
+          </StatusChip>
           <span className="w-20 shrink-0 text-muted-foreground">Attempt {d.attempt}</span>
           <span className="shrink-0 whitespace-nowrap text-foreground">{formatDateTime(d.delivered_at)}</span>
           {d.error && (

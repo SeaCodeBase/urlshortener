@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Download } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
+import { StatusChip, type StatusTone } from '@/components/common/StatusChip'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { TableCell, TableRow } from '@/components/ui/table'
@@ -12,12 +12,11 @@ import { downloadBlob } from '@/lib/download'
 import { formatDateTime } from '@/lib/format'
 import type { BulkUpload, BulkUploadStatus } from '@/types'
 
-/** Same chip classes as the webhook / domain status chips. */
-const STATUS: Record<BulkUploadStatus, { label: string; className: string }> = {
-  queued: { label: 'Queued', className: 'bg-muted text-muted-foreground' },
-  processing: { label: 'Processing', className: 'bg-primary/10 text-primary' },
-  done: { label: 'Done', className: 'bg-success/15 text-success' },
-  failed: { label: 'Failed', className: 'bg-destructive/10 text-destructive' },
+const STATUS: Record<BulkUploadStatus, { label: string; tone: StatusTone }> = {
+  queued: { label: 'Queued', tone: 'muted' },
+  processing: { label: 'Processing', tone: 'info' },
+  done: { label: 'Done', tone: 'success' },
+  failed: { label: 'Failed', tone: 'destructive' },
 }
 
 /** One bulk upload job: file, status, progress, created and the results download. */
@@ -45,9 +44,9 @@ export function BulkJobRow({ upload }: { upload: BulkUpload }) {
         {upload.filename}
       </TableCell>
       <TableCell>
-        <Badge className={status.className} title={upload.status === 'failed' && upload.error ? upload.error : undefined}>
+        <StatusChip tone={status.tone} title={upload.status === 'failed' && upload.error ? upload.error : undefined}>
           {status.label}
-        </Badge>
+        </StatusChip>
       </TableCell>
       <TableCell className="min-w-[200px]">
         <div className="text-sm whitespace-nowrap">

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ChevronRight, Plus } from 'lucide-react'
 import { toast } from 'sonner'
+import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -86,6 +87,9 @@ export default function GroupsPage() {
       />
       {isLoading ? (
         <Skeleton className="h-32 w-full rounded-xl" />
+      ) : !groups?.length ? (
+        // Every account has a default group, so this is a safety net; "Add new group" sits in the header.
+        <EmptyState title="No groups yet" description="Add a group to organise links, QR Codes and domains." />
       ) : (
         <>
           <p className="mb-3 text-sm text-muted-foreground">Using {groups?.length ?? 0} groups</p>

@@ -106,13 +106,13 @@ describe("CampaignDetailPage", () => {
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
 
     const email = screen.getByRole("region", { name: "Email" });
-    expect(within(email).getByText("2 links · 45 engagements")).toBeInTheDocument();
+    expect(within(email).getByText("2 links · 45 engagements in range")).toBeInTheDocument();
     expect(within(email).getByText("Newsletter")).toBeInTheDocument();
     expect(within(email).getByText("example.com/2")).toBeInTheDocument();
     expect(within(email).getByText("localhost:8080/c1")).toBeInTheDocument();
     expect(within(email).getByRole("button", { name: "Add link to channel" })).toBeInTheDocument();
     const social = screen.getByRole("region", { name: "Social" });
-    expect(within(social).getByText("1 link · 5 engagements")).toBeInTheDocument();
+    expect(within(social).getByText("1 link · 5 engagements in range")).toBeInTheDocument();
 
     expect(screen.getByRole("heading", { name: "Performance" })).toBeInTheDocument();
     expect(screen.getByTestId("chart")).toHaveTextContent("Email,Social");

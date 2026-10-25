@@ -93,3 +93,18 @@ describe("DomainRow — Set as default for group", () => {
     expect(screen.queryByRole("menuitem", { name: "Set as default for group" })).not.toBeInTheDocument();
   });
 });
+
+describe("DomainRow — foreign group", () => {
+  it("hides 'Set as default for group' for a domain owned by another group", async () => {
+    renderRow({ ...base, group_id: 5 }, [...groups, { id: 5, name: "Sales", default_domain_id: null } as unknown as Group]);
+    await openMenu();
+    expect(await screen.findByRole("menuitem", { name: "View DNS instructions" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Set as default for group" })).not.toBeInTheDocument();
+  });
+
+  it("offers it for a domain of the active group", async () => {
+    renderRow({ ...base, group_id: 3 });
+    await openMenu();
+    expect(await screen.findByRole("menuitem", { name: "Set as default for group" })).toBeInTheDocument();
+  });
+});

@@ -106,6 +106,9 @@ function FiltersBody({
 }) {
   const [draft, setDraft] = useState<LinkFilters>(value)
   const { data: campaigns } = useCampaigns()
+  // A campaign id that isn't in the loaded list (deleted, another group, still loading) still needs a label.
+  const unknownCampaign =
+    Number(draft.campaignId) > 0 && !(campaigns ?? []).some((c) => String(c.id) === draft.campaignId) ? draft.campaignId : null
   const set = <K extends keyof LinkFilters>(key: K, v: LinkFilters[K]) => setDraft((d) => ({ ...d, [key]: v }))
 
   return (
@@ -181,6 +184,7 @@ function FiltersBody({
                   {c.name}
                 </SelectItem>
               ))}
+              {unknownCampaign && <SelectItem value={unknownCampaign}>{`Campaign #${unknownCampaign}`}</SelectItem>}
             </SelectContent>
           </Select>
         </div>

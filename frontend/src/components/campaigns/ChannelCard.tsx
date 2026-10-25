@@ -23,10 +23,14 @@ function plural(n: number, one: string, many: string): string {
   return `${formatNumber(n)} ${n === 1 ? one : many}`
 }
 
-/** "2 links · 45 engagements" from the stats of the current preset, "—" while they load. */
-export function channelMeta(stats: Pick<ChannelStats, 'links' | 'engagements'> | undefined): string {
-  if (!stats) return '—'
-  return `${plural(stats.links, 'link', 'links')} · ${plural(stats.engagements, 'engagement', 'engagements')}`
+/**
+ * "2 links · 45 engagements in range" from the stats of the current preset. While they load the link
+ * count comes from the channel itself and only the engagements show "—".
+ */
+export function channelMeta(linkCount: number, stats: Pick<ChannelStats, 'links' | 'engagements'> | undefined): string {
+  const links = plural(stats?.links ?? linkCount, 'link', 'links')
+  const engagements = stats ? plural(stats.engagements, 'engagement', 'engagements') : '— engagements'
+  return `${links} · ${engagements} in range`
 }
 
 /** A campaign channel: header with counts, its links (short URL, copy, clicks, ⋯ Remove) and "Add link to channel". */
@@ -65,7 +69,7 @@ export function ChannelCard({
         <h3 id={headingId} className="text-lg font-semibold text-foreground">
           {channel.name}
         </h3>
-        <span className="text-sm text-muted-foreground">{channelMeta(stats)}</span>
+        <span className="text-sm text-muted-foreground">{channelMeta(channel.links.length, stats)}</span>
       </header>
 
       {channel.links.length > 0 && (

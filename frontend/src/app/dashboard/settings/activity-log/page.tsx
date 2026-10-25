@@ -81,7 +81,22 @@ function ActivityLog() {
       {isLoading ? (
         <Skeleton className="h-64 w-full rounded-xl" />
       ) : entries.length === 0 ? (
-        <EmptyState title="No activity yet" />
+        range ? (
+          <EmptyState
+            title="No activity in this date range"
+            description="Try a different date range."
+            action={
+              <Button variant="secondary" onClick={() => setParams({ from: null, to: null, page: null })}>
+                Clear date filter
+              </Button>
+            }
+          />
+        ) : (
+          <EmptyState
+            title="No activity yet"
+            description="Changes to your links, QR Codes, domains and settings will appear here."
+          />
+        )
       ) : (
         <div className="rounded-xl bg-card p-4">
           <Table>
