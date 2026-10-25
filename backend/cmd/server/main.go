@@ -87,6 +87,7 @@ func main() {
 	pageRepo := repository.NewPageRepository(db)
 	pageViewRepo := repository.NewPageViewRepository(db)
 	webhookRepo := repository.NewWebhookRepository(db)
+	campaignRepo := repository.NewCampaignRepository(db)
 
 	// Outbound webhook requests (verify pings and deliveries): 10 s timeout,
 	// ≤3 redirects, refuses non-public addresses.
@@ -127,6 +128,13 @@ func main() {
 		QRs:        qrRepo,
 		Activity:   activityService,
 		BaseURL:    cfg.URLs.BaseURL,
+	})
+	campaignService := service.NewCampaignService(service.CampaignServiceDeps{
+		Campaigns: campaignRepo,
+		Links:     linkRepo,
+		LinkSvc:   linkService,
+		Clicks:    clickRepo,
+		Activity:  activityService,
 	})
 	qrService := service.NewQRService(service.QRServiceDeps{
 		QRs:      qrRepo,
@@ -191,6 +199,7 @@ func main() {
 	authHandler := handler.NewAuthHandler(authService, passkeyService, cfg)
 	linkHandler := handler.NewLinkHandler(linkService, redirectService, domainRepo, cfg)
 	linkHandler.SetPageIDs(pageService)
+	linkHandler.SetCampaigns(campaignService)
 	pageHandler := handler.NewPageHandler(pageService, pagePublicService)
 	publicPageHandler := handler.NewPublicPageHandler(pagePublicService)
 	qrHandler := handler.NewQRHandler(qrService, redirectService, domainRepo, statsService, cfg)
@@ -208,6 +217,8 @@ func main() {
 	analyticsHandler := handler.NewAnalyticsHandler(statsService, analyticsService)
 	dashboardHandler := handler.NewDashboardHandler(dashboardService, analyticsService)
 	webhookHandler := handler.NewWebhookHandler(webhookService)
+	campaignHandler := handler.NewCampaignHandler(campaignService, linkService, domainRepo, cfg)
+	campaignHandler.SetPageIDs(pageService)
 
 	// Click service
 	clickService := service.NewClickService(rdb)
@@ -295,6 +306,7 @@ func main() {
 			links.GET("/:id/routing-rules", linkHandler.GetRoutingRules)
 			links.PUT("/:id/routing-rules", linkHandler.SetRoutingRules)
 			links.GET("/:id/stats", statsHandler.GetLinkStats)
+			links.GET("/:id/campaigns", linkHandler.Campaigns)
 		}
 
 		// QR code routes (protected)
@@ -364,6 +376,9 @@ func main() {
 
 		// Webhooks (protected, group-scoped)
 		handler.RegisterWebhookRoutes(api, webhookHandler, authMiddleware, groupMW)
+
+		// Campaigns and channels (protected, group-scoped)
+		handler.RegisterCampaignRoutes(api, campaignHandler, authMiddleware, groupMW)
 
 		// Published pages (public: no auth, no group; drafts are never served)
 		public := api.Group("/public")

@@ -63,6 +63,7 @@ func newLinkRouter(t *testing.T, favicons bool) *linkRouter {
 	links.PUT("/:id/tags", h.SetTags)
 	links.GET("/:id/routing-rules", h.GetRoutingRules)
 	links.PUT("/:id/routing-rules", h.SetRoutingRules)
+	links.GET("/:id/campaigns", h.Campaigns)
 	return lr
 }
 
@@ -504,4 +505,29 @@ func TestLinkHandler_ReservedBackHalf400(t *testing.T) {
 	w := doJSON(lr.r, http.MethodPost, "/api/links", `{"original_url":"https://e.com","custom_code":"m"}`)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.JSONEq(t, `{"error":"This back-half is reserved"}`, w.Body.String())
+}
+
+func TestLinkHandler_Campaigns(t *testing.T) {
+	lr := newLinkRouter(t, true)
+	camps := mocks.NewMockCampaignService(gomock.NewController(t))
+	lr.h.SetCampaigns(camps)
+
+	camps.EXPECT().LinkMemberships(gomock.Any(), uint64(7), uint64(9)).Return([]service.LinkMembership{
+		{CampaignID: 3, CampaignName: "Launch", ChannelID: 4, ChannelName: "Email"}}, nil)
+	w := doJSON(lr.r, http.MethodGet, "/api/links/9/campaigns", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.JSONEq(t, `{"memberships":[{"campaign_id":3,"campaign_name":"Launch","channel_id":4,"channel_name":"Email"}]}`, w.Body.String())
+
+	camps.EXPECT().LinkMemberships(gomock.Any(), uint64(7), uint64(9)).Return(nil, nil)
+	w = doJSON(lr.r, http.MethodGet, "/api/links/9/campaigns", "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, `{"memberships":[]}`, w.Body.String())
+
+	camps.EXPECT().LinkMemberships(gomock.Any(), uint64(7), uint64(99)).Return(nil, repository.ErrLinkNotFound)
+	w = doJSON(lr.r, http.MethodGet, "/api/links/99/campaigns", "")
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.JSONEq(t, `{"error":"link not found"}`, w.Body.String())
+
+	w = doJSON(lr.r, http.MethodGet, "/api/links/x/campaigns", "")
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }

@@ -44,7 +44,11 @@ type LinkHandler struct {
 	linkPresenter
 	linkService service.LinkService
 	invalidator LinkCacheInvalidator
+	campaigns   service.CampaignService // nil: GET /links/:id/campaigns lists none
 }
+
+// SetCampaigns sets the campaign service behind GET /links/:id/campaigns.
+func (h *LinkHandler) SetCampaigns(campaigns service.CampaignService) { h.campaigns = campaigns }
 
 func NewLinkHandler(linkService service.LinkService, invalidator LinkCacheInvalidator, domainRepo repository.DomainRepository, cfg *config.Config) *LinkHandler {
 	return &LinkHandler{
@@ -643,4 +647,25 @@ func (h *LinkHandler) SetRoutingRules(c *gin.Context) {
 		rules = []model.RoutingRule{}
 	}
 	c.JSON(http.StatusOK, gin.H{"routing_rules": rules})
+}
+
+// Campaigns handles GET /links/:id/campaigns: the campaign channels the link
+// of the active group belongs to.
+func (h *LinkHandler) Campaigns(c *gin.Context) {
+	linkID, ok := parseLinkID(c)
+	if !ok {
+		return
+	}
+	var ms []service.LinkMembership
+	if h.campaigns != nil {
+		var err error
+		ms, err = h.campaigns.LinkMemberships(c.Request.Context(), middleware.GetGroupID(c), linkID)
+		if writeCampaignError(c, "list-link-campaigns", err) {
+			return
+		}
+	}
+	if ms == nil {
+		ms = []service.LinkMembership{}
+	}
+	c.JSON(http.StatusOK, gin.H{"memberships": ms})
 }
