@@ -2,6 +2,16 @@
 
 A self-hosted, Bitly-style URL shortener.
 
+It covers [Links](#bitly-style-ui-phase-1) (search, filters, tags, UTM,
+expiration, routing rules, bulk actions, CSV export),
+[QR Codes](#qr-codes-phase-2), [Pages](#pages--link-in-bio-phase-4)
+(link-in-bio), [Analytics](#analytics-phase-3) (link stats, dashboards),
+[Campaigns](#campaigns--channels), [Custom domains](#custom-domains-default-for-group),
+[Webhooks](#webhooks), [Bulk upload](#bulk-upload), and Settings with
+[API tokens](#api-tokens) and the activity log
+(see [Phase 1](#bitly-style-ui-phase-1)). [Keyboard shortcuts](#keyboard-shortcuts)
+and [Deployment](#deployment) notes are below.
+
 - **backend/** — Go (Gin) API server (`:8081`) and redirect server (`:8080`), MariaDB + Redis.
 - **frontend/** — Next.js web UI (`:3000`).
 
@@ -24,6 +34,36 @@ Volumes:
 - named volume `uploads` → `/app/uploads` (`uploads.path`, writable)
 
 Every configuration key is documented in `backend/config.example.yaml`.
+
+## Deployment
+
+- **Ports** — `8080` redirect server (public, serves short links), `8081`
+  API server (called by the web UI), `3000` web UI. The compose file
+  publishes all three.
+- **Reverse proxy and client IP** — set `server.trusted_proxies` to the
+  IPs/CIDRs of the reverse proxy in front of the backend. While it is empty
+  (the default), `X-Forwarded-For` is ignored and the TCP peer is taken as
+  the client IP. Behind a proxy that means every click appears to come from
+  the proxy, which skews click geolocation and the hashed-IP unique-visitor
+  counts; listing the proxy makes the backend believe its forwarded header.
+  Only list proxies you control, otherwise clients can spoof their IP.
+- **Graceful shutdown** — on `SIGTERM` (or `SIGINT`) both HTTP servers stop
+  accepting connections and in-flight requests get up to 20 s to finish.
+  Then, in order: the click flusher does a final flush of buffered clicks
+  (and queues their webhook events), the webhook dispatcher waits for
+  in-flight deliveries (unclaimed jobs stay queued for the next start), and
+  the bulk worker stops after its current batch (an upload interrupted this
+  way is finished as failed with the results so far). The compose file sets
+  `stop_grace_period: 30s` on the backend so Docker does not `SIGKILL` it
+  before the workers have stopped.
+- **Workers** — `workers.webhooks.poll_every` (default `2s`),
+  `workers.bulk.poll_every` (default `5s`) and `workers.bulk.batch_size`
+  (default `50`); see [Worker configuration](#worker-configuration).
+- **Database persistence** — the compose file's MariaDB service has no named
+  data volume by default, so its data lives in the container and is lost
+  when the container is removed. Add a persistent volume for
+  `/var/lib/mysql` before running it in production.
+- **Upgrades** — see [Upgrading an existing install](#upgrading-an-existing-install).
 
 ## Bitly-style UI (Phase 1)
 
@@ -52,12 +92,16 @@ Every configuration key is documented in `backend/config.example.yaml`.
   optional `group_id` restricts a domain to one group (`null` = usable by
   all of the user's groups). A domain that still has links can't be
   deleted.
-- **Keyboard shortcuts** (signed-in pages):
-  - `L` — create a link
-  - `Q` — create a QR Code
 
-  Shortcuts are ignored while typing in a field or while a dialog or menu
-  is open.
+### Keyboard shortcuts
+
+On signed-in pages:
+
+- `L` — create a link
+- `Q` — create a QR Code
+
+Shortcuts are ignored while typing in a field, while a dialog or menu is
+open, and when a modifier key (Ctrl, Cmd, Alt) is held.
 
 ### QR Codes (Phase 2)
 

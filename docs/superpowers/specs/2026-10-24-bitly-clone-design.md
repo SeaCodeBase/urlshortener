@@ -339,6 +339,15 @@ uploads:
 5. **Campaigns, Custom domains, Webhooks, Bulk upload**: all four features end-to-end.
 6. **Polish**: compact/grid views, keyboard shortcuts (L, Q), empty states, responsive sidebar, error page on redirect server, docs/README, compose + Dockerfiles updated.
 
+**Status (2026-10-25):** phases 1-6 are implemented.
+
+- Phase 1 (Foundation): `docs/superpowers/plans/2026-10-24-phase1-ledger.md`
+- Phase 2 (QR Codes): `docs/superpowers/plans/2026-10-25-phase2-ledger.md`
+- Phase 3 (Analytics): `docs/superpowers/plans/2026-10-25-phase3-ledger.md`
+- Phase 4 (Pages): `docs/superpowers/plans/2026-10-25-phase4-ledger.md`
+- Phase 5 (Campaigns, Custom domains, Webhooks, Bulk upload): `docs/superpowers/plans/2026-10-25-phase5-ledger.md`
+- Phase 6 (Polish): `docs/superpowers/plans/2026-10-25-phase6-ledger.md`
+
 ## 9. Testing & verification
 
 - Backend: unit tests per service with existing mock pattern (`go.uber.org/mock`), repository tests against MariaDB (`testutil/db.go`), handler tests with httptest. `go vet`, `go test ./...` green.
