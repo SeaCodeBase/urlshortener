@@ -76,6 +76,22 @@ func TestParseBulkCSV(t *testing.T) {
 		_, err = service.ParseBulkCSV(strings.NewReader(bulkHeader + "\n,,,,\n"))
 		requireValidation(t, err, "no rows")
 	})
+	t.Run("unterminated quote", func(t *testing.T) {
+		_, err := service.ParseBulkCSV(strings.NewReader(bulkHeader +
+			"https://a.example,\"unterminated,,,\nhttps://b.example,,,,\nhttps://c.example,,,,\n"))
+		requireValidation(t, err, "invalid CSV on line")
+	})
+	t.Run("bare quote in unquoted field", func(t *testing.T) {
+		_, err := service.ParseBulkCSV(strings.NewReader(bulkHeader + "https://a.example,say \"hi\",,,\n"))
+		requireValidation(t, err, "line 2")
+	})
+	t.Run("quoted comma and doubled quotes", func(t *testing.T) {
+		rows, err := service.ParseBulkCSV(strings.NewReader(bulkHeader +
+			"https://a.example,\"He said \"\"hi\"\", then left\",,,\n"))
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+		assert.Equal(t, `He said "hi", then left`, rows[0].Title)
+	})
 	t.Run("too many columns", func(t *testing.T) {
 		_, err := service.ParseBulkCSV(strings.NewReader(bulkHeader + "https://a.example,,,,,extra\n"))
 		requireValidation(t, err, "line 2")

@@ -308,3 +308,34 @@ func TestBulkWorker_StartStop(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond)
 	f.w.Stop()
 }
+
+func TestBulkWorker_StopBetweenBatchesFinishesWithPartialResults(t *testing.T) {
+	f := newBulkWorkerFixture(t, 1, nil, bulkJob(5, "https://a.example/1,,,,\nhttps://a.example/2,,,,\n"),
+		bulkJob(6, "https://a.example/3,,,,\n"))
+	create := okCreate()
+	f.links.EXPECT().Create(gomock.Any(), uint64(1), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, uid uint64, in service.CreateLinkInput) (*model.Link, error) {
+			f.w.signalStop() // shutdown arrives while the first batch runs
+			return create(ctx, uid, in)
+		}).Times(1)
+
+	f.w.poll()
+
+	j, _ := f.repo.GetByID(context.Background(), 5)
+	assert.Equal(t, model.BulkStatusFailed, j.Status)
+	assert.Equal(t, "interrupted by server shutdown", j.Error)
+	assert.Equal(t, []progressCall{{1, 1, 0}}, f.repo.progress[5])
+	rows := readResults(t, j)
+	require.Len(t, rows, 1, "partial results are kept")
+	assert.Equal(t, "ok", rows[0][3])
+	j, _ = f.repo.GetByID(context.Background(), 6)
+	assert.Equal(t, model.BulkStatusQueued, j.Status, "no new job is claimed while stopping")
+}
+
+func TestBulkWorker_StopIsIdempotent(t *testing.T) {
+	f := newBulkWorkerFixture(t, 50, nil)
+	f.w = NewBulkWorker(f.repo, f.links, f.domains, time.Hour, 50, "http://short.test")
+	f.w.Start()
+	f.w.Stop()
+	f.w.Stop()
+}

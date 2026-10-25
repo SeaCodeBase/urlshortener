@@ -80,14 +80,15 @@ func NewBulkService(d BulkServiceDeps) *BulkServiceImpl {
 // ParseBulkCSV reads an upload: the header must be BulkHeader (compared
 // case-insensitively after trimming; a UTF-8 BOM and trailing empty header
 // cells are ignored), cells are trimmed, short rows are padded, fully blank
-// rows are skipped and tags are split on "|". A structurally broken file, a
+// rows are skipped and tags are split on "|". Quoting is strict RFC 4180, so
+// an unterminated or stray quote rejects the file instead of silently
+// merging rows. A structurally broken file, a
 // row with more than five non-empty columns, no data rows or more than
 // BulkMaxRows rows is a *ValidationError. Semantic checks (URL, domain,
 // back-half) are left to link creation.
 func ParseBulkCSV(r io.Reader) ([]BulkRow, error) {
 	cr := csv.NewReader(r)
 	cr.FieldsPerRecord = -1
-	cr.LazyQuotes = true
 	cr.ReuseRecord = true
 
 	header, err := cr.Read()
@@ -155,7 +156,7 @@ func ParseBulkCSV(r io.Reader) ([]BulkRow, error) {
 func csvParseError(err error) error {
 	var pe *csv.ParseError
 	if errors.As(err, &pe) {
-		return invalid("line %d: malformed CSV (%v)", pe.Line, pe.Err)
+		return invalid("invalid CSV on line %d: %v", pe.Line, pe.Err)
 	}
 	return invalid("the file is not a valid CSV")
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
@@ -36,6 +37,7 @@ type BulkWorker struct {
 	pollEvery time.Duration
 	batchSize int
 	baseURL   string
+	stopOnce  sync.Once
 	stopCh    chan struct{}
 	doneCh    chan struct{}
 }
@@ -60,10 +62,14 @@ func (w *BulkWorker) Start() {
 
 // Stop ends the loop after the current batch. An upload interrupted that way
 // is finished as failed with the results so far, so a restart never creates
-// its links twice.
+// its links twice. Stop is idempotent; it must follow Start.
 func (w *BulkWorker) Stop() {
-	close(w.stopCh)
+	w.signalStop()
 	<-w.doneCh
+}
+
+func (w *BulkWorker) signalStop() {
+	w.stopOnce.Do(func() { close(w.stopCh) })
 }
 
 func (w *BulkWorker) run() {
