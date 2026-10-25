@@ -153,6 +153,7 @@ func LoadFromYAML(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+	applyEnv(cfg)
 
 	applyDefaults(cfg)
 
@@ -185,6 +186,46 @@ func Load() (*Config, error) {
 	}
 
 	return nil, errors.New("config.yaml not found, please copy config.example.yaml to config.yaml")
+}
+
+// Environment variables that override the config file when non-empty.
+const (
+	EnvJWTSecret = "JWT_SECRET" // overrides jwt.secret
+	EnvBaseURL   = "BASE_URL"   // overrides urls.base_url
+)
+
+// applyEnv applies the environment overrides. It runs before applyDefaults,
+// so values derived from urls.base_url (redirect_host) follow BASE_URL.
+func applyEnv(cfg *Config) {
+	if v := os.Getenv(EnvJWTSecret); v != "" {
+		cfg.JWT.Secret = v
+	}
+	if v := os.Getenv(EnvBaseURL); v != "" {
+		cfg.URLs.BaseURL = v
+	}
+}
+
+// placeholderSecrets are the publicly known secrets shipped in the
+// repository (config.docker.yaml, .env.example).
+var placeholderSecrets = map[string]bool{
+	"dev-jwt-secret-change-in-production": true,
+	"your_jwt_secret_key":                 true,
+}
+
+// minSecretLen is the length below which the JWT secret is reported as weak.
+const minSecretLen = 16
+
+// SecretWarning returns a warning to log at startup when secret is a
+// placeholder from the repository or too short, and "" otherwise. The
+// secret signs session JWTs and salts click/page-view IP hashes.
+func SecretWarning(secret string) string {
+	if placeholderSecrets[secret] {
+		return "jwt.secret is a placeholder published in the repository: anyone can forge session tokens; set JWT_SECRET (or jwt.secret) to a long random string"
+	}
+	if len(secret) < minSecretLen {
+		return fmt.Sprintf("jwt.secret is shorter than %d bytes; set JWT_SECRET (or jwt.secret) to a long random string", minSecretLen)
+	}
+	return ""
 }
 
 // applyDefaults sets default values for empty fields
@@ -271,7 +312,7 @@ func applyDefaults(cfg *Config) {
 // validate checks for required configuration values
 func validate(cfg *Config) error {
 	if cfg.JWT.Secret == "" {
-		return errors.New("jwt.secret is required in config.yaml")
+		return errors.New("jwt.secret is required: set it in config.yaml or via the JWT_SECRET environment variable")
 	}
 	if err := validateProxies("server.trusted_proxies", cfg.Server.TrustedProxies); err != nil {
 		return err

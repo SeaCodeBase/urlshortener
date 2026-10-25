@@ -44,6 +44,9 @@ func main() {
 	}
 	logger.Init(true)
 	defer logger.Sync()
+	if msg := config.SecretWarning(cfg.JWT.Secret); msg != "" {
+		logger.Warn(ctx, "WARNING: insecure JWT secret: "+msg)
+	}
 
 	// Initialize OpenTelemetry
 	shutdown, err := telemetry.Init(ctx, "urlshortener")

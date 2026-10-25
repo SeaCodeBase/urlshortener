@@ -30,14 +30,17 @@ redis:
   password: ""       # Redis password (empty = no auth)
 
 jwt:
-  secret: "" # REQUIRED - generate a secure random string (signs session JWTs)
+  # REQUIRED - a long random string (e.g. `openssl rand -hex 32`); signs session
+  # JWTs and salts hashed IPs. The JWT_SECRET environment variable, when
+  # non-empty, overrides this value.
+  secret: ""
 
 webauthn:
   rp_id: "localhost"                  # Passkey relying-party ID (the UI's hostname, no scheme/port)
   rp_origin: "http://localhost:3000"  # Exact origin the UI is served from
 
 urls:
-  base_url: "http://localhost:8080"       # Public URL of the redirect server (short links)
+  base_url: "http://localhost:8080"       # Public URL of the redirect server (short links); BASE_URL env overrides
   frontend_url: "http://localhost:3000"   # Public URL of the web UI (links back to the app)
   redirect_host: ""   # Hostname custom domains CNAME to (default: host of base_url)
   redirect_ip: ""     # IP for custom apex domain A records (empty = not shown)

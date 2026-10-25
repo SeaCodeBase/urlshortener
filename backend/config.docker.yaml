@@ -30,14 +30,16 @@ redis:
   password: ""    # Redis password (empty = no auth)
 
 jwt:
-  secret: "dev-jwt-secret-change-in-production"  # REQUIRED - signing key for session JWTs; change it
+  # Public placeholder (logged as a startup WARNING): set JWT_SECRET in .env,
+  # which docker-compose passes to the backend and which overrides this value.
+  secret: "dev-jwt-secret-change-in-production"
 
 webauthn:
   rp_id: "localhost"                  # Passkey relying-party ID (the UI's hostname, no scheme/port)
   rp_origin: "http://localhost:3000"  # Exact origin the UI is served from
 
 urls:
-  base_url: "http://localhost:8080"       # Public URL of the redirect server (short links)
+  base_url: "http://localhost:8080"       # Public URL of the redirect server (short links); BASE_URL in .env overrides
   frontend_url: "http://localhost:3000"   # Public URL of the web UI (links back to the app)
   redirect_host: "localhost"  # Hostname custom domains CNAME to (default: host of base_url)
   redirect_ip: ""             # IP for custom apex domain A records (empty = not shown)

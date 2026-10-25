@@ -10,6 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMain clears the environment overrides so a developer's shell cannot
+// change what the YAML tests see.
+func TestMain(m *testing.M) {
+	os.Unsetenv(EnvJWTSecret)
+	os.Unsetenv(EnvBaseURL)
+	os.Exit(m.Run())
+}
+
 func TestLoadYAML_ValidConfig(t *testing.T) {
 	// Create temp YAML file
 	content := `
@@ -308,4 +316,53 @@ func TestConfig_DockerAndExampleYAMLParse(t *testing.T) {
 		_, err = decodeStrict(data)
 		require.NoError(t, err)
 	})
+}
+
+func TestConfig_EnvOverrides(t *testing.T) {
+	write := func(t *testing.T, content string) string {
+		t.Helper()
+		configPath := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+		return configPath
+	}
+	yamlCfg := "jwt:\n  secret: \"from-the-yaml-file-secret\"\nurls:\n  base_url: \"https://yaml.example.com\"\n"
+
+	t.Run("env wins over yaml", func(t *testing.T) {
+		t.Setenv(EnvJWTSecret, "from-the-environment-secret")
+		t.Setenv(EnvBaseURL, "https://env.example.com:8443")
+		cfg, err := LoadFromYAML(write(t, yamlCfg))
+		require.NoError(t, err)
+		assert.Equal(t, "from-the-environment-secret", cfg.JWT.Secret)
+		assert.Equal(t, "https://env.example.com:8443", cfg.URLs.BaseURL)
+		// Derived defaults follow the override.
+		assert.Equal(t, "env.example.com", cfg.URLs.RedirectHost)
+	})
+	t.Run("empty env keeps yaml", func(t *testing.T) {
+		t.Setenv(EnvJWTSecret, "")
+		t.Setenv(EnvBaseURL, "")
+		cfg, err := LoadFromYAML(write(t, yamlCfg))
+		require.NoError(t, err)
+		assert.Equal(t, "from-the-yaml-file-secret", cfg.JWT.Secret)
+		assert.Equal(t, "https://yaml.example.com", cfg.URLs.BaseURL)
+	})
+	t.Run("env supplies a secret missing from yaml", func(t *testing.T) {
+		t.Setenv(EnvJWTSecret, "from-the-environment-secret")
+		cfg, err := LoadFromYAML(write(t, "server:\n  api_port: \"9000\"\n"))
+		require.NoError(t, err)
+		assert.Equal(t, "from-the-environment-secret", cfg.JWT.Secret)
+	})
+	t.Run("no secret anywhere fails", func(t *testing.T) {
+		t.Setenv(EnvJWTSecret, "")
+		_, err := LoadFromYAML(write(t, "jwt:\n  secret: \"\"\n"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "jwt.secret")
+		assert.Contains(t, err.Error(), "JWT_SECRET")
+	})
+}
+
+func TestSecretWarning(t *testing.T) {
+	assert.Contains(t, SecretWarning("dev-jwt-secret-change-in-production"), "placeholder")
+	assert.Contains(t, SecretWarning("your_jwt_secret_key"), "placeholder")
+	assert.Contains(t, SecretWarning("short"), "shorter than 16")
+	assert.Empty(t, SecretWarning("a-long-random-secret-0123456789"))
 }

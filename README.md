@@ -18,9 +18,8 @@ and [Deployment](#deployment) notes are below.
 ## Quick start (Docker)
 
 ```bash
-cp .env.example .env   # set DB_PASSWORD / DB_ROOT_PASSWORD
-# backend/config.docker.yaml: database.password must match DB_PASSWORD,
-# and change jwt.secret
+cp .env.example .env   # set DB_PASSWORD / DB_ROOT_PASSWORD and JWT_SECRET
+# backend/config.docker.yaml: database.password must match DB_PASSWORD
 docker compose up -d --build
 ```
 
@@ -40,6 +39,14 @@ Every configuration key is documented in `backend/config.example.yaml`.
 - **Ports** — `8080` redirect server (public, serves short links), `8081`
   API server (called by the web UI), `3000` web UI. The compose file
   publishes all three.
+- **Secret and base URL** — the `JWT_SECRET` and `BASE_URL` environment
+  variables, when set and non-empty, override `jwt.secret` and
+  `urls.base_url` from the config file (the compose file passes both from
+  `.env` to the backend). The secret signs session tokens and salts the
+  hashed click/page-view IPs; the backend refuses to start without one and
+  logs a `WARNING: insecure JWT secret` at startup while it is a placeholder
+  from this repository (such as `config.docker.yaml`'s) or shorter than 16
+  bytes. Generate one with `openssl rand -hex 32`.
 - **Reverse proxy and client IP** — set `server.trusted_proxies` to the
   IPs/CIDRs of the reverse proxy in front of the backend. While it is empty
   (the default), `X-Forwarded-For` is ignored and the TCP peer is taken as

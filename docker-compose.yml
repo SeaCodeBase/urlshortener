@@ -9,6 +9,10 @@ services:
       - ./backend/config.docker.yaml:/app/config.yaml:ro
       - ./backend/data:/app/data:ro      # GeoIP database (read-only)
       - uploads:/app/uploads              # uploads.path (writable, owned by appuser)
+    environment:
+      # Non-empty values override jwt.secret / urls.base_url from the config.
+      - JWT_SECRET=${JWT_SECRET:-}
+      - BASE_URL=${BASE_URL:-}
     depends_on:
       mariadb:
         condition: service_healthy
