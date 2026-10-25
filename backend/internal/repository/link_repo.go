@@ -289,7 +289,8 @@ type LinkFilter struct {
 	Expiration string
 	// HasQR keeps links with (true) or without (false) an attached QR code.
 	HasQR *bool
-	// CampaignID is accepted for API compatibility and ignored for now.
+	// CampaignID keeps links that belong to the campaign (in any of its
+	// channels).
 	CampaignID *uint64
 	// CreatedAfter is inclusive, CreatedBefore exclusive.
 	CreatedAfter, CreatedBefore *time.Time
@@ -359,6 +360,10 @@ func (f LinkFilter) where(groupID uint64) (string, []any) {
 		} else {
 			conds = append(conds, "qc.id IS NULL")
 		}
+	}
+	if f.CampaignID != nil {
+		conds = append(conds, "EXISTS (SELECT 1 FROM campaign_links cl WHERE cl.link_id = l.id AND cl.campaign_id = ?)")
+		args = append(args, *f.CampaignID)
 	}
 	if f.CreatedAfter != nil {
 		conds = append(conds, "l.created_at >= ?")

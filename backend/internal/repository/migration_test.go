@@ -278,3 +278,25 @@ func TestMigration005_QRTables(t *testing.T) {
 		t.Errorf("qr_tags rows after link delete = %d, want 0", tagCount)
 	}
 }
+
+// TestMigration009_Idempotent re-runs 009 (already applied to the test
+// database) and checks it splits into its seven CREATE TABLE statements.
+func TestMigration009_Idempotent(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	raw, err := os.ReadFile("../../migrations/009_campaigns_webhooks_bulk.sql")
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	stmts := database.SplitStatements(string(raw))
+	if len(stmts) != 7 {
+		t.Fatalf("got %d statements, want 7", len(stmts))
+	}
+	for run := 1; run <= 2; run++ {
+		for _, stmt := range stmts {
+			if _, err := db.ExecContext(context.Background(), stmt); err != nil {
+				t.Fatalf("run %d: exec %q: %v", run, stmt, err)
+			}
+		}
+	}
+}

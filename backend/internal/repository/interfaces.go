@@ -379,3 +379,80 @@ type Row struct {
 	Key2  string `db:"k2"`
 	Count int64  `db:"cnt"`
 }
+
+//go:generate mockgen -destination=mocks/mock_campaign_repo.go -package=mocks . CampaignRepository
+type CampaignRepository interface {
+	Create(ctx context.Context, c *model.Campaign) error
+	// GetByID returns ErrCampaignNotFound when missing.
+	GetByID(ctx context.Context, id uint64) (*model.Campaign, error)
+	// ListByGroup returns the group's campaigns newest first, with their
+	// channel and distinct link counts.
+	ListByGroup(ctx context.Context, groupID uint64) ([]model.CampaignSummary, error)
+	// Update writes name, description and auto_utm; ErrCampaignNotFound.
+	Update(ctx context.Context, c *model.Campaign) error
+	// Delete removes the campaign and its channel/link memberships (the
+	// channels and links themselves stay); ErrCampaignNotFound.
+	Delete(ctx context.Context, id uint64) error
+
+	// CreateChannel returns ErrChannelExists when the group already has a
+	// channel with that name.
+	CreateChannel(ctx context.Context, ch *model.Channel) error
+	// ListChannels returns the group's channels by name.
+	ListChannels(ctx context.Context, groupID uint64) ([]model.Channel, error)
+	// GetChannel returns ErrChannelNotFound when missing.
+	GetChannel(ctx context.Context, id uint64) (*model.Channel, error)
+	// SetCampaignChannels replaces the campaign's channel set; the link
+	// memberships of removed channels cascade away.
+	SetCampaignChannels(ctx context.Context, campaignID uint64, channelIDs []uint64) error
+	// CampaignChannels returns the campaign's channels by name.
+	CampaignChannels(ctx context.Context, campaignID uint64) ([]model.Channel, error)
+
+	// AddLinks adds links to a campaign channel (INSERT IGNORE: existing
+	// memberships are kept). The channel must be attached to the campaign.
+	AddLinks(ctx context.Context, campaignID, channelID uint64, linkIDs []uint64) error
+	RemoveLink(ctx context.Context, campaignID, channelID, linkID uint64) error
+	// Links returns the campaign's memberships, newest first.
+	Links(ctx context.Context, campaignID uint64) ([]model.CampaignLink, error)
+	// LinkCampaigns returns a link's memberships across campaigns.
+	LinkCampaigns(ctx context.Context, linkID uint64) ([]model.CampaignLink, error)
+}
+
+//go:generate mockgen -destination=mocks/mock_webhook_repo.go -package=mocks . WebhookRepository
+type WebhookRepository interface {
+	Create(ctx context.Context, w *model.Webhook) error
+	// GetByID returns ErrWebhookNotFound when missing.
+	GetByID(ctx context.Context, id uint64) (*model.Webhook, error)
+	// ListByGroup returns the group's webhooks newest first.
+	ListByGroup(ctx context.Context, groupID uint64) ([]model.Webhook, error)
+	// ListActiveByGroup returns the webhooks that receive events: is_active
+	// and status <> 'deactivated'.
+	ListActiveByGroup(ctx context.Context, groupID uint64) ([]model.Webhook, error)
+	// Update writes name, url, is_active, status, consecutive_failures,
+	// failing_since and last_delivery_at; ErrWebhookNotFound.
+	Update(ctx context.Context, w *model.Webhook) error
+	// Delete removes the webhook and its deliveries; ErrWebhookNotFound.
+	Delete(ctx context.Context, id uint64) error
+	// AddDelivery records a delivery, then keeps only the newest 50 rows of
+	// that webhook.
+	AddDelivery(ctx context.Context, d *model.WebhookDelivery) error
+	// ListDeliveries returns up to limit deliveries, newest first.
+	ListDeliveries(ctx context.Context, webhookID uint64, limit int) ([]model.WebhookDelivery, error)
+}
+
+//go:generate mockgen -destination=mocks/mock_bulk_upload_repo.go -package=mocks . BulkUploadRepository
+type BulkUploadRepository interface {
+	Create(ctx context.Context, b *model.BulkUpload) error
+	// GetByID returns the upload with both CSV bodies; ErrBulkUploadNotFound.
+	GetByID(ctx context.Context, id uint64) (*model.BulkUpload, error)
+	// ListByGroup returns the group's uploads newest first, without
+	// SourceCSV/ResultCSV.
+	ListByGroup(ctx context.Context, groupID uint64) ([]model.BulkUpload, error)
+	// ClaimNext atomically moves the oldest queued upload to processing and
+	// returns it (with SourceCSV); nil, nil when none is queued.
+	ClaimNext(ctx context.Context) (*model.BulkUpload, error)
+	// UpdateProgress sets the counters; ErrBulkUploadNotFound.
+	UpdateProgress(ctx context.Context, id uint64, processed, succeeded, failed int) error
+	// Finish sets the final status, result CSV (empty string stores NULL) and
+	// error message; ErrBulkUploadNotFound.
+	Finish(ctx context.Context, id uint64, status string, resultCSV string, errMsg string) error
+}
