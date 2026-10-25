@@ -60,39 +60,4 @@ describe("Sidebar", () => {
     expect(screen.getByRole("button", { name: /expand sidebar/i })).toHaveAttribute("aria-expanded", "false");
     expect(window.localStorage.getItem("sidebar-collapsed")).toBe("true");
   });
-
-  it("keyboard shortcut l opens create link, ignored in inputs", () => {
-    renderSidebar();
-    fireEvent.keyDown(window, { key: "l" });
-    expect(push).toHaveBeenCalledWith("/dashboard/links/create");
-    push.mockReset();
-
-    const input = document.createElement("input");
-    document.body.appendChild(input);
-    fireEvent.keyDown(input, { key: "q" });
-    expect(push).not.toHaveBeenCalled();
-    input.remove();
-
-    fireEvent.keyDown(window, { key: "q", metaKey: true });
-    expect(push).not.toHaveBeenCalled();
-    fireEvent.keyDown(window, { key: "q" });
-    expect(push).toHaveBeenCalledWith("/dashboard/qr-codes/create");
-  });
-
-  it("shortcuts ignore key repeat and keys inside dialogs, menus and listboxes", () => {
-    renderSidebar();
-    fireEvent.keyDown(window, { key: "l", repeat: true });
-
-    for (const role of ["dialog", "menu", "listbox", "combobox"]) {
-      const container = document.createElement("div");
-      container.setAttribute("role", role);
-      const inner = document.createElement("button");
-      container.appendChild(inner);
-      document.body.appendChild(container);
-      fireEvent.keyDown(inner, { key: "q" });
-      container.remove();
-    }
-
-    expect(push).not.toHaveBeenCalled();
-  });
 });

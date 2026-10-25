@@ -52,6 +52,12 @@ Every configuration key is documented in `backend/config.example.yaml`.
   optional `group_id` restricts a domain to one group (`null` = usable by
   all of the user's groups). A domain that still has links can't be
   deleted.
+- **Keyboard shortcuts** (signed-in pages):
+  - `L` — create a link
+  - `Q` — create a QR Code
+
+  Shortcuts are ignored while typing in a field or while a dialog or menu
+  is open.
 
 ### QR Codes (Phase 2)
 

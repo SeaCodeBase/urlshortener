@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { CreateNewMenu, useCreateShortcuts } from './CreateNewMenu'
+import { CreateNewMenu } from './CreateNewMenu'
 import { useSidebarCollapsed } from './useSidebarCollapsed'
 
 interface NavItem {
@@ -113,7 +113,6 @@ export function SidebarContent({
 /** Desktop sidebar (lg+): 240px, or 64px collapsed (state in localStorage). */
 export function Sidebar() {
   const [collapsed, setCollapsed] = useSidebarCollapsed()
-  useCreateShortcuts()
 
   return (
     <aside

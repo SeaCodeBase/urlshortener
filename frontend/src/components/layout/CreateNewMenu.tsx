@@ -1,8 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { FileText, Link2, Plus, QrCode } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -18,30 +16,6 @@ export const CREATE_ITEMS = [
   { label: 'QR Code', href: '/dashboard/qr-codes/create', icon: QrCode, shortcut: 'Q' },
   { label: 'Page', href: '/dashboard/pages/new', icon: FileText, shortcut: undefined },
 ] as const
-
-/** Keys typed into a field or used inside an open overlay aren't shortcuts. */
-function isTypingOrInOverlay(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  const tag = target.tagName
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return true
-  return target.closest('[role="dialog"],[role="menu"],[role="listbox"],[role="combobox"]') != null
-}
-
-/** `l` → create link, `q` → create QR Code; ignored while typing, in overlays, on repeat or with a modifier. */
-export function useCreateShortcuts() {
-  const router = useRouter()
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
-      if (isTypingOrInOverlay(e.target)) return
-      const key = e.key.toLowerCase()
-      if (key === 'l') router.push('/dashboard/links/create')
-      else if (key === 'q') router.push('/dashboard/qr-codes/create')
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [router])
-}
 
 export function CreateNewMenu({ collapsed = false }: { collapsed?: boolean }) {
   return (

@@ -30,6 +30,7 @@ export {
 } from './usePages';
 export { usePageStats } from './usePageStats';
 export { useDebouncedValue } from './useDebouncedValue';
+export { useGlobalShortcuts, shouldIgnoreShortcut } from './useGlobalShortcuts';
 export {
   useCampaigns,
   useCampaign,

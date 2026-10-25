@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, type ReactNode } from 'react'
+import { useGlobalShortcuts } from '@/lib/hooks/useGlobalShortcuts'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Sidebar, SidebarContent } from './Sidebar'
 import { TopBar } from './TopBar'
@@ -8,6 +9,7 @@ import { TopBar } from './TopBar'
 /** Sidebar (off-canvas sheet below lg) + top bar + content on the canvas. */
 export function AppShell({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false)
+  useGlobalShortcuts()
 
   return (
     <div className="flex min-h-screen bg-background">
