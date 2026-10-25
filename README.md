@@ -172,6 +172,196 @@ Every configuration key is documented in `backend/config.example.yaml`.
 - **Links** — every link JSON object has `page_ids` (non-archived pages
   whose blocks reference it).
 
+### Campaigns, webhooks and bulk upload (Phase 5)
+
+#### Campaigns & channels
+
+- **Pages** — `/dashboard/campaigns` (list, **Create campaign**, Edit,
+  Delete) and `/dashboard/campaigns/[id]` (tabs for **Channels**, **Links**
+  and **Performance**; **Add link to channel** adds an existing link or
+  creates a new one in the channel).
+- **What they are** — a campaign has a name (1–120 chars), a description
+  (≤500) and **Auto-add UTM parameters**. Channels (name 1–80 chars) belong
+  to the group and are shared by its campaigns; a campaign uses the subset
+  attached to it. A link joins a campaign *in* a channel.
+- **Membership is metadata only** — adding a link to a campaign never
+  changes the link or its destination. Removing a channel from a campaign,
+  deleting the campaign or deleting the link drops the membership rows;
+  links are never deleted.
+- **Auto-UTM** applies only to links **created from a channel** (`POST
+  /api/campaigns/{id}/channels/{cid}/links`, i.e. **Add link to channel →
+  Create link**) in a campaign with auto-UTM on. The destination gets
+  `utm_source=<channel name>`, `utm_medium=bitly`, `utm_campaign=<campaign
+  name>`, appended in exactly that order; an existing parameter with the
+  same name is overwritten in place. Existing links added to a campaign,
+  and links added with **Add to campaign**, are never rewritten.
+- **Links list** — the Links filter dialog has a **Campaign** filter
+  (`GET /api/links?campaign_id=`), and a link's ⋯ menu has **Add to
+  campaign** (pick campaign and channel). `GET /api/links/{id}/campaigns`
+  lists a link's memberships. One request adds at most 500 links.
+- **Endpoints** (group-scoped) — `GET/POST /api/campaigns`,
+  `GET/PUT/DELETE /api/campaigns/{id}` (`PUT` replaces the channel set; an
+  empty `channel_ids` means none), `POST/DELETE /api/campaigns/{id}/links`,
+  `POST /api/campaigns/{id}/channels/{cid}/links`, `GET
+  /api/campaigns/{id}/stats` (takes the link-stats `from`/`to`/`unit`
+  parameters; engagements per channel) and `GET/POST /api/channels`. Other
+  groups' ids return `404`.
+
+#### Custom domains: default for group
+
+In **Settings → Custom domains**, a verified domain's ⋯ menu has **Set as
+default for group** (disabled with a "Verify the domain first" tooltip until
+verified). Links created in that group without an explicit domain — including
+bulk-upload rows with an empty `domain` — then use it.
+
+#### Webhooks
+
+- **Page** — **Settings → Webhooks**: **Create webhook** (name, URL, event
+  `engagement`), **Verify**, **Deactivate**, Edit, Delete, a status badge
+  (**Active**, **Alert**, **Disabled**) and the recent deliveries.
+- **Secret** — a 64-hex-character signing secret is generated on create and
+  the dialog shows it **once**; copy it then. (The API's webhook objects do
+  include `secret` for every member of the group, so treat group access
+  accordingly.)
+- **Event** — `engagement` fires for every stored click on any link of the
+  webhook's group, including QR scans. Events are queued when the click
+  buffer is flushed to the database, so they follow the click by a few
+  seconds. Requests are `POST` with `Content-Type: application/json` and
+  these headers: `X-Signature`, `X-Webhook-Id`, `X-Event-Id` (same as the
+  payload's `event_id`) and `User-Agent: urlshortener-webhooks/1.0`.
+- **Payload**
+
+  ```json
+  {
+    "event_id": "9f1c2e7a5b0d4c3e8a6f1b2c3d4e5f60",
+    "event_type": "engagement",
+    "datetime": "2026-10-25T14:03:22Z",
+    "bitlink": "https://sho.rt/promo",
+    "long_url": "https://example.com/landing?utm_source=newsletter",
+    "referrer": "https://news.example.org/",
+    "country": "DE",
+    "device_type": "mobile",
+    "os": "iOS",
+    "source": "link",
+    "tags": ["promo", "q4"],
+    "group_id": 3
+  }
+  ```
+
+  `datetime` is the click time in UTC (RFC 3339); `bitlink` is the short URL
+  (on the link's custom domain when it has one); `source` is `link`, `qr` (a QR
+  scan) or `page` (a click from a link-in-bio page); `tags` is `[]`
+  when the link has none.
+- **Verify the signature** — `X-Signature` is the lowercase hex
+  HMAC-SHA256 of the **raw request body** keyed with the secret. Compare in
+  constant time against the bytes you received, before parsing:
+
+  ```python
+  import hmac, hashlib
+
+  def valid(secret: str, raw_body: bytes, header: str) -> bool:
+      expected = hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
+      return hmac.compare_digest(expected, header)
+  ```
+
+  ```js
+  const crypto = require('crypto')
+  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
+  const ok = expected.length === sig.length &&
+    crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))
+  ```
+- **Verify button** — `POST /api/webhooks/{id}/verify` sends a signed ping
+  `{"event_type":"ping","webhook_id":<id>,"datetime":"…"}` with
+  `X-Event-Id: ping-<unix seconds>`, records the delivery and returns it. It
+  counts like a real delivery for the status rules below, except that it
+  never re-enables a deactivated webhook.
+- **Delivery and retries** — a delivery succeeds on any `2xx` response
+  within 10 s (at most 3 redirects). Anything else, including timeouts and
+  connection errors, is a failure and is retried after **60 s, 5 min, 30 min
+  and 2 h** — 5 attempts in total, then the event is dropped.
+- **Status rules** — a success resets the webhook to **Active**. From the
+  second consecutive failure the status is **Alert**. When failures have
+  continued for more than 24 h since the first one, the webhook is
+  **deactivated** (**Disabled**): queued retries for it are discarded and
+  new events are not queued. **Activate** (`POST /api/webhooks/{id}/activate`)
+  re-enables it and resets the counters; **Deactivate** pauses it manually.
+- **URL restrictions** — public `http`/`https` URLs only, at most 2048
+  characters, no credentials in the URL, not `localhost`. The host (an IP
+  literal, or every address it resolves to) must be a public unicast
+  address: private (`10/8`, `172.16/12`, `192.168/16`), loopback, link-local
+  (`169.254/16`), CGNAT (`100.64/10`), unspecified, multicast, reserved and
+  their IPv6 equivalents (including IPv4-mapped, NAT64 and 6to4 addresses
+  that embed a non-public IPv4) are rejected with `400` ("URL must be a
+  public http(s) address"). This is checked when you save the webhook, and
+  again at connect time: the delivery client resolves and then refuses to
+  dial any non-public address (no proxies), so DNS rebinding or a redirect to
+  an internal host fails the delivery.
+- **Delivery guarantees** — **at least once**: a receiver can see the same
+  `event_id` more than once (for example when a response is lost after the
+  endpoint processed it), so de-duplicate on `X-Event-Id`. Order is not
+  guaranteed. Jobs live in the Redis sorted set `webhooks:queue`; a worker
+  claims a job by removing it, so if the backend crashes between the claim
+  and the retry being queued, **that event is lost**. Jobs not yet claimed
+  survive a restart. The newest 50 deliveries per webhook are kept
+  (`GET /api/webhooks/{id}/deliveries` returns the latest 20).
+
+#### Bulk upload
+
+- **Page** — **Settings → Bulk upload**: **Download template**, pick a CSV,
+  upload; the job list shows status (`queued`, `processing`, `done`,
+  `failed`) and progress, and **Download results CSV** once a job has
+  finished.
+- **CSV format** — the header must be exactly
+  `long_url,title,custom_back_half,tags,domain` (case-insensitive; a UTF-8
+  BOM is accepted). Only `long_url` is required; cells are trimmed, blank
+  lines are skipped and short rows are padded. `tags` is separated by `|`.
+  `domain` is the name of one of your **verified** custom domains; when it
+  is empty the group's default domain is used, or the built-in short domain
+  if the group has none.
+
+  ```csv
+  long_url,title,custom_back_half,tags,domain
+  https://example.com/spring,Spring sale,spring,promo|email,
+  https://example.com/docs,Docs,,,links.example.com
+  https://example.com/blog,,,,
+  ```
+- **Limits** — 2 MiB per file and 1000 data rows (more is rejected with
+  `400` at upload). Rows are created like `POST /api/links`, so the usual
+  URL, back-half and tag rules apply per row; a bad row is reported in the
+  results and never stops the upload.
+- **Results** — `GET /api/bulk-uploads/{id}/results` (`409` until the job is
+  `done` or `failed`) returns a CSV with columns
+  `row,long_url,short_url,status,error`; `row` is the 1-based number among
+  the data rows, `status` is `ok` or `error`, and error messages are cut to
+  200 characters. Cells starting with `=`, `+`, `-` or `@` get a leading `'` so
+  spreadsheets do not run them. Other endpoints: `POST /api/bulk-uploads`
+  (multipart field `file`, `201`), `GET /api/bulk-uploads`, `GET
+  /api/bulk-uploads/{id}`.
+- **Worker behaviour** — the worker polls every `workers.bulk.poll_every`
+  and updates progress every `workers.bulk.batch_size` rows. On a clean
+  shutdown it stops after the current batch and marks the job `failed`
+  ("interrupted by server shutdown") with the results so far — links already
+  created are kept and the job is not resumed. If the process dies without a
+  clean shutdown, a job stuck in `processing` for more than 10 minutes is
+  put back to `queued` and **processed again from row 1**, so links created
+  before the crash can be reported as errors ("that back-half is already
+  taken") or, for rows without a back-half, duplicated.
+
+#### Worker configuration
+
+```yaml
+workers:
+  webhooks:
+    poll_every: 2s   # how often due webhook deliveries are sent
+  bulk:
+    poll_every: 5s   # how often queued bulk uploads are picked up
+    batch_size: 50   # rows processed between progress updates
+```
+
+All keys are optional; the values above are the defaults (non-positive
+values fall back to them). Both workers run inside the backend process, and
+webhook delivery needs Redis.
+
 ### Upgrading an existing install
 
 - Database migrations run **automatically at backend startup**. Applied
@@ -200,6 +390,10 @@ Every configuration key is documented in `backend/config.example.yaml`.
   `pages.published_revision` (the counter behind `has_unpublished_changes`)
   in place; published pages not edited since their last publish start
   clean, the rest show unpublished changes until republished.
+- `009_campaigns_webhooks_bulk.sql` creates the `campaigns`, `channels`,
+  `campaign_channels`, `campaign_links`, `webhooks`, `webhook_deliveries`
+  and `bulk_uploads` tables in place (idempotent, applied by the startup
+  migrator; no manual SQL needed).
 - With Docker, MariaDB only loads `001_init.sql` on first boot; later
   migrations always come from the backend image (`/app/migrations`).
 
