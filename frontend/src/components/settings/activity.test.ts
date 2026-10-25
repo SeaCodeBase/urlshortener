@@ -11,6 +11,10 @@ describe("activity helpers", () => {
     expect(humanizeAction("link.back_half")).toBe("Changed back-half");
     expect(humanizeAction("domain.verify")).toBe("Verified domain");
     expect(humanizeAction("token.create")).toBe("Created API token");
+    expect(humanizeAction("webhook.deactivate")).toBe("Deactivated webhook");
+    expect(humanizeAction("webhook.activate")).toBe("Activated webhook");
+    expect(humanizeAction("bulk.create")).toBe("Created bulk upload");
+    expect(humanizeAction("campaign.delete")).toBe("Deleted campaign");
   });
 
   it("picks a readable target and formats details", () => {

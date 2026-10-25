@@ -22,6 +22,8 @@ const VERB_LABELS: Record<string, string> = {
   verify: 'Verified',
   revoke: 'Revoked',
   rename: 'Renamed',
+  deactivate: 'Deactivated',
+  activate: 'Activated',
 }
 
 /** `link.create` → "Created link", `link.back_half` → "Changed back-half". */

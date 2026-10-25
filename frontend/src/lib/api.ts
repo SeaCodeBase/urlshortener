@@ -6,6 +6,16 @@ import type {
   BulkLinksInput,
   BulkLinksResponse,
   BulkQrInput,
+  BulkUpload,
+  BulkUploadsListResponse,
+  CampaignDetail,
+  CampaignInput,
+  CampaignsListResponse,
+  CampaignStats,
+  CampaignStatsQuery,
+  Channel,
+  ChannelsListResponse,
+  CreateLinkInChannelInput,
   CreateQrInput,
   CreateDomainInput,
   CreateLinkInput,
@@ -64,6 +74,12 @@ import type {
   UpdateQrInput,
   UploadResponse,
   User,
+  VerifyWebhookResponse,
+  Webhook,
+  WebhookDeliveriesResponse,
+  WebhookInput,
+  WebhooksListResponse,
+  LinkMembershipsResponse,
 } from '@/types';
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 
@@ -475,6 +491,121 @@ class ApiClient {
 
   async getActivity(params: ActivityParams = {}) {
     return this.request<ActivityListResponse>(`/api/activity-log${buildQuery(params)}`);
+  }
+
+  // Campaigns
+  async listCampaigns() {
+    return this.request<CampaignsListResponse>('/api/campaigns');
+  }
+
+  async getCampaign(id: number) {
+    return this.request<CampaignDetail>(`/api/campaigns/${id}`);
+  }
+
+  /** 400 on an invalid name/description. */
+  async createCampaign(input: CampaignInput) {
+    return this.send<CampaignDetail>('POST', '/api/campaigns', input);
+  }
+
+  async updateCampaign(id: number, input: CampaignInput) {
+    return this.send<CampaignDetail>('PUT', `/api/campaigns/${id}`, input);
+  }
+
+  async deleteCampaign(id: number) {
+    return this.send<void>('DELETE', `/api/campaigns/${id}`);
+  }
+
+  /** Adds existing links (source "link", same group) to a channel of the campaign → 204. */
+  async addCampaignLinks(campaignId: number, channelId: number, linkIds: number[]) {
+    return this.send<void>('POST', `/api/campaigns/${campaignId}/links`, { channel_id: channelId, link_ids: linkIds });
+  }
+
+  async removeCampaignLink(campaignId: number, channelId: number, linkId: number) {
+    return this.send<void>('DELETE', `/api/campaigns/${campaignId}/links`, { channel_id: channelId, link_id: linkId });
+  }
+
+  /** Creates a link (UTM-tagged when the campaign has auto_utm) and adds it to the channel → 201. */
+  async createLinkInChannel(campaignId: number, channelId: number, input: CreateLinkInChannelInput) {
+    return this.send<Link>('POST', `/api/campaigns/${campaignId}/channels/${channelId}/links`, input);
+  }
+
+  async getCampaignStats(id: number, query: CampaignStatsQuery = {}) {
+    return this.request<CampaignStats>(`/api/campaigns/${id}/stats${buildQuery(query)}`);
+  }
+
+  async getLinkCampaigns(linkId: number) {
+    return this.request<LinkMembershipsResponse>(`/api/links/${linkId}/campaigns`);
+  }
+
+  async listChannels() {
+    return this.request<ChannelsListResponse>('/api/channels');
+  }
+
+  /** 409 when the group already has a channel of that name. */
+  async createChannel(name: string) {
+    return this.send<Channel>('POST', '/api/channels', { name });
+  }
+
+  // Webhooks
+  async listWebhooks() {
+    return this.request<WebhooksListResponse>('/api/webhooks');
+  }
+
+  async getWebhook(id: number) {
+    return this.request<Webhook>(`/api/webhooks/${id}`);
+  }
+
+  /** 400 when the URL is not a public http(s) address. */
+  async createWebhook(input: WebhookInput) {
+    return this.send<Webhook>('POST', '/api/webhooks', input);
+  }
+
+  async updateWebhook(id: number, input: WebhookInput) {
+    return this.send<Webhook>('PUT', `/api/webhooks/${id}`, input);
+  }
+
+  async deleteWebhook(id: number) {
+    return this.send<void>('DELETE', `/api/webhooks/${id}`);
+  }
+
+  /** Sends a signed ping; returns the recorded delivery and the updated webhook. */
+  async verifyWebhook(id: number) {
+    return this.send<VerifyWebhookResponse>('POST', `/api/webhooks/${id}/verify`);
+  }
+
+  async deactivateWebhook(id: number) {
+    return this.send<Webhook>('POST', `/api/webhooks/${id}/deactivate`);
+  }
+
+  async activateWebhook(id: number) {
+    return this.send<Webhook>('POST', `/api/webhooks/${id}/activate`);
+  }
+
+  /** The last 20 deliveries, newest first. */
+  async getWebhookDeliveries(id: number) {
+    return this.request<WebhookDeliveriesResponse>(`/api/webhooks/${id}/deliveries`);
+  }
+
+  // Bulk uploads
+  /** Queues a CSV (multipart field `file`) → 201; 400 on a bad header, > 1000 rows or > 2 MiB. */
+  async uploadBulkCsv(file: File) {
+    const body = new FormData();
+    body.append('file', file);
+    return this.request<BulkUpload>('/api/bulk-uploads', { method: 'POST', body });
+  }
+
+  async listBulkUploads() {
+    return this.request<BulkUploadsListResponse>('/api/bulk-uploads');
+  }
+
+  async getBulkUpload(id: number) {
+    return this.request<BulkUpload>(`/api/bulk-uploads/${id}`);
+  }
+
+  /** The job's result CSV; rejects with ApiError status 409 until the job is done or failed. */
+  async downloadBulkResults(id: number): Promise<Blob> {
+    const response = await this.fetchOk(`/api/bulk-uploads/${id}/results`);
+    return response.blob();
   }
 
   // Groups

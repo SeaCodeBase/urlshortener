@@ -797,6 +797,182 @@ export interface PageStats {
   blocks: PageBlockStat[];
 }
 
+// ---------------------------------------------------------------- Campaigns
+
+export interface Campaign {
+  id: number;
+  user_id: number;
+  group_id: number;
+  name: string;
+  description: string;
+  /** Links created in a channel get utm_medium=bitly, utm_source=<channel>, utm_campaign=<campaign>. */
+  auto_utm: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A row of GET /campaigns; `engagements` are all-time clicks of its links. */
+export interface CampaignSummary extends Campaign {
+  channel_count: number;
+  link_count: number;
+  engagements: number;
+}
+
+export interface CampaignsListResponse {
+  campaigns: CampaignSummary[];
+}
+
+/** Channels are group-scoped and shared by campaigns. */
+export interface Channel {
+  id: number;
+  group_id: number;
+  name: string;
+  created_at: string;
+}
+
+export interface ChannelsListResponse {
+  channels: Channel[];
+}
+
+/** A link of a campaign channel. */
+export interface CampaignLinkItem extends Link {
+  channel_id: number;
+  channel_name: string;
+}
+
+export interface ChannelDetail extends Channel {
+  links: CampaignLinkItem[];
+}
+
+/** GET /campaigns/:id (and create/update responses). */
+export interface CampaignDetail extends Campaign {
+  channels: ChannelDetail[];
+}
+
+/** POST/PUT /campaigns: `channel_ids` replaces the set; `new_channels` are created and added. */
+export interface CampaignInput {
+  name: string;
+  description?: string;
+  auto_utm?: boolean;
+  channel_ids?: number[];
+  new_channels?: string[];
+}
+
+/** POST /campaigns/:id/channels/:cid/links. */
+export interface CreateLinkInChannelInput {
+  original_url: string;
+  title?: string;
+  custom_code?: string;
+  domain_id?: number | null;
+  tags?: string[];
+}
+
+export interface ChannelStats {
+  channel_id: number;
+  name: string;
+  links: number;
+  engagements: number;
+  series: SeriesPoint[];
+}
+
+/** GET /campaigns/:id/stats?from&to&unit. */
+export interface CampaignStats {
+  totals: { links: number; engagements: number };
+  channels: ChannelStats[];
+}
+
+export type CampaignStatsQuery = Pick<LinkStatsQuery, "from" | "to" | "unit">;
+
+/** A campaign/channel a link belongs to (GET /links/:id/campaigns). */
+export interface LinkMembership {
+  campaign_id: number;
+  campaign_name: string;
+  channel_id: number;
+  channel_name: string;
+}
+
+export interface LinkMembershipsResponse {
+  memberships: LinkMembership[];
+}
+
+// ---------------------------------------------------------------- Webhooks
+
+export type WebhookStatus = "active" | "alert" | "deactivated";
+export type WebhookEvent = "engagement";
+
+export interface Webhook {
+  id: number;
+  user_id: number;
+  group_id: number;
+  name: string;
+  url: string;
+  event: WebhookEvent;
+  /** HMAC-SHA256 signing secret (64 hex chars). */
+  secret: string;
+  is_active: boolean;
+  status: WebhookStatus;
+  consecutive_failures: number;
+  failing_since: string | null;
+  last_delivery_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WebhooksListResponse {
+  webhooks: Webhook[];
+}
+
+/** POST/PUT /webhooks; `url` must be a public http(s) address. */
+export interface WebhookInput {
+  name: string;
+  url: string;
+  event: WebhookEvent;
+}
+
+export interface WebhookDelivery {
+  id: number;
+  webhook_id: number;
+  event_id: string;
+  /** 0 when no response was received. */
+  status_code: number;
+  attempt: number;
+  delivered_at: string;
+  error: string;
+}
+
+export interface WebhookDeliveriesResponse {
+  deliveries: WebhookDelivery[];
+}
+
+/** POST /webhooks/:id/verify. */
+export interface VerifyWebhookResponse {
+  delivery: WebhookDelivery;
+  webhook: Webhook;
+}
+
+// ---------------------------------------------------------------- Bulk uploads
+
+export type BulkUploadStatus = "queued" | "processing" | "done" | "failed";
+
+export interface BulkUpload {
+  id: number;
+  user_id: number;
+  group_id: number;
+  filename: string;
+  status: BulkUploadStatus;
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  error: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BulkUploadsListResponse {
+  uploads: BulkUpload[];
+}
+
 // ---------------------------------------------------------------- Domains
 
 export type DomainVerificationStatus = "pending" | "ok" | "error";

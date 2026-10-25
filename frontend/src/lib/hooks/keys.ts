@@ -1,5 +1,6 @@
 import type {
   ActivityParams,
+  CampaignStatsQuery,
   DashboardDataQuery,
   DashboardSort,
   LinkListParams,
@@ -42,6 +43,14 @@ export const queryKeys = {
   page: (id: number) => ['page', id] as const,
   pageStats: (id: number, query: PageStatsQuery) => ['page', id, 'stats', query] as const,
   slugCheck: (slug: string) => ['pages', 'check-slug', slug] as const,
+  campaigns: (groupId: number | null) => ['campaigns', groupId] as const,
+  campaign: (id: number) => ['campaign', id] as const,
+  campaignStats: (id: number, query: CampaignStatsQuery) => ['campaign', id, 'stats', query] as const,
+  channels: (groupId: number | null) => ['channels', groupId] as const,
+  linkCampaigns: (linkId: number) => ['link', linkId, 'campaigns'] as const,
+  webhooks: (groupId: number | null) => ['webhooks', groupId] as const,
+  webhookDeliveries: (id: number) => ['webhook', id, 'deliveries'] as const,
+  bulkUploads: (groupId: number | null) => ['bulk-uploads', groupId] as const,
 };
 
 /** The active group id (null until the auth store has loaded groups). */
