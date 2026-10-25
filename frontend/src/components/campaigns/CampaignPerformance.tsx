@@ -4,6 +4,7 @@ import { useId, useMemo, useState } from 'react'
 import { LoadError } from '@/components/analytics/LoadError'
 import { DATE_RANGE_OPTIONS, rangeFor } from '@/components/analytics/modules'
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart'
+import { EmptyState } from '@/components/common/EmptyState'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatNumber } from '@/lib/format'
@@ -69,6 +70,11 @@ export function CampaignPerformance({
           <LoadError message="Failed to load performance" onRetry={() => void refetch()} />
         ) : isLoading || !data ? (
           <div className="h-[280px] animate-pulse rounded-lg bg-muted" aria-hidden />
+        ) : data.channels.length === 0 ? (
+          <EmptyState
+            title="Add a channel to see performance"
+            description="Engagements are charted per channel once the campaign has one."
+          />
         ) : (
           <>
             <TimeSeriesChart

@@ -79,4 +79,12 @@ describe("CampaignPerformance", () => {
     render(<CampaignPerformance campaignId={5} />);
     expect(screen.getByRole("alert")).toHaveTextContent("Failed to load performance");
   });
+
+  it("shows an empty state instead of bare axes when the campaign has no channels", () => {
+    state.data = { totals: { links: 0, engagements: 0 }, channels: [] };
+    const { container } = render(<CampaignPerformance campaignId={5} />);
+    expect(screen.getByRole("heading", { name: "Add a channel to see performance" })).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(container.querySelector(".recharts-wrapper")).toBeNull();
+  });
 });

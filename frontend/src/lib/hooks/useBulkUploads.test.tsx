@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import type { BulkUpload, BulkUploadStatus } from "@/types";
-import { bulkPollInterval, useBulkUploads } from "./useBulkUploads";
+import { bulkJobFinished, bulkPollInterval, useBulkUploads } from "./useBulkUploads";
 
 function wrapper({ children }: { children: ReactNode }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -41,6 +41,22 @@ describe("bulkPollInterval", () => {
   });
 });
 
+describe("bulkJobFinished", () => {
+  it("is true when a job seen running is now done or failed", () => {
+    const prev = new Map([[1, "processing" as const], [2, "queued" as const]]);
+    expect(bulkJobFinished(prev, [job(1, "done"), job(2, "queued")])).toBe(true);
+    expect(bulkJobFinished(prev, [job(1, "processing"), job(2, "failed")])).toBe(true);
+    expect(bulkJobFinished(prev, [job(1, "processing"), job(2, "queued")])).toBe(false);
+  });
+  it("ignores the first load and jobs that were already finished", () => {
+    expect(bulkJobFinished(null, [job(1, "done")])).toBe(false);
+    expect(bulkJobFinished(new Map([[1, "done" as const]]), [job(1, "done")])).toBe(false);
+  });
+  it("counts a job that appeared already finished after the first load", () => {
+    expect(bulkJobFinished(new Map(), [job(3, "done")])).toBe(true);
+  });
+});
+
 describe("useBulkUploads", () => {
   let prevGroup: number | null;
   beforeEach(() => {
@@ -73,5 +89,40 @@ describe("useBulkUploads", () => {
       await vi.advanceTimersByTimeAsync(10_000);
     });
     expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it("invalidates the links lists when polling sees a job finish", async () => {
+    vi.spyOn(api, "listBulkUploads")
+      .mockResolvedValueOnce({ uploads: [job(1, "processing")] })
+      .mockResolvedValue({ uploads: [job(1, "done")] });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    const { result } = renderHook(() => useBulkUploads(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+      ),
+    });
+    await waitFor(() => expect(result.current.data?.[0].status).toBe("processing"));
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ["links"] });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    await waitFor(() => expect(result.current.data?.[0].status).toBe("done"));
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ["links"] }));
+    expect(invalidate.mock.calls.filter((c) => JSON.stringify(c[0]) === '{"queryKey":["links"]}')).toHaveLength(1);
+  });
+
+  it("does not invalidate links when the first load shows finished jobs", async () => {
+    vi.spyOn(api, "listBulkUploads").mockResolvedValue({ uploads: [job(1, "done")] });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    const { result } = renderHook(() => useBulkUploads(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+      ),
+    });
+    await waitFor(() => expect(result.current.data?.[0].status).toBe("done"));
+    expect(invalidate).not.toHaveBeenCalled();
   });
 });

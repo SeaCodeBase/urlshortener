@@ -29,7 +29,10 @@ export interface WebhookDialogProps {
   webhook?: Webhook
 }
 
-/** Create or edit a webhook; after a create it shows the signing secret once. */
+/**
+ * Create or edit a webhook; after a create it shows the signing secret, and the Edit form can reveal it again
+ * ("Reveal secret", with copy). The secret is never put in a toast.
+ */
 export function WebhookDialog({ open, onOpenChange, webhook }: WebhookDialogProps) {
   const [saving, setSaving] = useState(false)
   return (
@@ -67,6 +70,7 @@ function WebhookBody({
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [secret, setSecret] = useState<string | null>(null)
+  const [revealed, setRevealed] = useState(false)
   const editing = webhook != null
   const valid = name.trim().length > 0 && url.trim().length > 0
 
@@ -169,6 +173,32 @@ function WebhookBody({
         <Label htmlFor={ids.group}>Group</Label>
         <Input id={ids.group} value={groupName} readOnly disabled />
       </div>
+      {webhook && (
+        <div className="flex flex-col gap-2">
+          {revealed ? (
+            <>
+              <Label htmlFor={ids.secret}>Secret</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id={ids.secret}
+                  value={webhook.secret}
+                  readOnly
+                  className="font-mono"
+                  onFocus={(e) => e.target.select()}
+                />
+                <CopyButton text={webhook.secret} />
+              </div>
+              <Button type="button" variant="ghost" size="sm" className="self-start" onClick={() => setRevealed(false)}>
+                Hide secret
+              </Button>
+            </>
+          ) : (
+            <Button type="button" variant="secondary" className="self-start" onClick={() => setRevealed(true)}>
+              Reveal secret
+            </Button>
+          )}
+        </div>
+      )}
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}

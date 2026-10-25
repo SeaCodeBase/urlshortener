@@ -220,8 +220,9 @@ bulk-upload rows with an empty `domain` — then use it.
   `engagement`), **Verify**, **Deactivate**, Edit, Delete, a status badge
   (**Active**, **Alert**, **Disabled**) and the recent deliveries.
 - **Secret** — a 64-hex-character signing secret is generated on create and
-  the dialog shows it **once**; copy it then. (The API's webhook objects do
-  include `secret` for every member of the group, so treat group access
+  shown (with a copy button) right after; later, **Edit → Reveal secret**
+  shows it again. There is no rotation. (The API's webhook objects include
+  `secret` for every member of the group, so treat group access
   accordingly.)
 - **Event** — `engagement` fires for every stored click on any link of the
   webhook's group, including QR scans. Events are queued when the click

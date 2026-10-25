@@ -97,4 +97,26 @@ describe("WebhookDialog", () => {
     await user.click(screen.getByRole("button", { name: "Create webhook" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("URL must be a public http(s) address");
   });
+
+  it("reveals the secret in the edit dialog on click, with copy, and never toasts it", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText");
+    render(<WebhookDialog open onOpenChange={() => {}} webhook={hook} />);
+
+    expect(screen.queryByLabelText("Secret")).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue(hook.secret)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Reveal secret" }));
+    expect(screen.getByLabelText("Secret")).toHaveValue(hook.secret);
+
+    await user.click(screen.getByRole("button", { name: "Copy" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(hook.secret));
+    expect(toastSuccess).toHaveBeenCalledWith("Copied to clipboard");
+    for (const call of toastSuccess.mock.calls) {
+      expect(String(call[0])).not.toContain(hook.secret);
+    }
+
+    await user.click(screen.getByRole("button", { name: "Hide secret" }));
+    expect(screen.queryByLabelText("Secret")).not.toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled();
+  });
 });
