@@ -24,8 +24,8 @@ type ClickFlusher struct {
 	// enqueueTimeout bounds one Enqueue call (its own context, detached
 	// from the flush budget).
 	enqueueTimeout time.Duration
-	stopCh    chan struct{}
-	doneCh    chan struct{}
+	stopCh         chan struct{}
+	doneCh         chan struct{}
 }
 
 func NewClickFlusher(rdb *redis.Client, clickRepo repository.ClickRepository) *ClickFlusher {
@@ -45,6 +45,9 @@ func NewClickFlusher(rdb *redis.Client, clickRepo repository.ClickRepository) *C
 // own context so an earlier batch using up the flush budget cannot make the
 // trim fail (which would re-insert the batch on the next flush).
 const clickTrimTimeout = 5 * time.Second
+
+// clickInsertTimeout bounds one batch's BatchInsert.
+const clickInsertTimeout = 10 * time.Second
 
 // SetEnqueuer sets who receives each stored batch of clicks (webhook
 // events); call before Start.
@@ -131,8 +134,13 @@ func (f *ClickFlusher) flush() {
 			clicks = append(clicks, click)
 		}
 
-		// Insert into database
-		if err := f.clickRepo.BatchInsert(ctx, clicks); err != nil {
+		// Insert into database, on the batch's own context: a slow earlier
+		// batch (or enqueue) cannot expire this INSERT mid-statement, which
+		// could commit it yet report an error and re-insert it next flush.
+		insertCtx, cancelInsert := context.WithTimeout(context.Background(), clickInsertTimeout)
+		err = f.clickRepo.BatchInsert(insertCtx, clicks)
+		cancelInsert()
+		if err != nil {
 			logger.Error(ctx, "failed to batch insert clicks",
 				zap.Error(err),
 			)

@@ -810,3 +810,27 @@ func TestDispatcher_DropsDeactivatedInClaimLoop(t *testing.T) {
 	// One lookup per webhook in the claim loop, plus deliver's re-check for the live one.
 	assert.Equal(t, int32(5), repo.gets.Load())
 }
+
+func TestClickFlusher_EachBatchInsertHasItsOwnContext(t *testing.T) {
+	_, rdb := newTestRedis(t)
+	ctrl := gomock.NewController(t)
+	clicks := mocks.NewMockClickRepository(ctrl)
+	for i := 0; i < 2; i++ {
+		ev, _ := json.Marshal(service.ClickEvent{LinkID: uint64(i + 1), ClickedAt: hookNow})
+		require.NoError(t, rdb.RPush(context.Background(), "clicks:buffer", string(ev)).Err())
+	}
+	var ctxs []context.Context
+	clicks.EXPECT().BatchInsert(gomock.Any(), gomock.Len(1)).DoAndReturn(func(ctx context.Context, _ []model.Click) error {
+		ctxs = append(ctxs, ctx)
+		dl, ok := ctx.Deadline()
+		require.True(t, ok)
+		assert.WithinDuration(t, time.Now().Add(10*time.Second), dl, time.Second, "a fresh 10 s budget per batch")
+		return nil
+	}).Times(2)
+	f := NewClickFlusher(rdb, clicks)
+	f.batchSize = 1
+	f.flush()
+	require.Len(t, ctxs, 2)
+	assert.NotSame(t, ctxs[0], ctxs[1])
+	assert.Error(t, ctxs[0].Err(), "each batch's context is cancelled after its insert")
+}
