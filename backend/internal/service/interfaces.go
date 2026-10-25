@@ -308,3 +308,42 @@ type WebhookService interface {
 	// Deliveries returns the newest 20 deliveries.
 	Deliveries(ctx context.Context, groupID, id uint64) ([]model.WebhookDelivery, error)
 }
+
+//go:generate mockgen -destination=mocks/mock_campaign_service.go -package=mocks . CampaignService
+type CampaignService interface {
+	// Create validates in (*ValidationError: name 1–120 characters,
+	// description ≤ 500, channel ids of the group, new channel names 1–80
+	// characters), creates the missing new channels (an existing name of the
+	// group is reused) and the campaign with its channel set.
+	Create(ctx context.Context, userID, groupID uint64, in CampaignInput) (*CampaignDetail, error)
+	// Get returns the campaign with its channels and their links;
+	// repository.ErrCampaignNotFound when missing or in another group. Every
+	// other campaign-id-taking method does the same.
+	Get(ctx context.Context, groupID, id uint64) (*CampaignDetail, error)
+	// List returns the group's campaigns, newest first, with all-time
+	// engagements.
+	List(ctx context.Context, groupID uint64) ([]model.CampaignSummary, error)
+	// Update validates as Create and replaces name, description, auto_utm
+	// and the channel set (empty ChannelIDs and NewChannels: no channels).
+	Update(ctx context.Context, userID, groupID, id uint64, in CampaignInput) (*CampaignDetail, error)
+	Delete(ctx context.Context, userID, groupID, id uint64) error
+	ListChannels(ctx context.Context, groupID uint64) ([]model.Channel, error)
+	// CreateChannel validates the name (1–80 characters) and returns
+	// repository.ErrChannelExists for a duplicate.
+	CreateChannel(ctx context.Context, groupID uint64, name string) (*model.Channel, error)
+	// AddLinks adds existing links to a channel of the campaign without
+	// touching them. *ValidationError when the channel is not attached, no
+	// or more than 500 ids are given, or a link is missing, in another group
+	// or not a Links-list link (source 'link').
+	AddLinks(ctx context.Context, userID, groupID, campaignID, channelID uint64, linkIDs []uint64) error
+	RemoveLink(ctx context.Context, userID, groupID, campaignID, channelID, linkID uint64) error
+	// CreateLinkInChannel creates a link in the group (with UTM parameters
+	// when the campaign has AutoUTM) and adds it to the channel.
+	CreateLinkInChannel(ctx context.Context, userID, groupID, campaignID, channelID uint64, in CreateLinkInChannelInput) (*model.Link, error)
+	// Stats returns per-channel engagements over q's window (*ValidationError
+	// for an invalid query).
+	Stats(ctx context.Context, groupID, id uint64, q StatsQuery) (*CampaignStats, error)
+	// LinkMemberships lists the campaigns/channels a link of the group
+	// belongs to; repository.ErrLinkNotFound for a link of another group.
+	LinkMemberships(ctx context.Context, groupID, linkID uint64) ([]LinkMembership, error)
+}

@@ -18,11 +18,13 @@ type Campaign struct {
 }
 
 // CampaignSummary is a campaign list row: the number of channels attached to
-// the campaign and of distinct links in it.
+// the campaign and of distinct links in it. Engagements (all-time clicks on
+// those links) is filled by the campaign service, not the repository.
 type CampaignSummary struct {
 	Campaign
-	ChannelCount int `db:"channel_count" json:"channel_count"`
-	LinkCount    int `db:"link_count" json:"link_count"`
+	ChannelCount int   `db:"channel_count" json:"channel_count"`
+	LinkCount    int   `db:"link_count" json:"link_count"`
+	Engagements  int64 `db:"-" json:"engagements"`
 }
 
 // Channel is a named traffic source (e.g. "Email") unique per group.

@@ -54,6 +54,11 @@ const (
 	ActionWebhookVerify     = "webhook.verify"
 	ActionWebhookDeactivate = "webhook.deactivate"
 	ActionWebhookDelete     = "webhook.delete"
+	// ActionCampaignUpdate also covers membership changes (meta "links" or
+	// "link_id").
+	ActionCampaignCreate = "campaign.create"
+	ActionCampaignUpdate = "campaign.update"
+	ActionCampaignDelete = "campaign.delete"
 )
 
 // Activity log entity types.
@@ -66,6 +71,7 @@ const (
 	EntityDashboard = "dashboard"
 	EntityPage      = "page"
 	EntityWebhook   = "webhook"
+	EntityCampaign  = "campaign"
 )
 
 const (
