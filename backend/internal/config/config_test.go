@@ -197,3 +197,23 @@ workers:
 		assert.Equal(t, 10, cfg.Workers.Bulk.BatchSize)
 	})
 }
+
+func TestConfig_TrustedProxiesDefaultEmpty(t *testing.T) {
+	cfg := &Config{}
+	applyDefaults(cfg)
+	assert.Empty(t, cfg.Server.TrustedProxies)
+
+	t.Run("parsed from yaml", func(t *testing.T) {
+		content := `
+jwt:
+  secret: "minimum-required-secret-for-test!"
+server:
+  trusted_proxies: ["10.0.0.0/8", "127.0.0.1"]
+`
+		configPath := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+		cfg, err := LoadFromYAML(configPath)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"10.0.0.0/8", "127.0.0.1"}, cfg.Server.TrustedProxies)
+	})
+}

@@ -8,6 +8,7 @@ server:
   allow_origins:         # CORS allowed origins (supports wildcards like *.example.com)
     - "http://localhost:3000"
     - "http://127.0.0.1:3000"
+  trusted_proxies: []    # IPs/CIDRs of your reverse proxy; empty = X-Forwarded-For is ignored and the TCP peer is the client
 
 database:
   host: "mariadb"                # MariaDB service name in docker-compose
@@ -43,3 +44,10 @@ ui:
 
 uploads:
   path: "/app/uploads"  # Directory for user-uploaded files; backed by the writable "uploads" volume
+
+workers:
+  webhooks:
+    poll_every: 2s    # How often due webhook deliveries are sent
+  bulk:
+    poll_every: 5s    # How often queued bulk uploads are picked up
+    batch_size: 50    # Rows processed between progress updates

@@ -22,6 +22,6 @@ RUN addgroup -g 1001 appgroup && adduser -u 1001 -G appgroup -D appuser \
     && mkdir -p /app/uploads && chown appuser:appgroup /app/uploads
 USER appuser
 
-EXPOSE 8080
+EXPOSE 8080 8081
 
 CMD ["./server"]

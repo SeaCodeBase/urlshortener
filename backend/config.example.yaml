@@ -8,6 +8,7 @@ server:
   allow_origins:         # CORS allowed origins (supports wildcards like *.example.com)
     - "http://localhost:3000"
     - "http://127.0.0.1:3000"
+  trusted_proxies: []    # IPs/CIDRs of your reverse proxy; empty = X-Forwarded-For is ignored and the TCP peer is the client
 
 database:
   host: "localhost"              # MariaDB/MySQL host

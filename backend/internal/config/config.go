@@ -17,6 +17,10 @@ type ServerConfig struct {
 	APIPort           string   `yaml:"api_port"`      // Port for API server
 	AllowRegistration *bool    `yaml:"allow_registration"`
 	AllowOrigins      []string `yaml:"allow_origins"`
+	// TrustedProxies lists the IPs/CIDRs of the reverse proxy whose
+	// X-Forwarded-For header is believed. Empty: the header is ignored and
+	// the TCP peer is the client.
+	TrustedProxies []string `yaml:"trusted_proxies"`
 }
 
 // DatabaseConfig holds database connection configuration

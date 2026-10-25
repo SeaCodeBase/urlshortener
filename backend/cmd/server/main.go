@@ -3,8 +3,12 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"net/url"
-	"sync"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/cache"
 	"github.com/SeaCodeBase/urlshortener/internal/config"
@@ -24,6 +28,14 @@ import (
 
 func main() {
 	ctx := context.Background()
+	// Registered first so it runs last: a listen failure exits 1 only after
+	// every other deferred cleanup (Redis, DB, GeoIP, telemetry, log sync).
+	exitCode := 0
+	defer func() {
+		if exitCode != 0 {
+			os.Exit(exitCode)
+		}
+	}()
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -95,15 +107,13 @@ func main() {
 	webhookClient := service.NewWebhookHTTPClient()
 
 	// Start workers: the click flusher queues webhook events for every
-	// stored click; the dispatcher delivers them. Deferred stops run in
-	// reverse, so the dispatcher finishes in-flight deliveries first.
+	// stored click; the dispatcher delivers them. They are stopped by
+	// runServers after both HTTP servers have drained (see below).
 	clickFlusher := worker.NewClickFlusher(rdb, clickRepo)
 	clickFlusher.SetEnqueuer(worker.NewWebhookEnqueuer(rdb, webhookRepo, linkRepo, tagRepo, domainRepo, cfg.URLs.BaseURL))
 	clickFlusher.Start()
-	defer clickFlusher.Stop()
 	webhookDispatcher := worker.NewWebhookDispatcher(rdb, webhookRepo, webhookClient, cfg.Workers.Webhooks.PollEvery)
 	webhookDispatcher.Start()
-	defer webhookDispatcher.Stop()
 
 	// Setup services
 	authService := service.NewAuthService(userRepo, groupRepo, cfg.JWT.Secret)
@@ -135,11 +145,10 @@ func main() {
 		Activity: activityService,
 	})
 	// The bulk worker creates links through the link service, so it starts
-	// once that exists; it stops before the click/webhook workers.
+	// once that exists.
 	bulkWorker := worker.NewBulkWorker(bulkUploadRepo, linkService, domainRepo,
 		cfg.Workers.Bulk.PollEvery, cfg.Workers.Bulk.BatchSize, cfg.URLs.BaseURL)
 	bulkWorker.Start()
-	defer bulkWorker.Stop()
 	campaignService := service.NewCampaignService(service.CampaignServiceDeps{
 		Campaigns: campaignRepo,
 		Links:     linkRepo,
@@ -241,6 +250,9 @@ func main() {
 
 	// Redirect Router (public, minimal - for URL redirects)
 	redirectRouter := gin.New()
+	if err := applyTrustedProxies(redirectRouter, cfg.Server.TrustedProxies); err != nil {
+		logger.Fatal(ctx, "invalid server.trusted_proxies", zap.Error(err))
+	}
 	redirectRouter.Use(gin.Recovery())
 	redirectRouter.Use(otelgin.Middleware("redirect-server"))
 	redirectRouter.Use(middleware.LogMiddleware())
@@ -256,6 +268,9 @@ func main() {
 
 	// API Router (authenticated, full functionality)
 	apiRouter := gin.New()
+	if err := applyTrustedProxies(apiRouter, cfg.Server.TrustedProxies); err != nil {
+		logger.Fatal(ctx, "invalid server.trusted_proxies", zap.Error(err))
+	}
 	apiRouter.Use(gin.Recovery())
 	apiRouter.Use(otelgin.Middleware("api-server"))
 	apiRouter.Use(middleware.LogMiddleware())
@@ -414,27 +429,33 @@ func main() {
 		}
 	}
 
-	// Start both servers
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		addr := ":" + cfg.Server.RedirectPort
-		logger.Info(ctx, "starting redirect server", zap.String("addr", addr))
-		if err := redirectRouter.Run(addr); err != nil {
-			logger.Fatal(ctx, "redirect server failed", zap.Error(err))
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		addr := ":" + cfg.Server.APIPort
-		logger.Info(ctx, "starting API server", zap.String("addr", addr))
-		if err := apiRouter.Run(addr); err != nil {
-			logger.Fatal(ctx, "API server failed", zap.Error(err))
-		}
-	}()
-
-	wg.Wait()
+	// Serve until SIGINT/SIGTERM, then drain both servers and stop the
+	// workers in order: the click flusher's final flush also enqueues
+	// webhook events, the dispatcher then waits for in-flight deliveries,
+	// and the bulk worker stops between batches.
+	sigCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	redirectSrv := &http.Server{
+		Addr:              ":" + cfg.Server.RedirectPort,
+		Handler:           redirectRouter,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	apiSrv := &http.Server{
+		Addr:              ":" + cfg.Server.APIPort,
+		Handler:           apiRouter,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	logger.Info(ctx, "listening",
+		zap.String("redirect_addr", redirectSrv.Addr), zap.String("api_addr", apiSrv.Addr))
+	runErr := runServers(sigCtx,
+		[]namedServer{httpServer("redirect", redirectSrv), httpServer("api", apiSrv)},
+		[]namedStop{
+			{name: "click-flusher", stop: clickFlusher.Stop},
+			{name: "webhook-dispatcher", stop: webhookDispatcher.Stop},
+			{name: "bulk-worker", stop: bulkWorker.Stop},
+		},
+		shutdownTimeout)
+	if runErr != nil {
+		exitCode = 1
+	}
 }
