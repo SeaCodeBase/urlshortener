@@ -2,8 +2,10 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -138,24 +140,38 @@ type Config struct {
 	Workers  WorkersConfig  `yaml:"workers"`
 }
 
-// LoadFromYAML loads configuration from a YAML file
+// LoadFromYAML loads configuration from a YAML file. Parsing is strict: an
+// unknown (e.g. misspelled) key fails the load instead of silently falling
+// back to the default.
 func LoadFromYAML(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
+	cfg, err := decodeStrict(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+
+	applyDefaults(cfg)
+
+	if err := validate(cfg); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+// decodeStrict decodes YAML into a Config, rejecting keys that match no
+// field. An empty document yields a zero Config.
+func decodeStrict(data []byte) (*Config, error) {
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
-
-	applyDefaults(&cfg)
-
-	if err := validate(&cfg); err != nil {
-		return nil, err
-	}
-
 	return &cfg, nil
 }
 

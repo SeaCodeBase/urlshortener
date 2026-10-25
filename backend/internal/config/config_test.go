@@ -252,3 +252,60 @@ func TestConfig_APITrustedProxies(t *testing.T) {
 		assert.Contains(t, err.Error(), "server.api_trusted_proxies")
 	})
 }
+
+func TestLoadYAML_UnknownKeyFails(t *testing.T) {
+	content := `
+jwt:
+  secret: "minimum-required-secret-for-test!"
+server:
+  api_trusted_proxie: ["172.16.0.0/12"]
+`
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+	_, err := LoadFromYAML(configPath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "api_trusted_proxie")
+
+	t.Run("unknown top-level key", func(t *testing.T) {
+		content := "jwt:\n  secret: \"minimum-required-secret-for-test!\"\nworker:\n  bulk:\n    batch_size: 5\n"
+		configPath := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+		_, err := LoadFromYAML(configPath)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "worker")
+	})
+}
+
+func TestLoadYAML_EmptyFileNeedsSecret(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, nil, 0644))
+	_, err := LoadFromYAML(configPath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "jwt.secret")
+}
+
+// The committed configs must keep parsing under strict decoding: a typo there
+// would otherwise silently fall back to defaults (e.g. no API proxies in
+// Docker, so every page view comes from the frontend container's IP).
+func TestConfig_DockerAndExampleYAMLParse(t *testing.T) {
+	t.Run("docker", func(t *testing.T) {
+		data, err := os.ReadFile("../../config.docker.yaml")
+		require.NoError(t, err)
+		cfg, err := decodeStrict(data)
+		require.NoError(t, err)
+		applyDefaults(cfg)
+		require.NoError(t, validate(cfg))
+		assert.Equal(t, []string{"172.16.0.0/12"}, cfg.Server.APIProxies())
+		assert.Len(t, cfg.Server.TrustedProxies, 0)
+		assert.Equal(t, 2*time.Second, cfg.Workers.Webhooks.PollEvery)
+		assert.Equal(t, 5*time.Second, cfg.Workers.Bulk.PollEvery)
+		assert.Equal(t, 50, cfg.Workers.Bulk.BatchSize)
+		assert.Equal(t, "/app/uploads", cfg.Uploads.Path)
+	})
+	t.Run("example", func(t *testing.T) {
+		data, err := os.ReadFile("../../config.example.yaml")
+		require.NoError(t, err)
+		_, err = decodeStrict(data)
+		require.NoError(t, err)
+	})
+}
