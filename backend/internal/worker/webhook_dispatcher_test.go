@@ -268,6 +268,48 @@ func TestEnqueuer_NoWebhooksSkipsLookups(t *testing.T) {
 	assert.Empty(t, queueJobs(t, rdb))
 }
 
+// countingWebhookRepo counts ListActiveByGroup calls per group.
+type countingWebhookRepo struct {
+	*fakeWebhookRepo
+	mu    sync.Mutex
+	calls map[uint64]int
+}
+
+func (c *countingWebhookRepo) ListActiveByGroup(ctx context.Context, groupID uint64) ([]model.Webhook, error) {
+	c.mu.Lock()
+	c.calls[groupID]++
+	c.mu.Unlock()
+	return c.fakeWebhookRepo.ListActiveByGroup(ctx, groupID)
+}
+
+func TestEnqueuer_CachesActiveWebhooks(t *testing.T) {
+	_, rdb := newTestRedis(t)
+	ctrl := gomock.NewController(t)
+	links := mocks.NewMockLinkRepository(ctrl)
+	tags := mocks.NewMockTagRepository(ctrl)
+	tags.EXPECT().GetTagsForLinks(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	// Group 7 has a webhook, group 8 has none.
+	repo := &countingWebhookRepo{fakeWebhookRepo: newFakeWebhookRepo(hook(1, 7, "https://a.example.test")),
+		calls: map[uint64]int{}}
+	links.EXPECT().GetByIDs(gomock.Any(), gomock.Any()).Return([]model.Link{
+		{ID: 1, GroupID: 7, ShortCode: "a"}, {ID: 2, GroupID: 8, ShortCode: "b"},
+	}, nil).Times(3)
+	e := NewWebhookEnqueuer(rdb, repo, links, tags, mocks.NewMockDomainRepository(ctrl), "https://sho.rt")
+	now := hookNow
+	e.now = func() time.Time { return now }
+	batch := []model.Click{{LinkID: 1, ClickedAt: hookNow}, {LinkID: 2, ClickedAt: hookNow}}
+
+	e.Enqueue(context.Background(), batch)
+	now = hookNow.Add(4 * time.Second)
+	e.Enqueue(context.Background(), batch)
+	assert.Equal(t, map[uint64]int{7: 1, 8: 1}, repo.calls, "one lookup per group within 5 s")
+	assert.Len(t, queueJobs(t, rdb), 2, "both batches still queue their events")
+
+	now = hookNow.Add(6 * time.Second)
+	e.Enqueue(context.Background(), batch)
+	assert.Equal(t, map[uint64]int{7: 2, 8: 2}, repo.calls, "the cache expires after 5 s")
+}
+
 func TestDispatcher_SignsBody(t *testing.T) {
 	_, rdb := newTestRedis(t)
 	type captured struct {
@@ -452,7 +494,7 @@ func (r *recordingEnqueuer) Enqueue(ctx context.Context, clicks []model.Click) {
 	}
 }
 
-func TestClickFlusher_EnqueuesAfterInsert(t *testing.T) {
+func TestClickFlusher_TrimsBeforeEnqueue(t *testing.T) {
 	_, rdb := newTestRedis(t)
 	ctrl := gomock.NewController(t)
 	clicks := mocks.NewMockClickRepository(ctrl)
@@ -477,10 +519,45 @@ func TestClickFlusher_EnqueuesAfterInsert(t *testing.T) {
 	assert.Equal(t, uint64(42), rec.got[0][0].LinkID)
 	assert.Equal(t, "link", rec.got[0][0].Source)
 	require.Len(t, rec.bufferLen, 1)
-	assert.Greater(t, rec.bufferLen[0], int64(0), "enqueue runs before the buffer is trimmed")
-	n, err := rdb.LLen(context.Background(), "clicks:buffer").Result()
-	require.NoError(t, err)
-	assert.Zero(t, n)
+	assert.Zero(t, rec.bufferLen[0], "the buffer is trimmed before enqueue runs")
+}
+
+// panicEnqueuer panics; slowEnqueuer blocks until its context ends.
+type panicEnqueuer struct{ calls int }
+
+func (p *panicEnqueuer) Enqueue(context.Context, []model.Click) { p.calls++; panic("boom") }
+
+type slowEnqueuer struct{ calls int }
+
+func (s *slowEnqueuer) Enqueue(ctx context.Context, _ []model.Click) { s.calls++; <-ctx.Done() }
+
+func TestClickFlusher_EnqueueFailureDoesNotBlockTrim(t *testing.T) {
+	for name, enq := range map[string]ClickEnqueuer{"panics": &panicEnqueuer{}, "slow": &slowEnqueuer{}} {
+		t.Run(name, func(t *testing.T) {
+			_, rdb := newTestRedis(t)
+			ctrl := gomock.NewController(t)
+			clicks := mocks.NewMockClickRepository(ctrl)
+			ctx := context.Background()
+			for i := 0; i < 3; i++ {
+				ev, _ := json.Marshal(service.ClickEvent{LinkID: uint64(i + 1), ClickedAt: hookNow})
+				require.NoError(t, rdb.RPush(ctx, "clicks:buffer", string(ev)).Err())
+			}
+			// Exactly one insert across two flushes: nothing is re-inserted.
+			clicks.EXPECT().BatchInsert(gomock.Any(), gomock.Len(3)).Return(nil).Times(1)
+			f := NewClickFlusher(rdb, clicks)
+			f.enqueueTimeout = 50 * time.Millisecond
+			f.SetEnqueuer(enq)
+
+			start := time.Now()
+			assert.NotPanics(t, f.flush)
+			assert.Less(t, time.Since(start), 2*time.Second, "a slow enqueuer is bounded by its own timeout")
+			n, err := rdb.LLen(ctx, "clicks:buffer").Result()
+			require.NoError(t, err)
+			assert.Zero(t, n)
+
+			f.flush()
+		})
+	}
 }
 
 func TestClickFlusher_InsertFailureSkipsEnqueue(t *testing.T) {

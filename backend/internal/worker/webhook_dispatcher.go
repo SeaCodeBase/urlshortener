@@ -77,6 +77,17 @@ type ClickEnqueuer interface {
 	Enqueue(ctx context.Context, clicks []model.Click)
 }
 
+// webhookActiveCacheTTL is how long a group's active-webhook list is reused
+// by the enqueuer: a flush with no listeners costs at most one query per
+// group per TTL, and a webhook created, edited or deactivated takes effect
+// for new events within this delay (delivery re-checks the webhook anyway).
+const webhookActiveCacheTTL = 5 * time.Second
+
+type activeHooksEntry struct {
+	hooks     []model.Webhook
+	fetchedAt time.Time
+}
+
 // WebhookEnqueuer turns stored clicks into queued engagement deliveries for
 // the active webhooks of each link's group.
 type WebhookEnqueuer struct {
@@ -87,6 +98,9 @@ type WebhookEnqueuer struct {
 	domains  repository.DomainRepository
 	baseURL  string
 	now      func() time.Time
+
+	cacheMu sync.Mutex
+	active  map[uint64]activeHooksEntry // groupID -> active webhooks
 }
 
 var _ ClickEnqueuer = (*WebhookEnqueuer)(nil)
@@ -94,12 +108,38 @@ var _ ClickEnqueuer = (*WebhookEnqueuer)(nil)
 func NewWebhookEnqueuer(rdb *redis.Client, webhooks repository.WebhookRepository, links repository.LinkRepository,
 	tags repository.TagRepository, domains repository.DomainRepository, baseURL string) *WebhookEnqueuer {
 	return &WebhookEnqueuer{rdb: rdb, webhooks: webhooks, links: links, tags: tags, domains: domains,
-		baseURL: baseURL, now: time.Now}
+		baseURL: baseURL, now: time.Now, active: map[uint64]activeHooksEntry{}}
+}
+
+// activeHooks returns the group's active webhooks, from the cache when the
+// entry is younger than webhookActiveCacheTTL. Errors are not cached.
+func (e *WebhookEnqueuer) activeHooks(ctx context.Context, groupID uint64) ([]model.Webhook, error) {
+	now := e.now()
+	e.cacheMu.Lock()
+	ent, ok := e.active[groupID]
+	e.cacheMu.Unlock()
+	if ok && now.Sub(ent.fetchedAt) < webhookActiveCacheTTL && !now.Before(ent.fetchedAt) {
+		return ent.hooks, nil
+	}
+	hooks, err := e.webhooks.ListActiveByGroup(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	e.cacheMu.Lock()
+	for id, old := range e.active { // drop expired entries so the map stays small
+		if now.Sub(old.fetchedAt) >= webhookActiveCacheTTL {
+			delete(e.active, id)
+		}
+	}
+	e.active[groupID] = activeHooksEntry{hooks: hooks, fetchedAt: now}
+	e.cacheMu.Unlock()
+	return hooks, nil
 }
 
 // Enqueue queues one job per click per active webhook of the click's link's
 // group (attempt 1, due now) with a single ZADD. Lookups are batched: links
-// once, active webhooks once per group, and tags and domains only for links
+// once, active webhooks once per group (cached for webhookActiveCacheTTL),
+// and tags and domains only for links
 // that have a listener. Errors are logged, never returned: the click flush
 // must not fail because of webhooks.
 func (e *WebhookEnqueuer) Enqueue(ctx context.Context, clicks []model.Click) {
@@ -127,7 +167,7 @@ func (e *WebhookEnqueuer) Enqueue(ctx context.Context, clicks []model.Click) {
 		l := &links[i]
 		hooks, ok := hooksByGroup[l.GroupID]
 		if !ok {
-			hooks, err = e.webhooks.ListActiveByGroup(ctx, l.GroupID)
+			hooks, err = e.activeHooks(ctx, l.GroupID)
 			if err != nil {
 				logger.Error(ctx, "webhook-enqueuer: failed to load webhooks", zap.Uint64("group_id", l.GroupID), zap.Error(err))
 				hooks = nil

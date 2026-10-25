@@ -225,8 +225,9 @@ bulk-upload rows with an empty `domain` — then use it.
   accordingly.)
 - **Event** — `engagement` fires for every stored click on any link of the
   webhook's group, including QR scans. Events are queued when the click
-  buffer is flushed to the database, so they follow the click by a few
-  seconds. Requests are `POST` with `Content-Type: application/json` and
+  buffer is flushed to the database (every 30 s), so they follow the click
+  by up to ~30 s. A webhook created or deactivated takes effect for new
+  events within a further 5 s (active webhooks are cached that long). Requests are `POST` with `Content-Type: application/json` and
   these headers: `X-Signature`, `X-Webhook-Id`, `X-Event-Id` (same as the
   payload's `event_id`) and `User-Agent: urlshortener-webhooks/1.0`.
 - **Payload**
@@ -296,9 +297,13 @@ bulk-upload rows with an empty `domain` — then use it.
   again at connect time: the delivery client resolves and then refuses to
   dial any non-public address (no proxies), so DNS rebinding or a redirect to
   an internal host fails the delivery.
-- **Delivery guarantees** — **at least once**: a receiver can see the same
-  `event_id` more than once (for example when a response is lost after the
-  endpoint processed it), so de-duplicate on `X-Event-Id`. Order is not
+- **Delivery guarantees** — **at least once, with rare loss**: a receiver
+  can see the same `event_id` more than once (for example when a response is
+  lost after the endpoint processed it), so de-duplicate on `X-Event-Id`.
+  Click counts take priority over events: a batch of clicks is removed from
+  the buffer as soon as it is stored, and its events are queued afterwards,
+  so if queueing fails (Redis or database error, a 10 s timeout, a crash in
+  between) the clicks are counted once and **their events are lost**. Order is not
   guaranteed. Jobs live in the Redis sorted set `webhooks:queue`; a worker
   claims a job by removing it, so if the backend crashes between the claim
   and the retry being queued, **that event is lost**. Jobs not yet claimed

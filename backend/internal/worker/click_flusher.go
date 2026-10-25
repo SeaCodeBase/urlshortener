@@ -21,6 +21,9 @@ type ClickFlusher struct {
 	interval  time.Duration
 	batchSize int
 	enqueuer  ClickEnqueuer // nil: no webhook events
+	// enqueueTimeout bounds one Enqueue call (its own context, detached
+	// from the flush budget).
+	enqueueTimeout time.Duration
 	stopCh    chan struct{}
 	doneCh    chan struct{}
 }
@@ -33,8 +36,15 @@ func NewClickFlusher(rdb *redis.Client, clickRepo repository.ClickRepository) *C
 		batchSize: 100,
 		stopCh:    make(chan struct{}),
 		doneCh:    make(chan struct{}),
+
+		enqueueTimeout: 10 * time.Second,
 	}
 }
+
+// clickTrimTimeout bounds the LTrim that follows a stored batch; it has its
+// own context so an earlier batch using up the flush budget cannot make the
+// trim fail (which would re-insert the batch on the next flush).
+const clickTrimTimeout = 5 * time.Second
 
 // SetEnqueuer sets who receives each stored batch of clicks (webhook
 // events); call before Start.
@@ -129,18 +139,23 @@ func (f *ClickFlusher) flush() {
 			return
 		}
 
-		// Queue webhook events before the buffer is trimmed (a crash in
-		// between re-sends both the clicks and their events: at least once).
-		if f.enqueuer != nil {
-			f.enqueuer.Enqueue(ctx, clicks)
-		}
-
-		// Remove processed events from buffer
-		if err := f.rdb.LTrim(ctx, bufferKey, int64(len(events)), -1).Err(); err != nil {
+		// Trim right away, on its own context: click integrity comes first.
+		// Webhook events are queued only after the trim, so a failure or
+		// timeout there loses that batch's events but never duplicates
+		// clicks.
+		trimCtx, cancelTrim := context.WithTimeout(context.Background(), clickTrimTimeout)
+		err = f.rdb.LTrim(trimCtx, bufferKey, int64(len(events)), -1).Err()
+		cancelTrim()
+		if err != nil {
 			logger.Error(ctx, "failed to trim click buffer",
 				zap.Error(err),
 			)
+			// The batch stays buffered and is stored again next flush;
+			// its webhook events are queued then.
+			return
 		}
+
+		f.enqueue(clicks)
 
 		logger.Info(ctx, "flushed click events to database",
 			zap.Int("count", len(clicks)),
@@ -150,6 +165,24 @@ func (f *ClickFlusher) flush() {
 			return // No more events to process
 		}
 	}
+}
+
+// enqueue hands a stored, trimmed batch to the enqueuer on a detached,
+// bounded context. A failure, timeout or panic only loses that batch's
+// webhook events.
+func (f *ClickFlusher) enqueue(clicks []model.Click) {
+	if f.enqueuer == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), f.enqueueTimeout)
+	defer cancel()
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error(ctx, "webhook enqueue panicked; events for this batch are lost",
+				zap.Int("clicks", len(clicks)), zap.Any("panic", r))
+		}
+	}()
+	f.enqueuer.Enqueue(ctx, clicks)
 }
 
 // clickSource normalises a buffered event's source; events buffered before
