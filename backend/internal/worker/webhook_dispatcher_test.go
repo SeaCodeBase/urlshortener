@@ -334,6 +334,7 @@ func TestDispatcher_SignsBody(t *testing.T) {
 
 	d := newTestDispatcher(rdb, repo, srv.Client())
 	d.poll()
+	d.waitDeliveries()
 
 	c := <-got
 	assert.Equal(t, string(payload), string(c.body))
@@ -366,6 +367,7 @@ func TestDispatcher_RetriesWithBackoff(t *testing.T) {
 	pushJob(t, rdb, WebhookJob{WebhookID: 5, EventID: "ev1", Attempt: 1, Payload: payload}, hookNow)
 
 	d.poll()
+	d.waitDeliveries()
 	zs := queueJobs(t, rdb)
 	require.Len(t, zs, 1)
 	assert.Equal(t, float64(hookNow.Add(60*time.Second).Unix()), zs[0].Score)
@@ -378,6 +380,7 @@ func TestDispatcher_RetriesWithBackoff(t *testing.T) {
 
 	// Not due yet: nothing happens.
 	d.poll()
+	d.waitDeliveries()
 	assert.Len(t, repo.deliveries, 1)
 
 	// Each later attempt waits longer; attempt 5 is the last.
@@ -386,6 +389,7 @@ func TestDispatcher_RetriesWithBackoff(t *testing.T) {
 		now := time.Unix(int64(queueJobs(t, rdb)[0].Score), 0).UTC()
 		d.now = func() time.Time { return now }
 		d.poll()
+		d.waitDeliveries()
 		require.Len(t, repo.deliveries, attempt)
 		assert.Equal(t, attempt, repo.deliveries[attempt-1].Attempt)
 		zs = queueJobs(t, rdb)
@@ -422,6 +426,7 @@ func TestDispatcher_Timeout(t *testing.T) {
 
 	start := time.Now()
 	d.poll()
+	d.waitDeliveries()
 	assert.Less(t, time.Since(start), 190*time.Millisecond)
 	require.Len(t, repo.deliveries, 1)
 	assert.Equal(t, 0, repo.deliveries[0].StatusCode)
@@ -451,6 +456,7 @@ func TestDispatcher_DropsDeactivated(t *testing.T) {
 	}
 
 	d.poll()
+	d.waitDeliveries()
 	assert.Equal(t, 0, hits)
 	assert.Empty(t, queueJobs(t, rdb))
 	assert.Empty(t, repo.deliveries)
@@ -592,6 +598,7 @@ func TestDispatcher_KeepsConcurrentURLChangeAndDeactivation(t *testing.T) {
 	pushJob(t, rdb, WebhookJob{WebhookID: 5, EventID: "ev1", Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
 
 	d.poll()
+	d.waitDeliveries()
 	after := repo.snapshot(5)
 	assert.Equal(t, "https://moved.example.test", after.URL)
 	assert.False(t, after.IsActive)
@@ -611,7 +618,7 @@ func TestDispatcher_RecoversFromPanic(t *testing.T) {
 	defer srv.Close()
 	d := newTestDispatcher(rdb, panickyRepo{newFakeWebhookRepo(hook(5, 7, srv.URL))}, srv.Client())
 	pushJob(t, rdb, WebhookJob{WebhookID: 5, EventID: "ev1", Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
-	assert.NotPanics(t, d.poll)
+	assert.NotPanics(t, func() { d.poll(); d.waitDeliveries() })
 }
 
 func TestDispatcher_SlowEndpointDoesNotStarveOthers(t *testing.T) {
@@ -637,7 +644,12 @@ func TestDispatcher_SlowEndpointDoesNotStarveOthers(t *testing.T) {
 	}
 	pushJob(t, rdb, WebhookJob{WebhookID: 6, EventID: "fast", Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
 
-	d.poll()
+	start := time.Now()
+	assert.Equal(t, 3, d.poll(), "two slow deliveries and the fast one start")
+	assert.Less(t, time.Since(start), time.Second, "the poll does not wait for the slow deliveries")
+	require.Eventually(t, func() bool { return fastHits.Load() == 1 }, time.Second, 5*time.Millisecond,
+		"the fast delivery completes while the slow ones still hold their slots")
+	d.waitDeliveries()
 
 	assert.Equal(t, int32(1), fastHits.Load())
 	assert.LessOrEqual(t, slowHits.Load(), int32(2))
@@ -676,6 +688,7 @@ func TestDispatcher_AlertWebhookGetsOneProbePerPoll(t *testing.T) {
 	}
 
 	d.poll()
+	d.waitDeliveries()
 
 	assert.Equal(t, int32(1), hits.Load())
 	require.Len(t, repo.deliveries, 1)
@@ -697,38 +710,16 @@ func TestDispatcher_AlertWebhookGetsOneProbePerPoll(t *testing.T) {
 	assert.Equal(t, 1, retried)
 }
 
-func TestDispatcher_SkipsTickWhilePolling(t *testing.T) {
-	_, rdb := newTestRedis(t)
-	release := make(chan struct{})
-	started := make(chan struct{}, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
-		started <- struct{}{}
-		<-release
-		rw.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-	repo := newFakeWebhookRepo(hook(5, 7, srv.URL))
-	d := newTestDispatcher(rdb, repo, srv.Client())
-	pushJob(t, rdb, WebhookJob{WebhookID: 5, EventID: "ev1", Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
-
-	require.True(t, d.tryPoll())
-	<-started
-	assert.False(t, d.tryPoll(), "a tick while deliveries run is skipped")
-	close(release)
-	d.pollWG.Wait()
-	assert.True(t, d.tryPoll(), "the next tick polls again")
-	d.pollWG.Wait()
-	repo.mu.Lock()
-	defer repo.mu.Unlock()
-	assert.Len(t, repo.deliveries, 1)
-}
-
 func TestDispatcher_BacklogForOneWebhookDoesNotHideOthers(t *testing.T) {
 	_, rdb := newTestRedis(t)
 	var hits sync.Map
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		v, _ := hits.LoadOrStore(r.Header.Get("X-Webhook-Id"), new(atomic.Int32))
+		id := r.Header.Get("X-Webhook-Id")
+		v, _ := hits.LoadOrStore(id, new(atomic.Int32))
 		v.(*atomic.Int32).Add(1)
+		if id == "5" {
+			time.Sleep(time.Second) // webhook 5 is slow: it saturates
+		}
 		rw.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -742,6 +733,7 @@ func TestDispatcher_BacklogForOneWebhookDoesNotHideOthers(t *testing.T) {
 	pushJob(t, rdb, WebhookJob{WebhookID: 6, EventID: "other", Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
 
 	d.poll()
+	d.waitDeliveries()
 
 	other, ok := hits.Load("6")
 	require.True(t, ok, "webhook 6 is reached in the same poll")
@@ -749,4 +741,72 @@ func TestDispatcher_BacklogForOneWebhookDoesNotHideOthers(t *testing.T) {
 	five, _ := hits.Load("5")
 	assert.Equal(t, int32(2), five.(*atomic.Int32).Load())
 	assert.Len(t, queueJobs(t, rdb), 248)
+}
+
+func TestDispatcher_FastWebhookHasNoCeiling(t *testing.T) {
+	_, rdb := newTestRedis(t)
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		rw.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	repo := newFakeWebhookRepo(hook(5, 7, srv.URL))
+	d := newTestDispatcher(rdb, repo, srv.Client())
+	for i := 0; i < 50; i++ {
+		pushJob(t, rdb, WebhookJob{WebhookID: 5, EventID: "ev" + strconv.Itoa(i), Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
+	}
+
+	assert.Equal(t, 50, d.poll())
+	d.waitDeliveries()
+
+	assert.Equal(t, int32(50), hits.Load())
+	repo.mu.Lock()
+	assert.Len(t, repo.deliveries, 50)
+	repo.mu.Unlock()
+	assert.Empty(t, queueJobs(t, rdb))
+	d.mu.Lock()
+	assert.Empty(t, d.inFlight, "every slot is released")
+	d.mu.Unlock()
+}
+
+// countingGetRepo counts GetByID calls.
+type countingGetRepo struct {
+	*fakeWebhookRepo
+	gets atomic.Int32
+}
+
+func (c *countingGetRepo) GetByID(ctx context.Context, id uint64) (*model.Webhook, error) {
+	c.gets.Add(1)
+	return c.fakeWebhookRepo.GetByID(ctx, id)
+}
+
+func TestDispatcher_DropsDeactivatedInClaimLoop(t *testing.T) {
+	_, rdb := newTestRedis(t)
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		rw.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	off := hook(5, 7, srv.URL)
+	off.IsActive, off.Status = false, model.WebhookStatusDeactivated
+	paused := hook(6, 7, srv.URL)
+	paused.IsActive = false
+	repo := &countingGetRepo{fakeWebhookRepo: newFakeWebhookRepo(off, paused, hook(8, 7, srv.URL))}
+	d := newTestDispatcher(rdb, repo, srv.Client())
+	for i := 0; i < 5; i++ {
+		for _, id := range []uint64{5, 6, 99} { // 99: deleted
+			pushJob(t, rdb, WebhookJob{WebhookID: id, EventID: "ev" + strconv.Itoa(i), Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
+		}
+	}
+	pushJob(t, rdb, WebhookJob{WebhookID: 8, EventID: "live", Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
+
+	assert.Equal(t, 1, d.poll(), "only the live webhook's job is delivered")
+	d.waitDeliveries()
+
+	assert.Equal(t, int32(1), hits.Load())
+	assert.Empty(t, queueJobs(t, rdb), "jobs for missing/inactive/deactivated webhooks are removed, not deferred")
+	// One lookup per webhook in the claim loop, plus deliver's re-check for the live one.
+	assert.Equal(t, int32(5), repo.gets.Load())
 }

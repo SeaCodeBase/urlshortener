@@ -227,8 +227,10 @@ bulk-upload rows with an empty `domain` — then use it.
 - **Event** — `engagement` fires for every stored click on any link of the
   webhook's group, including QR scans. Events are queued when the click
   buffer is flushed to the database (every 30 s), so they follow the click
-  by up to ~30 s. A webhook created or deactivated takes effect for new
-  events within a further 5 s (active webhooks are cached that long). Requests are `POST` with `Content-Type: application/json` and
+  by up to ~30 s. Which webhooks get new events is cached for 5 s, so a
+  newly created webhook starts receiving them within a further 5 s.
+  Deactivating (or deleting) a webhook takes effect immediately: every
+  delivery re-checks the webhook and drops its jobs. Requests are `POST` with `Content-Type: application/json` and
   these headers: `X-Signature`, `X-Webhook-Id`, `X-Event-Id` (same as the
   payload's `event_id`) and `User-Agent: urlshortener-webhooks/1.0`.
 - **Payload**
@@ -281,12 +283,13 @@ bulk-upload rows with an empty `domain` — then use it.
   within 10 s (at most 3 redirects). Anything else, including timeouts and
   connection errors, is a failure and is retried after **60 s, 5 min, 30 min
   and 2 h** — 5 attempts in total, then the event is dropped.
-  The worker polls the queue every `workers.webhooks.poll_every` (a poll
-  still delivering skips the next tick) and sends up to 8 requests at a
-  time, but a single webhook gets at most 2 deliveries per poll (1 while it
-  is in **Alert**); its other due events are pushed back by 5 s (60 s in
-  Alert) without counting as an attempt, so one slow endpoint cannot hold
-  up the others.
+  The worker polls the queue every `workers.webhooks.poll_every` (and again
+  right away while a full batch is due). Deliveries run in the background,
+  at most 32 at a time, and each webhook has at most **2 in flight** (1 while
+  it is in **Alert**). A fast endpoint keeps receiving events as fast as it
+  answers; while a slow one holds both of its slots, its other due events
+  are pushed back by 5 s (60 s in Alert) without counting as an attempt, so
+  it cannot hold up the others.
 - **Status rules** — a success resets the webhook to **Active**. From the
   second consecutive failure the status is **Alert**. When failures have
   continued for more than 24 h since the first one, the webhook is

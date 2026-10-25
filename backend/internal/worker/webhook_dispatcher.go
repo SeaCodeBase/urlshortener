@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
@@ -33,15 +32,21 @@ const (
 	// when reading the queue); webhookPollPages caps the pages read per poll.
 	webhookPollLimit = 100
 	webhookPollPages = 10
-	// webhookParallel caps concurrent deliveries within one poll.
-	webhookParallel = 8
-	// webhookPerHookPerPoll caps the jobs one webhook gets per poll, so a
-	// slow endpoint cannot take every delivery slot; webhookAlertPerPoll is
-	// the cap (one probe) while the webhook is in alert.
-	webhookPerHookPerPoll = 2
-	webhookAlertPerPoll   = 1
-	// webhookDeferDelay is how far an over-cap job is pushed back (same
-	// attempt: it was not tried). Alert webhooks' extra jobs wait
+	// webhookMaxInFlight caps concurrent deliveries across all webhooks.
+	webhookMaxInFlight = 32
+	// webhookHookInFlight caps one webhook's concurrent deliveries (tracked
+	// across polls), so a slow endpoint cannot take every slot;
+	// webhookAlertInFlight is the cap (one probe) while it is in alert.
+	webhookHookInFlight  = 2
+	webhookAlertInFlight = 1
+	// webhookSlotWait is how long the claim loop waits for a webhook at its
+	// cap to free a slot before treating it as saturated for the rest of the
+	// poll (a fast endpoint frees one within milliseconds);
+	// webhookSlotWaitBudget bounds the timed-out waits of one poll.
+	webhookSlotWait       = 200 * time.Millisecond
+	webhookSlotWaitBudget = time.Second
+	// webhookDeferDelay is how far a job for a saturated webhook is pushed
+	// back (same attempt: it was not tried). Alert webhooks' extra jobs wait
 	// webhookBackoff[1] instead.
 	webhookDeferDelay = 5 * time.Second
 	// webhookDefaultTimeout bounds a delivery when the client has no timeout.
@@ -276,6 +281,7 @@ func newEventID() (string, error) {
 // WebhookDispatcher delivers due jobs from WebhookQueueKey: it signs and
 // POSTs each payload, records the delivery, updates the webhook's status
 // and requeues failures with backoff (at most webhookMaxAttempts attempts).
+// Deliveries run in goroutines that outlive the poll that claimed them.
 type WebhookDispatcher struct {
 	rdb       *redis.Client
 	webhooks  repository.WebhookRepository
@@ -285,8 +291,11 @@ type WebhookDispatcher struct {
 	stopCh    chan struct{}
 	doneCh    chan struct{}
 
-	polling atomic.Bool    // a poll's deliveries are still running
-	pollWG  sync.WaitGroup // the running poll, waited for by Stop
+	sem        chan struct{}  // global in-flight bound (webhookMaxInFlight)
+	deliveries sync.WaitGroup // in-flight deliveries, waited for by Stop
+	mu         sync.Mutex
+	inFlight   map[uint64]int // webhook id -> deliveries in flight
+	released   chan struct{}  // signalled (non-blocking) when a slot frees
 }
 
 func NewWebhookDispatcher(rdb *redis.Client, webhooks repository.WebhookRepository, client *http.Client,
@@ -297,6 +306,7 @@ func NewWebhookDispatcher(rdb *redis.Client, webhooks repository.WebhookReposito
 	return &WebhookDispatcher{
 		rdb: rdb, webhooks: webhooks, client: client, pollEvery: pollEvery, now: time.Now,
 		stopCh: make(chan struct{}), doneCh: make(chan struct{}),
+		sem: make(chan struct{}, webhookMaxInFlight), inFlight: map[uint64]int{}, released: make(chan struct{}, 1),
 	}
 }
 
@@ -304,8 +314,8 @@ func (d *WebhookDispatcher) Start() {
 	go d.run()
 }
 
-// Stop ends the loop after the deliveries in flight have been recorded;
-// jobs not yet claimed stay queued for the next start.
+// Stop ends the loop and waits until every delivery in flight has been
+// recorded; jobs not yet claimed stay queued for the next start.
 func (d *WebhookDispatcher) Stop() {
 	close(d.stopCh)
 	<-d.doneCh
@@ -313,32 +323,20 @@ func (d *WebhookDispatcher) Stop() {
 
 func (d *WebhookDispatcher) run() {
 	defer close(d.doneCh)
+	defer d.deliveries.Wait()
 	ticker := time.NewTicker(d.pollEvery)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			d.tryPoll()
+			// A full poll means more is due: poll again without waiting
+			// for the next tick.
+			for d.poll() >= webhookPollLimit && !d.stopping() {
+			}
 		case <-d.stopCh:
-			d.pollWG.Wait()
 			return
 		}
 	}
-}
-
-// tryPoll starts a poll in the background unless the previous one is still
-// delivering, in which case the tick is skipped (ticks never queue up).
-func (d *WebhookDispatcher) tryPoll() bool {
-	if !d.polling.CompareAndSwap(false, true) {
-		return false
-	}
-	d.pollWG.Add(1)
-	go func() {
-		defer d.pollWG.Done()
-		defer d.polling.Store(false)
-		d.poll()
-	}()
-	return true
 }
 
 func (d *WebhookDispatcher) stopping() bool {
@@ -350,63 +348,97 @@ func (d *WebhookDispatcher) stopping() bool {
 	}
 }
 
-// poll claims up to webhookPollLimit due jobs and delivers them, at most
-// webhookParallel at a time, returning once all are recorded. A job is
-// claimed by ZREM; when another instance removed it first it is skipped.
-// Each webhook gets at most webhookPerHookPerPoll jobs per poll (one while
-// in alert); its other due jobs are rescheduled with the same attempt. Up to
-// webhookPollPages pages of due jobs are read, so a large backlog for one
-// webhook at the head of the queue does not hide other webhooks' jobs.
-func (d *WebhookDispatcher) poll() {
+// waitDeliveries blocks until every started delivery has been recorded.
+func (d *WebhookDispatcher) waitDeliveries() { d.deliveries.Wait() }
+
+// hookState is what one poll knows about a webhook.
+type hookState struct {
+	drop      bool // missing, inactive or deactivated: its jobs are removed
+	skip      bool // could not be loaded: its jobs stay queued
+	alert     bool
+	saturated bool // at its cap and not freeing slots: defer its jobs
+}
+
+// poll claims up to webhookPollLimit due jobs, starts their deliveries and
+// returns how many it started, without waiting for them. A job is claimed
+// by ZREM; when another instance removed it first it is skipped. Each
+// webhook has at most webhookHookInFlight deliveries in flight (one while in
+// alert), counted across polls. When a webhook is at its cap the poll waits
+// up to webhookSlotWait for a slot; a webhook that does not free one (or
+// any alert webhook at its cap) is saturated, and its remaining due jobs are
+// rescheduled in place with the same attempt. Jobs for missing, inactive or
+// deactivated webhooks are dropped. Up to webhookPollPages pages are read.
+func (d *WebhookDispatcher) poll() int {
 	ctx := context.Background()
 	now := d.now()
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, webhookParallel)
-	claimed := map[uint64]int{}
-	limit := map[uint64]int{}
-	total := 0
-	for page := 0; page < webhookPollPages && total < webhookPollLimit && !d.stopping(); page++ {
+	states := map[uint64]*hookState{}
+	started := 0
+	waitBudget := webhookSlotWaitBudget
+	for page := 0; page < webhookPollPages && started < webhookPollLimit && !d.stopping(); page++ {
 		members, err := d.rdb.ZRangeByScore(ctx, WebhookQueueKey, &redis.ZRangeBy{
 			Min: "-inf", Max: strconv.FormatInt(now.Unix(), 10), Count: webhookPollLimit,
 		}).Result()
 		if err != nil {
 			logger.Error(ctx, "webhook-dispatcher: failed to read queue", zap.Error(err))
-			break
+			return started
 		}
+		progressed := false
 		for _, m := range members {
-			if d.stopping() || total >= webhookPollLimit {
-				break
+			if d.stopping() || started >= webhookPollLimit {
+				return started
 			}
 			var job WebhookJob
 			if err := json.Unmarshal([]byte(m), &job); err != nil {
 				logger.Warn(ctx, "webhook-dispatcher: dropping malformed job", zap.Error(err))
 				_ = d.rdb.ZRem(ctx, WebhookQueueKey, m).Err()
+				progressed = true
 				continue
 			}
-			lim, ok := limit[job.WebhookID]
-			if !ok {
-				lim = d.perPollLimit(ctx, job.WebhookID)
-				limit[job.WebhookID] = lim
+			st := states[job.WebhookID]
+			if st == nil {
+				st = d.loadState(ctx, job.WebhookID)
+				states[job.WebhookID] = st
 			}
-			if claimed[job.WebhookID] >= lim {
-				d.deferJob(ctx, m, job.WebhookID, now, lim)
+			switch {
+			case st.skip:
 				continue
+			case st.drop:
+				_ = d.rdb.ZRem(ctx, WebhookQueueKey, m).Err()
+				progressed = true
+				continue
+			}
+			if !st.saturated && !d.reserve(job.WebhookID, st, &waitBudget) {
+				st.saturated = true
+			}
+			if st.saturated {
+				d.deferJob(ctx, m, job.WebhookID, now, st.alert)
+				progressed = true
+				continue
+			}
+			select {
+			case d.sem <- struct{}{}:
+			default:
+				// Every global slot is busy: leave the rest due for the
+				// next poll.
+				d.release(job.WebhookID)
+				return started
 			}
 			n, err := d.rdb.ZRem(ctx, WebhookQueueKey, m).Result()
-			if err != nil {
-				logger.Error(ctx, "webhook-dispatcher: failed to claim job", zap.Error(err))
+			if err != nil || n == 0 {
+				if err != nil {
+					logger.Error(ctx, "webhook-dispatcher: failed to claim job", zap.Error(err))
+				}
+				<-d.sem
+				d.release(job.WebhookID)
 				continue
 			}
-			if n == 0 {
-				continue
-			}
-			claimed[job.WebhookID]++
-			total++
-			sem <- struct{}{}
-			wg.Add(1)
+			progressed = true
+			started++
+			d.deliveries.Add(1)
 			go func() {
-				defer wg.Done()
-				defer func() { <-sem }()
+				defer d.deliveries.Done()
+				defer func() { <-d.sem }()
+				defer d.release(job.WebhookID)
 				defer func() {
 					if r := recover(); r != nil {
 						logger.Error(ctx, "webhook-dispatcher: delivery panicked",
@@ -416,29 +448,91 @@ func (d *WebhookDispatcher) poll() {
 				d.deliver(ctx, job)
 			}()
 		}
-		if len(members) < webhookPollLimit {
-			break // that was every due job
+		if len(members) < webhookPollLimit || !progressed {
+			break // every due job was seen, or this page will not change
 		}
 	}
-	wg.Wait()
+	return started
 }
 
-// perPollLimit is how many jobs the webhook may get in this poll. When it
-// cannot be loaded the normal cap applies and deliver decides.
-func (d *WebhookDispatcher) perPollLimit(ctx context.Context, webhookID uint64) int {
+// loadState reads the webhook once per poll.
+func (d *WebhookDispatcher) loadState(ctx context.Context, webhookID uint64) *hookState {
 	w, err := d.webhooks.GetByID(ctx, webhookID)
-	if err == nil && w.Status == model.WebhookStatusAlert {
-		return webhookAlertPerPoll
+	if errors.Is(err, repository.ErrWebhookNotFound) {
+		return &hookState{drop: true}
 	}
-	return webhookPerHookPerPoll
+	if err != nil {
+		logger.Error(ctx, "webhook-dispatcher: failed to load webhook; leaving its jobs queued",
+			zap.Uint64("webhook_id", webhookID), zap.Error(err))
+		return &hookState{skip: true}
+	}
+	if !w.IsActive || w.Status == model.WebhookStatusDeactivated {
+		return &hookState{drop: true}
+	}
+	return &hookState{alert: w.Status == model.WebhookStatusAlert}
 }
 
-// deferJob pushes an over-cap job back without claiming it (ZADD XX keeps
-// the member, so its attempt is unchanged, and does nothing when another
-// instance has claimed it meanwhile).
-func (d *WebhookDispatcher) deferJob(ctx context.Context, member string, webhookID uint64, now time.Time, lim int) {
+// reserve takes one of the webhook's in-flight slots. At the cap it waits up
+// to webhookSlotWait (charged to *budget when it times out) for a slot to
+// free; alert webhooks never wait. It returns false when no slot was taken.
+func (d *WebhookDispatcher) reserve(webhookID uint64, st *hookState, budget *time.Duration) bool {
+	limit := webhookHookInFlight
+	if st.alert {
+		limit = webhookAlertInFlight
+	}
+	var timer *time.Timer
+	var waitStart time.Time
+	for {
+		d.mu.Lock()
+		if d.inFlight[webhookID] < limit {
+			d.inFlight[webhookID]++
+			d.mu.Unlock()
+			if timer != nil {
+				timer.Stop()
+			}
+			return true
+		}
+		d.mu.Unlock()
+		if st.alert || *budget <= 0 {
+			return false
+		}
+		if timer == nil {
+			wait := min(webhookSlotWait, *budget)
+			timer = time.NewTimer(wait)
+			waitStart = time.Now()
+		}
+		select {
+		case <-d.released: // some slot freed: re-check
+		case <-timer.C:
+			*budget -= time.Since(waitStart)
+			return false
+		case <-d.stopCh:
+			timer.Stop()
+			return false
+		}
+	}
+}
+
+func (d *WebhookDispatcher) release(webhookID uint64) {
+	d.mu.Lock()
+	if d.inFlight[webhookID] <= 1 {
+		delete(d.inFlight, webhookID)
+	} else {
+		d.inFlight[webhookID]--
+	}
+	d.mu.Unlock()
+	select {
+	case d.released <- struct{}{}:
+	default:
+	}
+}
+
+// deferJob pushes a job for a saturated webhook back without claiming it
+// (ZADD XX keeps the member, so its attempt is unchanged, and does nothing
+// when another instance has claimed it meanwhile).
+func (d *WebhookDispatcher) deferJob(ctx context.Context, member string, webhookID uint64, now time.Time, alert bool) {
 	delay := webhookDeferDelay
-	if lim == webhookAlertPerPoll {
+	if alert {
 		delay = webhookBackoff[1]
 	}
 	err := d.rdb.ZAddArgs(ctx, WebhookQueueKey, redis.ZAddArgs{
