@@ -51,3 +51,13 @@ func TestTrustedProxies_HonouredFromTrustedPeer(t *testing.T) {
 func TestTrustedProxies_InvalidEntryErrors(t *testing.T) {
 	assert.Error(t, applyTrustedProxies(gin.New(), []string{"not-an-ip"}))
 }
+
+func TestTrustedProxies_APIEngineHonoursLoopback(t *testing.T) {
+	// The API engine trusts the co-located Next.js proxy (default loopback),
+	// so a public page view keeps the visitor's forwarded IP.
+	api := []string{"127.0.0.1", "::1"}
+	assert.Equal(t, "1.2.3.4", clientIPFor(t, api, "127.0.0.1:40000", map[string]string{"X-Forwarded-For": "1.2.3.4"}))
+	assert.Equal(t, "1.2.3.4", clientIPFor(t, api, "[::1]:40000", map[string]string{"X-Forwarded-For": "1.2.3.4"}))
+	// The redirect engine (no proxies) still ignores the header from loopback.
+	assert.Equal(t, "127.0.0.1", clientIPFor(t, nil, "127.0.0.1:40000", map[string]string{"X-Forwarded-For": "1.2.3.4"}))
+}

@@ -15,9 +15,9 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    # HTTP drain (20 s) plus the worker stops (final click flush, in-flight
-    # webhook deliveries) before Docker sends SIGKILL.
-    stop_grace_period: 30s
+    # HTTP drain (20 s) plus the worker stops (final click flush up to 30 s,
+    # in-flight webhook deliveries) before Docker sends SIGKILL.
+    stop_grace_period: 45s
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8081/health"]
       interval: 10s

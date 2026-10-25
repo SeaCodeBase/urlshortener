@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SeaCodeBase/urlshortener/internal/model"
@@ -47,6 +48,15 @@ type RedirectHandler struct {
 	ipSalt      string
 	frontendURL string
 	reserved    map[string]bool
+	// recording tracks the detached click-record goroutines so shutdown can
+	// wait for them (http.Server.Shutdown does not).
+	recording sync.WaitGroup
+}
+
+// Wait blocks until every click record started so far has finished. Call it
+// after the redirect server has shut down, before stopping the click flusher.
+func (h *RedirectHandler) Wait() {
+	h.recording.Wait()
 }
 
 // NewRedirectHandler builds the handler. reservedHosts (and the frontend
@@ -146,7 +156,9 @@ func (h *RedirectHandler) Redirect(c *gin.Context) {
 		}
 	}
 
+	h.recording.Add(1)
 	go func() {
+		defer h.recording.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := h.clicks.RecordClick(ctx, event); err != nil {

@@ -8,7 +8,13 @@ server:
   allow_origins:         # CORS allowed origins (supports wildcards like *.example.com)
     - "http://localhost:3000"
     - "http://127.0.0.1:3000"
-  trusted_proxies: []    # IPs/CIDRs of your reverse proxy; empty = X-Forwarded-For is ignored and the TCP peer is the client
+  trusted_proxies: []    # Redirect server: IPs/CIDRs of your reverse proxy; empty = X-Forwarded-For is ignored and the TCP peer is the client
+  # API server: the compose network, so the frontend container's X-Forwarded-For
+  # is honoured for public page views. Note the API port is also published, so
+  # an external client reaching :8081 through docker-proxy could spoof
+  # X-Forwarded-For for page-view geo/IP only; narrow this to the frontend
+  # container's address or remove the published API port if that matters.
+  api_trusted_proxies: ["172.16.0.0/12"]
 
 database:
   host: "mariadb"                # MariaDB service name in docker-compose

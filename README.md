@@ -47,14 +47,21 @@ Every configuration key is documented in `backend/config.example.yaml`.
   the proxy, which skews click geolocation and the hashed-IP unique-visitor
   counts; listing the proxy makes the backend believe its forwarded header.
   Only list proxies you control, otherwise clients can spoof their IP.
+  The API server has its own list, `server.api_trusted_proxies` (default
+  loopback; the Docker config uses the compose network `172.16.0.0/12`), so
+  the visitor IP that the web UI forwards for public page views is kept.
+  Because the compose file also publishes `8081`, a client reaching it
+  directly could spoof that page-view IP; narrow the list to the frontend
+  container's address or stop publishing the API port if that matters.
 - **Graceful shutdown** — on `SIGTERM` (or `SIGINT`) both HTTP servers stop
   accepting connections and in-flight requests get up to 20 s to finish.
-  Then, in order: the click flusher does a final flush of buffered clicks
+  Then, in order: click records still in flight reach the Redis buffer, the
+  click flusher does a final flush of buffered clicks
   (and queues their webhook events), the webhook dispatcher waits for
   in-flight deliveries (unclaimed jobs stay queued for the next start), and
   the bulk worker stops after its current batch (an upload interrupted this
   way is finished as failed with the results so far). The compose file sets
-  `stop_grace_period: 30s` on the backend so Docker does not `SIGKILL` it
+  `stop_grace_period: 45s` on the backend so Docker does not `SIGKILL` it
   before the workers have stopped.
 - **Workers** — `workers.webhooks.poll_every` (default `2s`),
   `workers.bulk.poll_every` (default `5s`) and `workers.bulk.batch_size`

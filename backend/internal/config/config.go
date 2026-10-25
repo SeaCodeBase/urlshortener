@@ -3,8 +3,11 @@ package config
 
 import (
 	"errors"
+	"fmt"
+	"net"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -17,10 +20,26 @@ type ServerConfig struct {
 	APIPort           string   `yaml:"api_port"`      // Port for API server
 	AllowRegistration *bool    `yaml:"allow_registration"`
 	AllowOrigins      []string `yaml:"allow_origins"`
-	// TrustedProxies lists the IPs/CIDRs of the reverse proxy whose
-	// X-Forwarded-For header is believed. Empty: the header is ignored and
-	// the TCP peer is the client.
+	// TrustedProxies lists the IPs/CIDRs of the reverse proxy in front of
+	// the redirect server whose X-Forwarded-For header is believed. Empty
+	// (the default): the header is ignored and the TCP peer is the client.
 	TrustedProxies []string `yaml:"trusted_proxies"`
+	// APITrustedProxies is the same for the API server, whose public
+	// page-view endpoint is reached through the Next.js proxy. Absent
+	// defaults to loopback; an explicit [] trusts nobody. Read it with
+	// APIProxies.
+	APITrustedProxies *[]string `yaml:"api_trusted_proxies"`
+}
+
+// defaultAPITrustedProxies is the co-located Next.js server in development.
+var defaultAPITrustedProxies = []string{"127.0.0.1", "::1"}
+
+// APIProxies returns the API server's trusted proxies (after defaults).
+func (s ServerConfig) APIProxies() []string {
+	if s.APITrustedProxies == nil {
+		return append([]string(nil), defaultAPITrustedProxies...)
+	}
+	return *s.APITrustedProxies
 }
 
 // DatabaseConfig holds database connection configuration
@@ -167,6 +186,10 @@ func applyDefaults(cfg *Config) {
 		allowReg := true
 		cfg.Server.AllowRegistration = &allowReg
 	}
+	if cfg.Server.APITrustedProxies == nil {
+		proxies := append([]string(nil), defaultAPITrustedProxies...)
+		cfg.Server.APITrustedProxies = &proxies
+	}
 	if len(cfg.Server.AllowOrigins) == 0 {
 		cfg.Server.AllowOrigins = []string{
 			"http://localhost:3000",
@@ -233,6 +256,24 @@ func applyDefaults(cfg *Config) {
 func validate(cfg *Config) error {
 	if cfg.JWT.Secret == "" {
 		return errors.New("jwt.secret is required in config.yaml")
+	}
+	if err := validateProxies("server.trusted_proxies", cfg.Server.TrustedProxies); err != nil {
+		return err
+	}
+	return validateProxies("server.api_trusted_proxies", cfg.Server.APIProxies())
+}
+
+// validateProxies accepts what gin.Engine.SetTrustedProxies accepts: an IP,
+// or a CIDR when the entry contains "/".
+func validateProxies(key string, proxies []string) error {
+	for _, p := range proxies {
+		if strings.Contains(p, "/") {
+			if _, _, err := net.ParseCIDR(p); err != nil {
+				return fmt.Errorf("%s: invalid CIDR %q", key, p)
+			}
+		} else if net.ParseIP(p) == nil {
+			return fmt.Errorf("%s: invalid IP %q", key, p)
+		}
 	}
 	return nil
 }

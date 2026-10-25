@@ -235,3 +235,47 @@ func TestRedirectHandler_PageHop(t *testing.T) {
 	require.Equal(t, http.StatusFound, w.Code)
 	assert.Equal(t, "http://localhost:3000/m/jose", w.Header().Get("Location"))
 }
+
+// blockingClickRecorder holds RecordClick until release is closed.
+type blockingClickRecorder struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingClickRecorder) RecordClick(_ context.Context, _ service.ClickEvent) error {
+	close(b.started)
+	<-b.release
+	return nil
+}
+
+func TestRedirectHandler_WaitBlocksUntilRecordCompletes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := &blockingClickRecorder{started: make(chan struct{}), release: make(chan struct{})}
+	domains := repomocks.NewMockDomainRepository(gomock.NewController(t))
+	h := NewRedirectHandler(&fakeResolver{res: &service.ResolvedLink{LinkID: 1, LongURL: "https://example.com"}},
+		rec, domains, "salt", "https://app.example.com", "sho.rt")
+	r := gin.New()
+	r.GET("/:code", h.Redirect)
+
+	w := doGet(r, "sho.rt", "/abc", "")
+	require.Equal(t, http.StatusFound, w.Code)
+	select {
+	case <-rec.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("click was never recorded")
+	}
+
+	waited := make(chan struct{})
+	go func() { h.Wait(); close(waited) }()
+	select {
+	case <-waited:
+		t.Fatal("Wait returned while a click record was in flight")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(rec.release)
+	select {
+	case <-waited:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Wait did not return after the record completed")
+	}
+}

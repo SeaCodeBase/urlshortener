@@ -250,6 +250,7 @@ func main() {
 
 	// Redirect Router (public, minimal - for URL redirects)
 	redirectRouter := gin.New()
+	// Proxy lists were validated by config.Load; these cannot fail.
 	if err := applyTrustedProxies(redirectRouter, cfg.Server.TrustedProxies); err != nil {
 		logger.Fatal(ctx, "invalid server.trusted_proxies", zap.Error(err))
 	}
@@ -268,7 +269,7 @@ func main() {
 
 	// API Router (authenticated, full functionality)
 	apiRouter := gin.New()
-	if err := applyTrustedProxies(apiRouter, cfg.Server.TrustedProxies); err != nil {
+	if err := applyTrustedProxies(apiRouter, cfg.Server.APIProxies()); err != nil {
 		logger.Fatal(ctx, "invalid server.trusted_proxies", zap.Error(err))
 	}
 	apiRouter.Use(gin.Recovery())
@@ -430,7 +431,8 @@ func main() {
 	}
 
 	// Serve until SIGINT/SIGTERM, then drain both servers and stop the
-	// workers in order: the click flusher's final flush also enqueues
+	// workers in order: in-flight click records reach the Redis buffer,
+	// the click flusher's final flush also enqueues
 	// webhook events, the dispatcher then waits for in-flight deliveries,
 	// and the bulk worker stops between batches.
 	sigCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -450,6 +452,7 @@ func main() {
 	runErr := runServers(sigCtx,
 		[]namedServer{httpServer("redirect", redirectSrv), httpServer("api", apiSrv)},
 		[]namedStop{
+			{name: "click-recorders", stop: redirectHandler.Wait},
 			{name: "click-flusher", stop: clickFlusher.Stop},
 			{name: "webhook-dispatcher", stop: webhookDispatcher.Stop},
 			{name: "bulk-worker", stop: bulkWorker.Stop},

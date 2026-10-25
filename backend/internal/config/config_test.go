@@ -217,3 +217,38 @@ server:
 		assert.Equal(t, []string{"10.0.0.0/8", "127.0.0.1"}, cfg.Server.TrustedProxies)
 	})
 }
+
+func TestConfig_APITrustedProxies(t *testing.T) {
+	load := func(t *testing.T, server string) (*Config, error) {
+		t.Helper()
+		content := "jwt:\n  secret: \"minimum-required-secret-for-test!\"\n" + server
+		configPath := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+		return LoadFromYAML(configPath)
+	}
+
+	t.Run("absent defaults to loopback", func(t *testing.T) {
+		cfg, err := load(t, "")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"127.0.0.1", "::1"}, cfg.Server.APIProxies())
+		assert.Empty(t, cfg.Server.TrustedProxies)
+	})
+	t.Run("explicit empty list disables", func(t *testing.T) {
+		cfg, err := load(t, "server:\n  api_trusted_proxies: []\n")
+		require.NoError(t, err)
+		assert.Empty(t, cfg.Server.APIProxies())
+	})
+	t.Run("explicit list kept", func(t *testing.T) {
+		cfg, err := load(t, "server:\n  api_trusted_proxies: [\"172.16.0.0/12\"]\n")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"172.16.0.0/12"}, cfg.Server.APIProxies())
+	})
+	t.Run("invalid entries fail the load", func(t *testing.T) {
+		_, err := load(t, "server:\n  trusted_proxies: [\"not-an-ip\"]\n")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "server.trusted_proxies")
+		_, err = load(t, "server:\n  api_trusted_proxies: [\"10.0.0.0/33\"]\n")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "server.api_trusted_proxies")
+	})
+}

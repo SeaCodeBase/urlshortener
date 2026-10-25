@@ -8,7 +8,13 @@ server:
   allow_origins:         # CORS allowed origins (supports wildcards like *.example.com)
     - "http://localhost:3000"
     - "http://127.0.0.1:3000"
-  trusted_proxies: []    # IPs/CIDRs of your reverse proxy; empty = X-Forwarded-For is ignored and the TCP peer is the client
+  trusted_proxies: []    # Redirect server: IPs/CIDRs of your reverse proxy; empty = X-Forwarded-For is ignored and the TCP peer is the client
+  # API server: IPs/CIDRs whose X-Forwarded-For is believed. The web UI's
+  # Next.js server forwards the visitor IP for public page views, so list where
+  # it runs. Absent = ["127.0.0.1", "::1"] (UI on the same host); [] = trust nobody.
+  # Anyone who can reach the API port from a listed address can set the
+  # page-view IP/geo, so keep the list narrow.
+  api_trusted_proxies: ["127.0.0.1", "::1"]
 
 database:
   host: "localhost"              # MariaDB/MySQL host
