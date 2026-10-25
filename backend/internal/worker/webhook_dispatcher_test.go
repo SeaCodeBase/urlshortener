@@ -722,3 +722,31 @@ func TestDispatcher_SkipsTickWhilePolling(t *testing.T) {
 	defer repo.mu.Unlock()
 	assert.Len(t, repo.deliveries, 1)
 }
+
+func TestDispatcher_BacklogForOneWebhookDoesNotHideOthers(t *testing.T) {
+	_, rdb := newTestRedis(t)
+	var hits sync.Map
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		v, _ := hits.LoadOrStore(r.Header.Get("X-Webhook-Id"), new(atomic.Int32))
+		v.(*atomic.Int32).Add(1)
+		rw.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	repo := newFakeWebhookRepo(hook(5, 7, srv.URL), hook(6, 7, srv.URL))
+	d := newTestDispatcher(rdb, repo, srv.Client())
+	// 250 older jobs for webhook 5 sit ahead of webhook 6's job.
+	for i := 0; i < 250; i++ {
+		pushJob(t, rdb, WebhookJob{WebhookID: 5, EventID: "b" + strconv.Itoa(i), Attempt: 1, Payload: json.RawMessage(`{}`)},
+			hookNow.Add(-time.Minute))
+	}
+	pushJob(t, rdb, WebhookJob{WebhookID: 6, EventID: "other", Attempt: 1, Payload: json.RawMessage(`{}`)}, hookNow)
+
+	d.poll()
+
+	other, ok := hits.Load("6")
+	require.True(t, ok, "webhook 6 is reached in the same poll")
+	assert.Equal(t, int32(1), other.(*atomic.Int32).Load())
+	five, _ := hits.Load("5")
+	assert.Equal(t, int32(2), five.(*atomic.Int32).Load())
+	assert.Len(t, queueJobs(t, rdb), 248)
+}

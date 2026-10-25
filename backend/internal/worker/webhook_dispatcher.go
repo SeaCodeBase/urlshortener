@@ -29,8 +29,10 @@ const WebhookQueueKey = "webhooks:queue"
 const (
 	// webhookMaxAttempts is the last attempt; a failure there drops the job.
 	webhookMaxAttempts = 5
-	// webhookPollLimit caps the due jobs claimed per poll.
+	// webhookPollLimit caps the due jobs claimed per poll (and the page size
+	// when reading the queue); webhookPollPages caps the pages read per poll.
 	webhookPollLimit = 100
+	webhookPollPages = 10
 	// webhookParallel caps concurrent deliveries within one poll.
 	webhookParallel = 8
 	// webhookPerHookPerPoll caps the jobs one webhook gets per poll, so a
@@ -352,62 +354,71 @@ func (d *WebhookDispatcher) stopping() bool {
 // webhookParallel at a time, returning once all are recorded. A job is
 // claimed by ZREM; when another instance removed it first it is skipped.
 // Each webhook gets at most webhookPerHookPerPoll jobs per poll (one while
-// in alert); its other due jobs are rescheduled with the same attempt.
+// in alert); its other due jobs are rescheduled with the same attempt. Up to
+// webhookPollPages pages of due jobs are read, so a large backlog for one
+// webhook at the head of the queue does not hide other webhooks' jobs.
 func (d *WebhookDispatcher) poll() {
 	ctx := context.Background()
 	now := d.now()
-	members, err := d.rdb.ZRangeByScore(ctx, WebhookQueueKey, &redis.ZRangeBy{
-		Min: "-inf", Max: strconv.FormatInt(now.Unix(), 10), Count: webhookPollLimit,
-	}).Result()
-	if err != nil {
-		logger.Error(ctx, "webhook-dispatcher: failed to read queue", zap.Error(err))
-		return
-	}
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, webhookParallel)
 	claimed := map[uint64]int{}
 	limit := map[uint64]int{}
-	for _, m := range members {
-		if d.stopping() {
+	total := 0
+	for page := 0; page < webhookPollPages && total < webhookPollLimit && !d.stopping(); page++ {
+		members, err := d.rdb.ZRangeByScore(ctx, WebhookQueueKey, &redis.ZRangeBy{
+			Min: "-inf", Max: strconv.FormatInt(now.Unix(), 10), Count: webhookPollLimit,
+		}).Result()
+		if err != nil {
+			logger.Error(ctx, "webhook-dispatcher: failed to read queue", zap.Error(err))
 			break
 		}
-		var job WebhookJob
-		if err := json.Unmarshal([]byte(m), &job); err != nil {
-			logger.Warn(ctx, "webhook-dispatcher: dropping malformed job", zap.Error(err))
-			_ = d.rdb.ZRem(ctx, WebhookQueueKey, m).Err()
-			continue
-		}
-		lim, ok := limit[job.WebhookID]
-		if !ok {
-			lim = d.perPollLimit(ctx, job.WebhookID)
-			limit[job.WebhookID] = lim
-		}
-		if claimed[job.WebhookID] >= lim {
-			d.deferJob(ctx, m, job.WebhookID, now, lim)
-			continue
-		}
-		n, err := d.rdb.ZRem(ctx, WebhookQueueKey, m).Result()
-		if err != nil {
-			logger.Error(ctx, "webhook-dispatcher: failed to claim job", zap.Error(err))
-			continue
-		}
-		if n == 0 {
-			continue
-		}
-		claimed[job.WebhookID]++
-		sem <- struct{}{}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-			defer func() {
-				if r := recover(); r != nil {
-					logger.Error(ctx, "webhook-dispatcher: delivery panicked",
-						zap.Uint64("webhook_id", job.WebhookID), zap.String("event_id", job.EventID), zap.Any("panic", r))
-				}
+		for _, m := range members {
+			if d.stopping() || total >= webhookPollLimit {
+				break
+			}
+			var job WebhookJob
+			if err := json.Unmarshal([]byte(m), &job); err != nil {
+				logger.Warn(ctx, "webhook-dispatcher: dropping malformed job", zap.Error(err))
+				_ = d.rdb.ZRem(ctx, WebhookQueueKey, m).Err()
+				continue
+			}
+			lim, ok := limit[job.WebhookID]
+			if !ok {
+				lim = d.perPollLimit(ctx, job.WebhookID)
+				limit[job.WebhookID] = lim
+			}
+			if claimed[job.WebhookID] >= lim {
+				d.deferJob(ctx, m, job.WebhookID, now, lim)
+				continue
+			}
+			n, err := d.rdb.ZRem(ctx, WebhookQueueKey, m).Result()
+			if err != nil {
+				logger.Error(ctx, "webhook-dispatcher: failed to claim job", zap.Error(err))
+				continue
+			}
+			if n == 0 {
+				continue
+			}
+			claimed[job.WebhookID]++
+			total++
+			sem <- struct{}{}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+				defer func() {
+					if r := recover(); r != nil {
+						logger.Error(ctx, "webhook-dispatcher: delivery panicked",
+							zap.Uint64("webhook_id", job.WebhookID), zap.String("event_id", job.EventID), zap.Any("panic", r))
+					}
+				}()
+				d.deliver(ctx, job)
 			}()
-			d.deliver(ctx, job)
-		}()
+		}
+		if len(members) < webhookPollLimit {
+			break // that was every due job
+		}
 	}
 	wg.Wait()
 }
