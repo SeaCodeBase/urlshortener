@@ -143,8 +143,24 @@ func (r *LinkRepositoryImpl) Update(ctx context.Context, link *model.Link) error
 }
 
 func (r *LinkRepositoryImpl) Delete(ctx context.Context, id uint64) error {
-	query := `DELETE FROM links WHERE id = ?`
-	result, err := r.db.ExecContext(ctx, query, id)
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		logger.Error(ctx, "link-repo: failed to begin delete", zap.Uint64("link_id", id), zap.Error(err))
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	// The FK cascade removes the link's page blocks without touching their
+	// pages, so mark those pages changed first (they need a republish).
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE pages SET revision = revision + 1
+		 WHERE id IN (SELECT page_id FROM page_blocks WHERE link_id = ?)`, id); err != nil {
+		logger.Error(ctx, "link-repo: failed to bump page revisions on delete",
+			zap.Uint64("link_id", id),
+			zap.Error(err),
+		)
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM links WHERE id = ?`, id)
 	if err != nil {
 		logger.Error(ctx, "link-repo: failed to delete link",
 			zap.Uint64("link_id", id),
@@ -162,6 +178,10 @@ func (r *LinkRepositoryImpl) Delete(ctx context.Context, id uint64) error {
 	}
 	if rows == 0 {
 		return ErrLinkNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		logger.Error(ctx, "link-repo: failed to commit delete", zap.Uint64("link_id", id), zap.Error(err))
+		return err
 	}
 	return nil
 }

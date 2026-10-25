@@ -174,21 +174,6 @@ func (mr *MockPageRepositoryMockRecorder) ListByGroup(ctx, groupID, f any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListByGroup", reflect.TypeOf((*MockPageRepository)(nil).ListByGroup), ctx, groupID, f)
 }
 
-// MaxBlockUpdatedAt mocks base method.
-func (m *MockPageRepository) MaxBlockUpdatedAt(ctx context.Context, pageID uint64) (*time.Time, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MaxBlockUpdatedAt", ctx, pageID)
-	ret0, _ := ret[0].(*time.Time)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// MaxBlockUpdatedAt indicates an expected call of MaxBlockUpdatedAt.
-func (mr *MockPageRepositoryMockRecorder) MaxBlockUpdatedAt(ctx, pageID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MaxBlockUpdatedAt", reflect.TypeOf((*MockPageRepository)(nil).MaxBlockUpdatedAt), ctx, pageID)
-}
-
 // PagesForLinks mocks base method.
 func (m *MockPageRepository) PagesForLinks(ctx context.Context, linkIDs []uint64) (map[uint64][]uint64, error) {
 	m.ctrl.T.Helper()
@@ -205,17 +190,17 @@ func (mr *MockPageRepositoryMockRecorder) PagesForLinks(ctx, linkIDs any) *gomoc
 }
 
 // Publish mocks base method.
-func (m *MockPageRepository) Publish(ctx context.Context, id uint64, content model.JSONMap, at time.Time) error {
+func (m *MockPageRepository) Publish(ctx context.Context, id uint64, content model.JSONMap, at time.Time, revision uint64) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Publish", ctx, id, content, at)
+	ret := m.ctrl.Call(m, "Publish", ctx, id, content, at, revision)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Publish indicates an expected call of Publish.
-func (mr *MockPageRepositoryMockRecorder) Publish(ctx, id, content, at any) *gomock.Call {
+func (mr *MockPageRepositoryMockRecorder) Publish(ctx, id, content, at, revision any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Publish", reflect.TypeOf((*MockPageRepository)(nil).Publish), ctx, id, content, at)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Publish", reflect.TypeOf((*MockPageRepository)(nil).Publish), ctx, id, content, at, revision)
 }
 
 // ReorderBlocks mocks base method.

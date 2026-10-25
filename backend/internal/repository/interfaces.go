@@ -63,6 +63,9 @@ type LinkRepository interface {
 	ListByUserID(ctx context.Context, userID uint64, limit, offset int) ([]model.Link, error)
 	CountByUserID(ctx context.Context, userID uint64) (int64, error)
 	Update(ctx context.Context, link *model.Link) error
+	// Delete removes the link (its page blocks go with it by FK cascade) and,
+	// in the same transaction and before the delete, bumps the revision of
+	// every page with a block referencing it; ErrLinkNotFound.
 	Delete(ctx context.Context, id uint64) error
 	// ShortCodeExistsInDomain checks if a short code exists within a specific domain.
 	// domainID nil means the default domain (domain_id IS NULL)
@@ -233,7 +236,8 @@ type PageWithViews struct {
 //
 //go:generate mockgen -destination=mocks/mock_page_repo.go -package=mocks . PageRepository
 type PageRepository interface {
-	// Create inserts the page and sets ID, status and timestamps;
+	// Create inserts the page and sets ID, status, revision (1),
+	// published_revision (0) and timestamps;
 	// ErrPageSlugTaken when the slug exists (case-insensitively).
 	Create(ctx context.Context, p *model.Page) error
 	// GetByID returns the page; ErrPageNotFound.
@@ -244,14 +248,17 @@ type PageRepository interface {
 	SlugExists(ctx context.Context, slug string) (bool, error)
 	// ListByGroup returns the group's pages newest first with their view counts.
 	ListByGroup(ctx context.Context, groupID uint64, f PageFilter) ([]PageWithViews, error)
-	// Update writes title, description, avatar_url and design; ErrPageNotFound.
+	// Update writes title, description, avatar_url and design and bumps the
+	// revision; ErrPageNotFound.
 	Update(ctx context.Context, p *model.Page) error
 	// SetArchived sets the archived flag without touching updated_at;
 	// ErrPageNotFound.
 	SetArchived(ctx context.Context, id uint64, archived bool) error
-	// Publish sets status 'published', published_content and published_at
-	// without touching updated_at; ErrPageNotFound.
-	Publish(ctx context.Context, id uint64, content model.JSONMap, at time.Time) error
+	// Publish sets status 'published', published_content, published_at and
+	// published_revision (the revision the snapshot was built from, capped at
+	// the stored revision) without touching updated_at or revision;
+	// ErrPageNotFound.
+	Publish(ctx context.Context, id uint64, content model.JSONMap, at time.Time, revision uint64) error
 	// Delete removes the page with its blocks and views; ErrPageNotFound.
 	Delete(ctx context.Context, id uint64) error
 	// ListBlocks returns the page's blocks ordered by position, id.
@@ -259,24 +266,23 @@ type PageRepository interface {
 	// GetBlock returns the block; ErrBlockNotFound.
 	GetBlock(ctx context.Context, id uint64) (*model.PageBlock, error)
 	// CreateBlock appends the block (position = current max + 1, 0 for the
-	// first) and sets ID, Position and timestamps.
+	// first), bumps the page's revision and sets ID, Position and timestamps.
 	CreateBlock(ctx context.Context, b *model.PageBlock) error
-	// UpdateBlock writes content, is_active and is_pinned; ErrBlockNotFound.
+	// UpdateBlock writes content, is_active and is_pinned and bumps the page's
+	// revision; ErrBlockNotFound.
 	UpdateBlock(ctx context.Context, b *model.PageBlock) error
-	// DeleteBlock removes the block and bumps its page's updated_at;
+	// DeleteBlock removes the block and bumps its page's revision;
 	// ErrBlockNotFound.
 	DeleteBlock(ctx context.Context, id uint64) error
 	// ReorderBlocks sets each block's position to its index in ids, in one
-	// transaction. ids must be exactly the page's block ids (a permutation);
+	// transaction that also bumps the page's revision. ids must be exactly the
+	// page's block ids (a permutation);
 	// otherwise ErrInvalidBlockOrder and nothing changes.
 	ReorderBlocks(ctx context.Context, pageID uint64, ids []uint64) error
 	// PagesForLinks maps each link id to the distinct, ascending ids of the
 	// non-archived pages with a block referencing it; links without such a
 	// page are absent.
 	PagesForLinks(ctx context.Context, linkIDs []uint64) (map[uint64][]uint64, error)
-	// MaxBlockUpdatedAt returns the latest updated_at of the page's blocks,
-	// nil when the page has none.
-	MaxBlockUpdatedAt(ctx context.Context, pageID uint64) (*time.Time, error)
 }
 
 // PageViewRepository stores page views. Range methods take inclusive UTC

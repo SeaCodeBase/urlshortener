@@ -59,7 +59,7 @@ func samplePage(id, groupID uint64, slug string) *model.Page {
 	ts := time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC)
 	return &model.Page{
 		ID: id, UserID: 1, GroupID: groupID, Slug: slug, Title: "T " + slug,
-		Design: service.DefaultDesign("classic"), Status: model.PageStatusDraft,
+		Design: service.DefaultDesign("classic"), Status: model.PageStatusDraft, Revision: 1,
 		CreatedAt: ts, UpdatedAt: ts,
 	}
 }
@@ -407,10 +407,12 @@ func TestPageService_Publish_Snapshot(t *testing.T) {
 	p.Description = "Bio"
 	p.AvatarURL = "/uploads/a.png"
 	p.UpdatedAt = time.Date(2026, 10, 25, 11, 0, 0, 0, time.UTC)
+	p.Revision = 4
 	published := *p
 	published.Status = model.PageStatusPublished
 	at := f.now
 	published.PublishedAt = &at
+	published.PublishedRevision = 4
 
 	gomock.InOrder(
 		f.pages.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(p, nil),
@@ -426,8 +428,8 @@ func TestPageService_Publish_Snapshot(t *testing.T) {
 		{ID: 10, GroupID: 7, ShortCode: "def"},
 	}, nil).AnyTimes()
 	var snap model.JSONMap
-	f.pages.EXPECT().Publish(gomock.Any(), uint64(5), gomock.Any(), at).DoAndReturn(
-		func(_ context.Context, _ uint64, c model.JSONMap, _ time.Time) error { snap = c; return nil })
+	f.pages.EXPECT().Publish(gomock.Any(), uint64(5), gomock.Any(), at, uint64(4)).DoAndReturn(
+		func(_ context.Context, _ uint64, c model.JSONMap, _ time.Time, _ uint64) error { snap = c; return nil })
 	f.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionPagePublish, service.EntityPage, uint64(5), gomock.Any())
 	// The returned view is reloaded.
 	f.pages.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(&published, nil)
@@ -469,17 +471,19 @@ func TestPageService_Publish_Snapshot(t *testing.T) {
 	assert.Equal(t, pageBaseURL+"/abc?r=page", blocks[2].(map[string]any)["short_url"])
 }
 
-func TestPageService_Publish_EmptyAndSkew(t *testing.T) {
+func TestPageService_Publish_EmptyUsesClockAndReadRevision(t *testing.T) {
 	f := newPageSvc(t)
 	ctx := context.Background()
+	// The DB clock ran ahead of the app clock: published_at is still the app
+	// clock (truncated to the second); freshness comes from the revision.
+	f.now = f.now.Add(700 * time.Millisecond)
 	p := samplePage(5, 7, "jose")
-	// The DB clock ran ahead of the app clock: published_at must not be
-	// earlier than the last edit, or the page would look dirty right away.
 	p.UpdatedAt = f.now.Add(2 * time.Second)
+	p.Revision = 9
 	f.pages.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(p, nil).Times(2)
 	f.pages.EXPECT().ListBlocks(gomock.Any(), uint64(5)).Return([]model.PageBlock{}, nil).Times(2)
-	f.pages.EXPECT().Publish(gomock.Any(), uint64(5), gomock.Any(), f.now.Add(2*time.Second)).DoAndReturn(
-		func(_ context.Context, _ uint64, c model.JSONMap, _ time.Time) error {
+	f.pages.EXPECT().Publish(gomock.Any(), uint64(5), gomock.Any(), f.now.Truncate(time.Second), uint64(9)).DoAndReturn(
+		func(_ context.Context, _ uint64, c model.JSONMap, _ time.Time, _ uint64) error {
 			assert.Equal(t, []any{}, c["blocks"])
 			return nil
 		})
@@ -487,6 +491,44 @@ func TestPageService_Publish_EmptyAndSkew(t *testing.T) {
 	f.views.EXPECT().CountAllTime(gomock.Any(), uint64(5)).Return(int64(0), nil)
 	_, err := f.svc.Publish(ctx, 1, 7, 5)
 	require.NoError(t, err)
+}
+
+// An edit in the same second as the publish (whole-second timestamps equal)
+// must still be reported: only the revision decides.
+func TestPageService_EditInSameSecondAfterPublish_IsUnpublished(t *testing.T) {
+	f := newPageSvc(t)
+	ctx := context.Background()
+	at := f.now // frozen clock
+	p := samplePage(5, 7, "jose")
+	p.Revision = 3
+	published := *p
+	published.Status = model.PageStatusPublished
+	published.PublishedAt = &at
+	published.PublishedRevision = 3
+	published.UpdatedAt = at
+	edited := published
+	edited.Revision = 4 // edit landed in the same second: updated_at == published_at
+	edited.Title = "Edited"
+
+	gomock.InOrder(
+		f.pages.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(p, nil),
+		f.pages.EXPECT().ListBlocks(gomock.Any(), uint64(5)).Return([]model.PageBlock{}, nil),
+		f.pages.EXPECT().Publish(gomock.Any(), uint64(5), gomock.Any(), at, uint64(3)).Return(nil),
+		f.pages.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(&published, nil),
+		f.pages.EXPECT().ListBlocks(gomock.Any(), uint64(5)).Return([]model.PageBlock{}, nil),
+		f.pages.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(&edited, nil),
+		f.pages.EXPECT().ListBlocks(gomock.Any(), uint64(5)).Return([]model.PageBlock{}, nil),
+	)
+	f.views.EXPECT().CountAllTime(gomock.Any(), uint64(5)).Return(int64(0), nil).Times(2)
+	f.activity.EXPECT().Log(gomock.Any(), uint64(1), uint64(7), service.ActionPagePublish, service.EntityPage, uint64(5), gomock.Any())
+
+	v, err := f.svc.Publish(ctx, 1, 7, 5)
+	require.NoError(t, err)
+	assert.False(t, v.HasUnpublishedChanges)
+	require.True(t, edited.UpdatedAt.Equal(*edited.PublishedAt))
+	v, err = f.svc.Get(ctx, 7, 5)
+	require.NoError(t, err)
+	assert.True(t, v.HasUnpublishedChanges, "same-second edit must count as unpublished")
 }
 
 func TestPageService_ShortURLWithQuery(t *testing.T) {
@@ -497,48 +539,42 @@ func TestPageService_ShortURLWithQuery(t *testing.T) {
 func TestPageService_HasUnpublishedChanges(t *testing.T) {
 	pub := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 	later := pub.Add(time.Second)
-	earlier := pub.Add(-time.Second)
-	// Same instant in another zone: equal, not newer.
-	pubOtherZone := pub.In(time.FixedZone("X", 3*3600))
 	for name, tc := range map[string]struct {
-		status    string
-		published *time.Time
-		updated   time.Time
-		maxBlock  *time.Time
-		want      bool
+		status      string
+		rev, pubRev uint64
+		updated     time.Time
+		want        bool
 	}{
-		"draft":                {model.PageStatusDraft, nil, earlier, nil, true},
-		"draft even if older":  {model.PageStatusDraft, &pub, earlier, nil, true},
-		"clean":                {model.PageStatusPublished, &pub, earlier, &earlier, false},
-		"equal is clean":       {model.PageStatusPublished, &pub, pubOtherZone, &pub, false},
-		"page edited":          {model.PageStatusPublished, &pub, later, nil, true},
-		"block edited":         {model.PageStatusPublished, &pub, earlier, &later, true},
-		"no blocks, clean":     {model.PageStatusPublished, &pub, pub, nil, false},
-		"published without at": {model.PageStatusPublished, nil, pub, nil, true},
+		"fresh draft":                   {model.PageStatusDraft, 1, 0, pub, true},
+		"draft even if revisions match": {model.PageStatusDraft, 2, 2, pub, true},
+		"clean":                         {model.PageStatusPublished, 3, 3, pub, false},
+		"clean despite newer stamp":     {model.PageStatusPublished, 3, 3, later, false},
+		"edited":                        {model.PageStatusPublished, 4, 3, pub, true},
 	} {
-		got := service.HasUnpublishedChanges(&model.Page{Status: tc.status, PublishedAt: tc.published, UpdatedAt: tc.updated}, tc.maxBlock)
+		got := service.HasUnpublishedChanges(&model.Page{
+			Status: tc.status, PublishedAt: &pub, UpdatedAt: tc.updated, Revision: tc.rev, PublishedRevision: tc.pubRev})
 		assert.Equal(t, tc.want, got, name)
 	}
 
-	// Get uses the blocks' updated_at.
+	// Get and List use the page's revisions (List needs no block query).
 	f := newPageSvc(t)
 	p := samplePage(5, 7, "jose")
 	p.Status = model.PageStatusPublished
 	p.PublishedAt = &pub
-	p.UpdatedAt = earlier
+	p.Revision, p.PublishedRevision = 6, 5
 	f.pages.EXPECT().GetByID(gomock.Any(), uint64(5)).Return(p, nil)
 	f.pages.EXPECT().ListBlocks(gomock.Any(), uint64(5)).Return([]model.PageBlock{
-		{ID: 1, PageID: 5, Type: "text", UpdatedAt: earlier}, {ID: 2, PageID: 5, Type: "text", UpdatedAt: later}}, nil)
+		{ID: 1, PageID: 5, Type: "text", UpdatedAt: pub}}, nil)
 	f.views.EXPECT().CountAllTime(gomock.Any(), uint64(5)).Return(int64(0), nil)
 	v, err := f.svc.Get(context.Background(), 7, 5)
 	require.NoError(t, err)
 	assert.True(t, v.HasUnpublishedChanges)
 
-	// List uses MaxBlockUpdatedAt for published pages only.
+	clean := *p
+	clean.PublishedRevision = 6
 	draft := samplePage(6, 7, "draft")
 	f.pages.EXPECT().ListByGroup(gomock.Any(), uint64(7), repository.PageFilter{Query: "j"}).Return([]repository.PageWithViews{
-		{Page: *p, Views: 4}, {Page: *draft, Views: 0}}, nil)
-	f.pages.EXPECT().MaxBlockUpdatedAt(gomock.Any(), uint64(5)).Return(&earlier, nil)
+		{Page: clean, Views: 4}, {Page: *draft, Views: 0}}, nil)
 	list, err := f.svc.List(context.Background(), 7, repository.PageFilter{Query: "j"})
 	require.NoError(t, err)
 	require.Len(t, list, 2)

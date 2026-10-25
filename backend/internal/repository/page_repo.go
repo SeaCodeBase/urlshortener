@@ -34,7 +34,8 @@ func NewPageRepository(db *sqlx.DB) *PageRepositoryImpl {
 }
 
 const pageColumns = `p.id, p.user_id, p.group_id, p.slug, p.title, p.description, p.avatar_url, p.design,
-	p.status, p.published_content, p.published_at, p.archived, p.created_at, p.updated_at`
+	p.status, p.published_content, p.published_at, p.revision, p.published_revision, p.archived,
+	p.created_at, p.updated_at`
 
 const pageSelect = `SELECT ` + pageColumns + ` FROM pages p`
 
@@ -83,15 +84,19 @@ func (r *PageRepositoryImpl) Create(ctx context.Context, p *model.Page) error {
 	}
 	p.ID = uint64(id)
 	var row struct {
-		Status    string    `db:"status"`
-		CreatedAt time.Time `db:"created_at"`
-		UpdatedAt time.Time `db:"updated_at"`
+		Status            string    `db:"status"`
+		Revision          uint64    `db:"revision"`
+		PublishedRevision uint64    `db:"published_revision"`
+		CreatedAt         time.Time `db:"created_at"`
+		UpdatedAt         time.Time `db:"updated_at"`
 	}
-	if err := r.db.GetContext(ctx, &row, `SELECT status, created_at, updated_at FROM pages WHERE id = ?`, p.ID); err != nil {
+	if err := r.db.GetContext(ctx, &row,
+		`SELECT status, revision, published_revision, created_at, updated_at FROM pages WHERE id = ?`, p.ID); err != nil {
 		logger.Error(ctx, "page-repo: failed to read created page", zap.Uint64("page_id", p.ID), zap.Error(err))
 		return err
 	}
 	p.Status, p.CreatedAt, p.UpdatedAt = row.Status, row.CreatedAt, row.UpdatedAt
+	p.Revision, p.PublishedRevision = row.Revision, row.PublishedRevision
 	p.PublishedContent, p.PublishedAt, p.Archived = nil, nil, false
 	return nil
 }
@@ -182,7 +187,7 @@ func (r *PageRepositoryImpl) Update(ctx context.Context, p *model.Page) error {
 		p.Design = model.JSONMap{}
 	}
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE pages SET title = ?, description = ?, avatar_url = ?, design = ? WHERE id = ?`,
+		`UPDATE pages SET title = ?, description = ?, avatar_url = ?, design = ?, revision = revision + 1 WHERE id = ?`,
 		p.Title, p.Description, p.AvatarURL, p.Design, p.ID)
 	if err != nil {
 		logger.Error(ctx, "page-repo: failed to update page", zap.Uint64("page_id", p.ID), zap.Error(err))
@@ -200,13 +205,16 @@ func (r *PageRepositoryImpl) SetArchived(ctx context.Context, id uint64, archive
 	return r.requireAffected(ctx, result, "pages", id, ErrPageNotFound)
 }
 
-func (r *PageRepositoryImpl) Publish(ctx context.Context, id uint64, content model.JSONMap, at time.Time) error {
+func (r *PageRepositoryImpl) Publish(ctx context.Context, id uint64, content model.JSONMap, at time.Time, revision uint64) error {
 	if content == nil {
 		content = model.JSONMap{}
 	}
+	// LEAST: a caller can never mark a revision newer than the stored one
+	// as published.
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE pages SET status = ?, published_content = ?, published_at = ?, updated_at = updated_at WHERE id = ?`,
-		model.PageStatusPublished, content, at.UTC(), id)
+		`UPDATE pages SET status = ?, published_content = ?, published_at = ?, published_revision = LEAST(?, revision),
+		 updated_at = updated_at WHERE id = ?`,
+		model.PageStatusPublished, content, at.UTC(), revision, id)
 	if err != nil {
 		logger.Error(ctx, "page-repo: failed to publish page", zap.Uint64("page_id", id), zap.Error(err))
 		return err
@@ -258,7 +266,17 @@ func (r *PageRepositoryImpl) CreateBlock(ctx context.Context, b *model.PageBlock
 	if b.Content == nil {
 		b.Content = model.JSONMap{}
 	}
-	result, err := r.db.ExecContext(ctx,
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		logger.Error(ctx, "page-repo: failed to begin create block", zap.Uint64("page_id", b.PageID), zap.Error(err))
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	// Lock order everywhere: the pages row first, then its blocks.
+	if err := bumpRevision(ctx, tx, `id = ?`, b.PageID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx,
 		`INSERT INTO page_blocks (page_id, type, position, content, is_active, is_pinned, link_id)
 		 SELECT ?, ?, COALESCE(MAX(position), -1) + 1, ?, ?, ?, ? FROM page_blocks WHERE page_id = ?`,
 		b.PageID, b.Type, b.Content, b.IsActive, b.IsPinned, b.LinkID, b.PageID)
@@ -268,6 +286,10 @@ func (r *PageRepositoryImpl) CreateBlock(ctx context.Context, b *model.PageBlock
 	}
 	id, err := result.LastInsertId()
 	if err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		logger.Error(ctx, "page-repo: failed to commit create block", zap.Uint64("page_id", b.PageID), zap.Error(err))
 		return err
 	}
 	created, err := r.GetBlock(ctx, uint64(id))
@@ -282,25 +304,51 @@ func (r *PageRepositoryImpl) UpdateBlock(ctx context.Context, b *model.PageBlock
 	if b.Content == nil {
 		b.Content = model.JSONMap{}
 	}
-	result, err := r.db.ExecContext(ctx,
-		`UPDATE page_blocks SET content = ?, is_active = ?, is_pinned = ? WHERE id = ?`,
-		b.Content, b.IsActive, b.IsPinned, b.ID)
+	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
+		logger.Error(ctx, "page-repo: failed to begin update block", zap.Uint64("block_id", b.ID), zap.Error(err))
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	// Page row first (lock order: page, then blocks). The bump affects 0 rows
+	// exactly when the block does not exist (an unchanged block row would
+	// also report 0 affected rows; the page row never does).
+	result, err := tx.ExecContext(ctx,
+		`UPDATE pages SET revision = revision + 1 WHERE id = (SELECT page_id FROM page_blocks WHERE id = ?)`, b.ID)
+	if err != nil {
+		logger.Error(ctx, "page-repo: failed to bump revision for block update", zap.Uint64("block_id", b.ID), zap.Error(err))
+		return err
+	}
+	if n, err := result.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		return ErrBlockNotFound
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE page_blocks SET content = ?, is_active = ?, is_pinned = ? WHERE id = ?`,
+		b.Content, b.IsActive, b.IsPinned, b.ID); err != nil {
 		logger.Error(ctx, "page-repo: failed to update block", zap.Uint64("block_id", b.ID), zap.Error(err))
 		return err
 	}
-	return r.requireAffected(ctx, result, "page_blocks", b.ID, ErrBlockNotFound)
+	if err := tx.Commit(); err != nil {
+		logger.Error(ctx, "page-repo: failed to commit update block", zap.Uint64("block_id", b.ID), zap.Error(err))
+		return err
+	}
+	return nil
 }
 
 func (r *PageRepositoryImpl) DeleteBlock(ctx context.Context, id uint64) error {
-	// Bump the page's updated_at first so the deletion counts as an
-	// unpublished change (the block row is gone afterwards).
-	if _, err := r.db.ExecContext(ctx,
-		`UPDATE pages SET updated_at = CURRENT_TIMESTAMP WHERE id = (SELECT page_id FROM page_blocks WHERE id = ?)`, id); err != nil {
-		logger.Error(ctx, "page-repo: failed to touch page for block delete", zap.Uint64("block_id", id), zap.Error(err))
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		logger.Error(ctx, "page-repo: failed to begin delete block", zap.Uint64("block_id", id), zap.Error(err))
 		return err
 	}
-	result, err := r.db.ExecContext(ctx, `DELETE FROM page_blocks WHERE id = ?`, id)
+	defer func() { _ = tx.Rollback() }()
+	// Bump the page's revision first (the block row is gone afterwards).
+	if err := bumpRevision(ctx, tx, `id = (SELECT page_id FROM page_blocks WHERE id = ?)`, id); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM page_blocks WHERE id = ?`, id)
 	if err != nil {
 		logger.Error(ctx, "page-repo: failed to delete block", zap.Uint64("block_id", id), zap.Error(err))
 		return err
@@ -311,6 +359,20 @@ func (r *PageRepositoryImpl) DeleteBlock(ctx context.Context, id uint64) error {
 	}
 	if n == 0 {
 		return ErrBlockNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		logger.Error(ctx, "page-repo: failed to commit delete block", zap.Uint64("block_id", id), zap.Error(err))
+		return err
+	}
+	return nil
+}
+
+// bumpRevision increments pages.revision for the pages matching where (one
+// statement; the caller's transaction).
+func bumpRevision(ctx context.Context, tx *sqlx.Tx, where string, args ...any) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE pages SET revision = revision + 1 WHERE `+where, args...); err != nil {
+		logger.Error(ctx, "page-repo: failed to bump revision", zap.String("where", where), zap.Error(err))
+		return err
 	}
 	return nil
 }
@@ -323,6 +385,10 @@ func (r *PageRepositoryImpl) ReorderBlocks(ctx context.Context, pageID uint64, i
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Page row first (lock order); a rejected order rolls the bump back.
+	if err := bumpRevision(ctx, tx, `id = ?`, pageID); err != nil {
+		return err
+	}
 	var current []uint64
 	if err := tx.SelectContext(ctx, &current, `SELECT id FROM page_blocks WHERE page_id = ? FOR UPDATE`, pageID); err != nil {
 		logger.Error(ctx, "page-repo: failed to lock blocks", zap.Uint64("page_id", pageID), zap.Error(err))
@@ -380,17 +446,4 @@ func (r *PageRepositoryImpl) PagesForLinks(ctx context.Context, linkIDs []uint64
 		out[row.LinkID] = append(out[row.LinkID], row.PageID)
 	}
 	return out, nil
-}
-
-func (r *PageRepositoryImpl) MaxBlockUpdatedAt(ctx context.Context, pageID uint64) (*time.Time, error) {
-	var at sql.NullTime
-	if err := r.db.GetContext(ctx, &at, `SELECT MAX(updated_at) FROM page_blocks WHERE page_id = ?`, pageID); err != nil {
-		logger.Error(ctx, "page-repo: failed to get max block updated_at", zap.Uint64("page_id", pageID), zap.Error(err))
-		return nil, err
-	}
-	if !at.Valid {
-		return nil, nil
-	}
-	t := at.Time
-	return &t, nil
 }

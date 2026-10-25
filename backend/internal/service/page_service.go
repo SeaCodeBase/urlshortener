@@ -332,16 +332,7 @@ func (s *PageServiceImpl) List(ctx context.Context, groupID uint64, f repository
 	}
 	out := make([]PageView, 0, len(rows))
 	for i := range rows {
-		p := &rows[i].Page
-		var maxBlock *time.Time
-		if p.Status != model.PageStatusDraft {
-			if maxBlock, err = s.pages.MaxBlockUpdatedAt(ctx, p.ID); err != nil {
-				return nil, err
-			}
-		}
-		v := s.basicView(p, rows[i].Views)
-		v.HasUnpublishedChanges = HasUnpublishedChanges(p, maxBlock)
-		out = append(out, v)
+		out = append(out, s.basicView(&rows[i].Page, rows[i].Views))
 	}
 	return out, nil
 }
@@ -460,22 +451,13 @@ func (s *PageServiceImpl) Publish(ctx context.Context, userID, groupID, id uint6
 		return nil, err
 	}
 
-	// published_at is never earlier than the last edit (DB clock skew), so a
-	// fresh publish is never reported as having unpublished changes.
-	at := s.now().UTC()
-	if p.UpdatedAt.UTC().After(at) {
-		at = p.UpdatedAt.UTC()
-	}
+	at := s.now().UTC().Truncate(time.Second)
 	active := make([]model.PageBlock, 0, len(blocks))
 	for _, b := range blocks {
-		if b.UpdatedAt.UTC().After(at) {
-			at = b.UpdatedAt.UTC()
-		}
 		if b.IsActive {
 			active = append(active, b)
 		}
 	}
-	at = at.Truncate(time.Second)
 	sort.SliceStable(active, func(i, j int) bool {
 		if active[i].IsPinned != active[j].IsPinned {
 			return active[i].IsPinned
@@ -508,7 +490,10 @@ func (s *PageServiceImpl) Publish(ctx context.Context, userID, groupID, id uint6
 		"slug": p.Slug, "title": p.Title, "description": p.Description, "avatar_url": p.AvatarURL,
 		"design": map[string]any(p.Design), "published_at": at.Format(time.RFC3339), "blocks": snapBlocks,
 	}
-	if err := s.pages.Publish(ctx, id, snapshot, at); err != nil {
+	// The snapshot is built from state read at p.Revision (or later): an edit
+	// landing after the page was read leaves revision > published_revision,
+	// so it shows as an unpublished change instead of being lost.
+	if err := s.pages.Publish(ctx, id, snapshot, at, p.Revision); err != nil {
 		return nil, err
 	}
 	s.activity.Log(ctx, userID, groupID, ActionPagePublish, EntityPage, id, map[string]any{"slug": p.Slug, "blocks": len(snapBlocks)})
@@ -675,17 +660,11 @@ func (s *PageServiceImpl) PageIDsForLinks(ctx context.Context, linkIDs []uint64)
 }
 
 // HasUnpublishedChanges reports whether the editor state differs from the
-// published snapshot: always for drafts, else when the page or a block was
-// updated after published_at (UTC; equal instants are not changes).
-func HasUnpublishedChanges(p *model.Page, maxBlockUpdatedAt *time.Time) bool {
-	if p.Status != model.PageStatusPublished || p.PublishedAt == nil {
-		return true
-	}
-	pub := p.PublishedAt.UTC()
-	if p.UpdatedAt.UTC().After(pub) {
-		return true
-	}
-	return maxBlockUpdatedAt != nil && maxBlockUpdatedAt.UTC().After(pub)
+// published snapshot: always unless published, else when a page or block
+// write (or the deletion of a referenced link) bumped the revision past the
+// one the snapshot was built from.
+func HasUnpublishedChanges(p *model.Page) bool {
+	return p.Status != model.PageStatusPublished || p.Revision != p.PublishedRevision
 }
 
 // basicView converts the page without blocks.
@@ -694,12 +673,14 @@ func (s *PageServiceImpl) basicView(p *model.Page, views int64) PageView {
 	if design == nil {
 		design = model.JSONMap{}
 	}
-	return PageView{
+	v := PageView{
 		ID: p.ID, GroupID: p.GroupID, Slug: p.Slug, Title: p.Title, Description: p.Description,
 		AvatarURL: p.AvatarURL, Design: design, Status: p.Status, PublishedAt: p.PublishedAt,
 		Archived: p.Archived, URL: s.baseURL + "/m/" + p.Slug, Views: views,
 		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}
+	v.HasUnpublishedChanges = HasUnpublishedChanges(p)
+	return v
 }
 
 // view builds the full page view with blocks, link summaries and views.
@@ -716,14 +697,7 @@ func (s *PageServiceImpl) view(ctx context.Context, p *model.Page) (*PageView, e
 	if err != nil {
 		return nil, err
 	}
-	var maxBlock *time.Time
-	for i := range blocks {
-		if maxBlock == nil || blocks[i].UpdatedAt.After(*maxBlock) {
-			maxBlock = &blocks[i].UpdatedAt
-		}
-	}
 	v := s.basicView(p, views)
-	v.HasUnpublishedChanges = HasUnpublishedChanges(p, maxBlock)
 	v.Blocks = bvs
 	return &v, nil
 }

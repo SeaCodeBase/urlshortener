@@ -120,7 +120,7 @@ Every configuration key is documented in `backend/config.example.yaml`.
   the redirect server answers `GET`/`HEAD /m/{slug}` with a 302 to
   `{frontend_url}/m/{slug}` (no lookup — the frontend 404s unknown slugs).
 - **Add to a page** — link details (Pages card), the link actions menu, the
-  Links list cards and the create/edit link form can add a link to a page as
+  Links list cards and the create link form can add a link to a page as
   a link block; Home's getting-started checklist points at Pages.
 - **Slugs** — 3–40 chars, `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, globally unique
   and case-insensitive (stored lowercase). Reserved: `api`, `admin`, `m`,
@@ -134,8 +134,8 @@ Every configuration key is documented in `backend/config.example.yaml`.
   "color", "color2"}, "text_color", "button": {"style": "fill|outline",
   "radius": "square|rounded|pill", "color", "text_color"}, "font":
   "inter|serif|mono"}`; colours are `#RRGGBB`, `theme` is one of `classic`,
-  `bold`, `minimal`, `dark`, `sunset`. The shape is validated, otherwise
-  stored as sent.
+  `bold`, `minimal`, `dark`, `sunset`. The shape is validated and only the
+  keys above are stored; unknown keys are dropped.
 - **Block content JSON** — `link`: `{title (1–80), description (≤160),
   thumbnail_url}` plus `link_id` (a `source='link'` link of the same group)
   or `new_link: {original_url, title?}` to create one on the fly;
@@ -145,8 +145,12 @@ Every configuration key is documented in `backend/config.example.yaml`.
   Deleting a link deletes its blocks.
 - **Draft vs published** — edits only change the draft. `POST
   /api/pages/{id}/publish` writes a snapshot (`published_content`) and sets
-  `published_at`; `has_unpublished_changes` is true for a draft or when the
-  page or any block changed after the last publish. The public endpoint
+  `published_at`; `has_unpublished_changes` is true unless the page is
+  published and its `revision` equals `published_revision`. Every page or
+  block write (and deleting a link one of its blocks uses) bumps
+  `revision`; publish records the revision it snapshotted, and archiving
+  does not count as a change. The editor waits for pending saves before
+  publishing. The public endpoint
   serves only the snapshot (active blocks, pinned first, link blocks carry
   `short_url` with `?r=page`); a draft or never-published page is `404`.
 - **Endpoints** (group-scoped, `/api/pages`) — `GET /` (`?q`,
@@ -192,6 +196,10 @@ Every configuration key is documented in `backend/config.example.yaml`.
 - `007_pages.sql` creates the `pages`, `page_blocks` and `page_views`
   tables in place (idempotent, applied by the startup migrator; no manual
   SQL needed). Short code `m` is now reserved for new links.
+- `008_pages_revision.sql` adds `pages.revision` and
+  `pages.published_revision` (the counter behind `has_unpublished_changes`)
+  in place; published pages not edited since their last publish start
+  clean, the rest show unpublished changes until republished.
 - With Docker, MariaDB only loads `001_init.sql` on first boot; later
   migrations always come from the backend image (`/app/migrations`).
 

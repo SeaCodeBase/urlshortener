@@ -142,10 +142,6 @@ func TestPageRepo_Blocks_CRUD_Reorder(t *testing.T) {
 	p := createPage(t, repo, group, "blocks")
 	other := createPage(t, repo, group, "otherpage")
 
-	none, err := repo.MaxBlockUpdatedAt(ctx, p.ID)
-	require.NoError(t, err)
-	assert.Nil(t, none)
-
 	a := createBlock(t, repo, p.ID, model.PageBlockText, nil)
 	b := createBlock(t, repo, p.ID, model.PageBlockLink, &links[0].ID)
 	c := createBlock(t, repo, p.ID, model.PageBlockImage, nil)
@@ -177,10 +173,6 @@ func TestPageRepo_Blocks_CRUD_Reorder(t *testing.T) {
 	assert.True(t, gotB2.IsPinned)
 	gotB2.ID = c.ID + 999
 	assert.ErrorIs(t, repo.UpdateBlock(ctx, gotB2), repository.ErrBlockNotFound)
-
-	maxAt, err := repo.MaxBlockUpdatedAt(ctx, p.ID)
-	require.NoError(t, err)
-	require.NotNil(t, maxAt)
 
 	rows, err := repo.ListBlocks(ctx, p.ID)
 	require.NoError(t, err)
@@ -251,6 +243,165 @@ func TestPageRepo_BlockCascadesOnLinkDelete(t *testing.T) {
 	assert.Equal(t, []uint64{kept.ID, text.ID}, blockIDs(rows))
 }
 
+// Deleting a link (Links list or QR-owned) through LinkRepository.Delete
+// marks every page with a block on it as changed before the cascade drops
+// the block, so a published page can be republished without the dead button.
+func TestPageRepo_LinkDeleteMarksPagesChanged(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	group, links := pageFixture(t, db, "page.linkdel@example.com",
+		&model.Link{ShortCode: "pgld1"}, &model.Link{ShortCode: "pgld2", Source: model.LinkSourceQR},
+		&model.Link{ShortCode: "pgld3"})
+	repo := repository.NewPageRepository(db)
+	linkRepo := repository.NewLinkRepository(db)
+
+	publish := func(p *model.Page) {
+		t.Helper()
+		got, err := repo.GetByID(ctx, p.ID)
+		require.NoError(t, err)
+		require.NoError(t, repo.Publish(ctx, p.ID, model.JSONMap{"slug": p.Slug}, time.Now(), got.Revision))
+	}
+	changed := func(p *model.Page) bool {
+		t.Helper()
+		got, err := repo.GetByID(ctx, p.ID)
+		require.NoError(t, err)
+		return got.Status != model.PageStatusPublished || got.Revision != got.PublishedRevision
+	}
+
+	ordinary := createPage(t, repo, group, "linkdel-a")
+	qrPage := createPage(t, repo, group, "linkdel-b")
+	untouched := createPage(t, repo, group, "linkdel-c")
+	createBlock(t, repo, ordinary.ID, model.PageBlockLink, &links[0].ID)
+	createBlock(t, repo, ordinary.ID, model.PageBlockLink, &links[0].ID) // twice on one page
+	createBlock(t, repo, qrPage.ID, model.PageBlockLink, &links[1].ID)
+	createBlock(t, repo, untouched.ID, model.PageBlockLink, &links[2].ID)
+	for _, p := range []*model.Page{ordinary, qrPage, untouched} {
+		publish(p)
+		require.False(t, changed(p))
+	}
+	before, err := repo.GetByID(ctx, ordinary.ID)
+	require.NoError(t, err)
+
+	require.NoError(t, linkRepo.Delete(ctx, links[0].ID))
+	assert.True(t, changed(ordinary), "ordinary link delete")
+	after, err := repo.GetByID(ctx, ordinary.ID)
+	require.NoError(t, err)
+	assert.Equal(t, before.Revision+1, after.Revision, "one bump per delete even with two blocks")
+	rows, err := repo.ListBlocks(ctx, ordinary.ID)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "cascade still removes the blocks")
+
+	require.NoError(t, linkRepo.Delete(ctx, links[1].ID))
+	assert.True(t, changed(qrPage), "QR-owned link delete")
+	assert.False(t, changed(untouched))
+
+	// A failed delete bumps nothing.
+	assert.ErrorIs(t, linkRepo.Delete(ctx, links[0].ID), repository.ErrLinkNotFound)
+	assert.False(t, changed(untouched))
+}
+
+// Every page and block write bumps the revision exactly once; archive,
+// unarchive and publish never do; publish records the revision it was given.
+func TestPageRepo_RevisionBumps(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	group, _ := pageFixture(t, db, "page.revision@example.com")
+	repo := repository.NewPageRepository(db)
+	p := createPage(t, repo, group, "revision")
+	assert.Equal(t, uint64(1), p.Revision)
+	assert.Equal(t, uint64(0), p.PublishedRevision)
+
+	rev := func() (uint64, uint64) {
+		t.Helper()
+		got, err := repo.GetByID(ctx, p.ID)
+		require.NoError(t, err)
+		return got.Revision, got.PublishedRevision
+	}
+	expectRev := func(want uint64, step string) {
+		t.Helper()
+		got, _ := rev()
+		assert.Equal(t, want, got, step)
+	}
+	expectRev(1, "create")
+
+	got, err := repo.GetByID(ctx, p.ID)
+	require.NoError(t, err)
+	got.Title = "New"
+	require.NoError(t, repo.Update(ctx, got))
+	expectRev(2, "page update")
+	require.NoError(t, repo.Update(ctx, got)) // unchanged fields still count
+	expectRev(3, "page update without changes")
+
+	a := createBlock(t, repo, p.ID, model.PageBlockText, nil)
+	expectRev(4, "create block")
+	b := createBlock(t, repo, p.ID, model.PageBlockText, nil)
+	expectRev(5, "create block")
+	a.Content = model.JSONMap{"heading": "x"}
+	require.NoError(t, repo.UpdateBlock(ctx, a))
+	expectRev(6, "update block")
+	require.NoError(t, repo.UpdateBlock(ctx, a)) // unchanged row
+	expectRev(7, "update block without changes")
+	missing := *a
+	missing.ID = b.ID + 999
+	assert.ErrorIs(t, repo.UpdateBlock(ctx, &missing), repository.ErrBlockNotFound)
+	expectRev(7, "missing block")
+	require.NoError(t, repo.ReorderBlocks(ctx, p.ID, []uint64{b.ID, a.ID}))
+	expectRev(8, "reorder")
+	assert.ErrorIs(t, repo.ReorderBlocks(ctx, p.ID, []uint64{b.ID}), repository.ErrInvalidBlockOrder)
+	expectRev(8, "rejected reorder")
+
+	at := time.Now()
+	require.NoError(t, repo.Publish(ctx, p.ID, model.JSONMap{"slug": "revision"}, at, 8))
+	r, pr := rev()
+	assert.Equal(t, uint64(8), r, "publish does not bump")
+	assert.Equal(t, uint64(8), pr, "publish copies the revision")
+
+	require.NoError(t, repo.SetArchived(ctx, p.ID, true))
+	require.NoError(t, repo.SetArchived(ctx, p.ID, false))
+	expectRev(8, "archive/unarchive")
+
+	require.NoError(t, repo.DeleteBlock(ctx, a.ID))
+	expectRev(9, "delete block")
+	assert.ErrorIs(t, repo.DeleteBlock(ctx, a.ID), repository.ErrBlockNotFound)
+	expectRev(9, "missing block delete")
+
+	// A stale revision stays behind (changes after the read are not hidden);
+	// a revision beyond the stored one is capped.
+	require.NoError(t, repo.Publish(ctx, p.ID, model.JSONMap{"slug": "revision"}, at, 8))
+	r, pr = rev()
+	assert.Equal(t, uint64(9), r)
+	assert.Equal(t, uint64(8), pr)
+	require.NoError(t, repo.Publish(ctx, p.ID, model.JSONMap{"slug": "revision"}, at, 99))
+	_, pr = rev()
+	assert.Equal(t, uint64(9), pr)
+}
+
+// Whole-second timestamps cannot tell an edit in the publish second apart;
+// the revision can.
+func TestPageRepo_EditInPublishSecondIsChanged(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	group, _ := pageFixture(t, db, "page.samesecond@example.com")
+	repo := repository.NewPageRepository(db)
+	p := createPage(t, repo, group, "samesecond")
+	got, err := repo.GetByID(ctx, p.ID)
+	require.NoError(t, err)
+	at := got.UpdatedAt // the same second as the write
+	require.NoError(t, repo.Publish(ctx, p.ID, model.JSONMap{"slug": "samesecond"}, at, got.Revision))
+	got.Title = "Edited"
+	require.NoError(t, repo.Update(ctx, got))
+	_, err = db.ExecContext(ctx, `UPDATE pages SET updated_at = published_at WHERE id = ?`, p.ID)
+	require.NoError(t, err)
+
+	again, err := repo.GetByID(ctx, p.ID)
+	require.NoError(t, err)
+	require.True(t, again.UpdatedAt.Equal(*again.PublishedAt))
+	assert.NotEqual(t, again.Revision, again.PublishedRevision)
+}
+
 func TestPageRepo_PagesForLinks_ExcludesArchived(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer db.Close()
@@ -295,7 +446,7 @@ func TestPageRepo_Publish_SetsSnapshot(t *testing.T) {
 
 	at := time.Date(2026, 10, 25, 12, 30, 0, 0, time.UTC)
 	snapshot := model.JSONMap{"slug": "publish", "blocks": []any{map[string]any{"type": "text"}}}
-	require.NoError(t, repo.Publish(ctx, p.ID, snapshot, at))
+	require.NoError(t, repo.Publish(ctx, p.ID, snapshot, at, p.Revision))
 
 	got, err := repo.GetByID(ctx, p.ID)
 	require.NoError(t, err)
@@ -318,7 +469,7 @@ func TestPageRepo_Publish_SetsSnapshot(t *testing.T) {
 	assert.Equal(t, "Edited", again.Title)
 	assert.Equal(t, "publish", again.PublishedContent["slug"])
 
-	assert.ErrorIs(t, repo.Publish(ctx, p.ID+999, snapshot, at), repository.ErrPageNotFound)
+	assert.ErrorIs(t, repo.Publish(ctx, p.ID+999, snapshot, at, 1), repository.ErrPageNotFound)
 }
 
 func TestPageRepo_ListByGroup_FilterAndViews(t *testing.T) {
@@ -414,7 +565,7 @@ func TestPageRepo_UpdatedAtSemantics(t *testing.T) {
 	}
 
 	setOld()
-	require.NoError(t, repo.Publish(ctx, p.ID, model.JSONMap{"slug": "stamp"}, time.Now()))
+	require.NoError(t, repo.Publish(ctx, p.ID, model.JSONMap{"slug": "stamp"}, time.Now(), 1))
 	assert.Equal(t, old, updatedAt(), "publish keeps updated_at")
 
 	require.NoError(t, repo.SetArchived(ctx, p.ID, true))
