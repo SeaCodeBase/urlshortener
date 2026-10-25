@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -278,4 +279,45 @@ func TestRedirectHandler_WaitBlocksUntilRecordCompletes(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Wait did not return after the record completed")
 	}
+}
+
+// countingClickRecorder counts RecordClick calls.
+type countingClickRecorder struct {
+	mu sync.Mutex
+	n  int
+}
+
+func (c *countingClickRecorder) RecordClick(_ context.Context, _ service.ClickEvent) error {
+	c.mu.Lock()
+	c.n++
+	c.mu.Unlock()
+	return nil
+}
+
+func TestRedirectHandler_ClickAfterWaitStartedIsRecordedInline(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := &countingClickRecorder{}
+	domains := repomocks.NewMockDomainRepository(gomock.NewController(t))
+	h := NewRedirectHandler(&fakeResolver{res: &service.ResolvedLink{LinkID: 1, LongURL: "https://example.com"}},
+		rec, domains, "salt", "https://app.example.com", "sho.rt")
+	r := gin.New()
+	r.GET("/:code", h.Redirect)
+
+	h.Wait()
+	// Concurrent Waits and redirects after closing must neither panic nor race.
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(2)
+		go func() { defer wg.Done(); h.Wait() }()
+		go func() {
+			defer wg.Done()
+			w := doGet(r, "sho.rt", "/abc", "")
+			assert.Equal(t, http.StatusFound, w.Code)
+		}()
+	}
+	wg.Wait()
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	// Recorded synchronously: all 20 are counted by the time the requests return.
+	assert.Equal(t, 20, rec.n)
 }

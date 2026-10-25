@@ -15,7 +15,7 @@ import (
 )
 
 // shutdownTimeout bounds how long the HTTP servers get to drain in-flight
-// requests. docker-compose's stop_grace_period (30s) leaves room for the
+// requests. docker-compose's stop_grace_period (45s) leaves room for the
 // worker stops that follow.
 const shutdownTimeout = 20 * time.Second
 

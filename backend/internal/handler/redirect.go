@@ -49,14 +49,50 @@ type RedirectHandler struct {
 	frontendURL string
 	reserved    map[string]bool
 	// recording tracks the detached click-record goroutines so shutdown can
-	// wait for them (http.Server.Shutdown does not).
+	// wait for them (http.Server.Shutdown does not). recordMu guards closing
+	// and every recording.Add, so no Add can race the Wait in Wait().
 	recording sync.WaitGroup
+	recordMu  sync.Mutex
+	closing   bool
 }
 
 // Wait blocks until every click record started so far has finished. Call it
 // after the redirect server has shut down, before stopping the click flusher.
+// Clicks that arrive afterwards (a connection Shutdown abandoned) are
+// recorded synchronously instead of in a tracked goroutine.
 func (h *RedirectHandler) Wait() {
+	h.recordMu.Lock()
+	h.closing = true
+	h.recordMu.Unlock()
 	h.recording.Wait()
+}
+
+// recordClick buffers ev without blocking the redirect, unless Wait has
+// started, in which case it records inline.
+func (h *RedirectHandler) recordClick(ev service.ClickEvent) {
+	h.recordMu.Lock()
+	if h.closing {
+		h.recordMu.Unlock()
+		h.doRecordClick(ev)
+		return
+	}
+	h.recording.Add(1)
+	h.recordMu.Unlock()
+	go func() {
+		defer h.recording.Done()
+		h.doRecordClick(ev)
+	}()
+}
+
+func (h *RedirectHandler) doRecordClick(ev service.ClickEvent) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := h.clicks.RecordClick(ctx, ev); err != nil {
+		logger.Warn(ctx, "failed to record click",
+			zap.Uint64("link_id", ev.LinkID),
+			zap.Error(err),
+		)
+	}
 }
 
 // NewRedirectHandler builds the handler. reservedHosts (and the frontend
@@ -156,18 +192,7 @@ func (h *RedirectHandler) Redirect(c *gin.Context) {
 		}
 	}
 
-	h.recording.Add(1)
-	go func() {
-		defer h.recording.Done()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := h.clicks.RecordClick(ctx, event); err != nil {
-			logger.Warn(ctx, "failed to record click",
-				zap.Uint64("link_id", event.LinkID),
-				zap.Error(err),
-			)
-		}
-	}()
+	h.recordClick(event)
 
 	c.Redirect(http.StatusFound, target)
 }

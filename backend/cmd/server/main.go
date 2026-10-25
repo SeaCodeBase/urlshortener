@@ -109,14 +109,13 @@ func main() {
 	// ≤3 redirects, refuses non-public addresses.
 	webhookClient := service.NewWebhookHTTPClient()
 
-	// Start workers: the click flusher queues webhook events for every
-	// stored click; the dispatcher delivers them. They are stopped by
-	// runServers after both HTTP servers have drained (see below).
+	// Workers: the click flusher queues webhook events for every stored
+	// click; the dispatcher delivers them. They are started just before the
+	// servers (after every fatal startup check) and stopped by runServers
+	// after both HTTP servers have drained (see below).
 	clickFlusher := worker.NewClickFlusher(rdb, clickRepo)
 	clickFlusher.SetEnqueuer(worker.NewWebhookEnqueuer(rdb, webhookRepo, linkRepo, tagRepo, domainRepo, cfg.URLs.BaseURL))
-	clickFlusher.Start()
 	webhookDispatcher := worker.NewWebhookDispatcher(rdb, webhookRepo, webhookClient, cfg.Workers.Webhooks.PollEvery)
-	webhookDispatcher.Start()
 
 	// Setup services
 	authService := service.NewAuthService(userRepo, groupRepo, cfg.JWT.Secret)
@@ -147,11 +146,9 @@ func main() {
 		Bulk:     bulkUploadRepo,
 		Activity: activityService,
 	})
-	// The bulk worker creates links through the link service, so it starts
-	// once that exists.
+	// The bulk worker creates links through the link service.
 	bulkWorker := worker.NewBulkWorker(bulkUploadRepo, linkService, domainRepo,
 		cfg.Workers.Bulk.PollEvery, cfg.Workers.Bulk.BatchSize, cfg.URLs.BaseURL)
-	bulkWorker.Start()
 	campaignService := service.NewCampaignService(service.CampaignServiceDeps{
 		Campaigns: campaignRepo,
 		Links:     linkRepo,
@@ -440,6 +437,12 @@ func main() {
 	// and the bulk worker stops between batches.
 	sigCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
+	// Once the first signal starts the drain, unregister so that a second
+	// SIGINT/SIGTERM gets the default behaviour and ends the process at once.
+	go func() {
+		<-sigCtx.Done()
+		stopSignals()
+	}()
 	redirectSrv := &http.Server{
 		Addr:              ":" + cfg.Server.RedirectPort,
 		Handler:           redirectRouter,
@@ -450,6 +453,10 @@ func main() {
 		Handler:           apiRouter,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	// No logger.Fatal past this point: it would exit with workers running.
+	clickFlusher.Start()
+	webhookDispatcher.Start()
+	bulkWorker.Start()
 	logger.Info(ctx, "listening",
 		zap.String("redirect_addr", redirectSrv.Addr), zap.String("api_addr", apiSrv.Addr))
 	runErr := runServers(sigCtx,
